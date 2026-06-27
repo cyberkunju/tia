@@ -23,6 +23,11 @@ __pycache__/
 .env.*
 !.env.example
 
+# Runtime SQLite (Postgres in prod)
+*.db
+*.db-journal
+tia.db
+
 # Data staging / artifacts
 /staging/
 *.pdf.out
