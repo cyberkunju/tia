@@ -18,7 +18,7 @@ dependencies = [
     "jellyfish>=1.0",
     "pillow>=10.3",
     "imagehash>=4.3",
-    "fpdf2>=2.7",
+    "typst>=0.13",
     "python-dateutil>=2.9",
 ]
 
