@@ -1,127 +1,116 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
+import { Upload, FileText, ArrowRight, CheckCircle2 } from "lucide-react";
 import { api } from "../api";
-import { routingBadgeClass, statusBadgeClass } from "../lib";
+import { cn } from "../lib";
+import { PageHeader, Panel, StatusBadge, RoutingBadge, Spinner } from "../ui";
 
-const SAMPLE_EMAILS = {
-  "Case 1 — name only (Fatima Khan, ambiguous)": `Subject: Payout request\n\nClient: Majid Al Futtaim Retail LLC\nPeriod: June 2026\n\nFatima Khan - 23 days, total AED 12000\n\nRegards,\nOperations`,
-  "Case 2 — from employee (Emp ID, days)": `Subject: My timesheet\n\nHi Payroll,\n\nMy employee id is EMP10001 and I worked 22 days this month with 2 OT hours.\n\nRegards,\nCarlos`,
-  "Case 3 — client roster (full month)": `Subject: Monthly timesheet\n\nClient: Emirates Steel Industries LLC\nPeriod: June 2026\n\nCarlos Smith - 22 days\nAhmed Khan - 20 days, 4 OT hours\nMeera Al Rashid - 21 days\n\nApproved by: Site Manager`,
-  "Case 6 — structured (leave + reimbursements)": `Subject: Leave and reimbursements\n\nClient: Emirates Steel Industries LLC\nPeriod: June 2026\n\nEMP10001 Carlos Smith - 20 days, leave: AL, reimbursement AED 250 for taxi\nEMP10002 Ahmed Khan - 22 days, claim AED 120 for parking\n\nRegards,\nFinance`,
+const SAMPLE_EMAILS: Record<string, string> = {
+  "Name only (ambiguous)": `Subject: Payout request\n\nClient: Majid Al Futtaim Retail LLC\nPeriod: June 2026\n\nFatima Khan - 23 days, total AED 12000\n\nRegards,\nOperations`,
+  "From employee (Emp ID)": `Subject: My timesheet\n\nHi Payroll,\n\nMy employee id is EMP10001 and I worked 22 days this month with 2 OT hours.\n\nRegards,\nCarlos`,
+  "Client roster": `Subject: Monthly timesheet\n\nClient: Emirates Steel Industries LLC\nPeriod: June 2026\n\nCarlos Smith - 22 days\nAhmed Khan - 20 days, 4 OT hours\nMeera Al Rashid - 21 days\n\nApproved by: Site Manager`,
+  "Leave + reimbursements": `Subject: Leave and reimbursements\n\nClient: Emirates Steel Industries LLC\nPeriod: June 2026\n\nEMP10001 Carlos Smith - 20 days, leave: AL, reimbursement AED 250 for taxi\nEMP10002 Ahmed Khan - 22 days, claim AED 120 for parking\n\nRegards,\nFinance`,
 };
+
+type Result = { doc_id: string; timesheet_id: string; status: string; routing: string; confidence: number };
 
 export function ClientSubmit() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<"upload" | "email">("upload");
   const [emailBody, setEmailBody] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
-  const [result, setResult] = useState<{ doc_id: string; timesheet_id: string; status: string; routing: string; confidence: number } | null>(null);
+  const [result, setResult] = useState<Result | null>(null);
 
-  const upload = useMutation({
-    mutationFn: (file: File) => api.uploadFile(file),
-    onSuccess: (r) => {
-      setResult(r);
-      qc.invalidateQueries({ queryKey: ["docs"] });
-    },
-  });
-  const email = useMutation({
-    mutationFn: () => api.submitEmail(emailBody, emailSubject),
-    onSuccess: (r) => {
-      setResult(r);
-      qc.invalidateQueries({ queryKey: ["docs"] });
-    },
-  });
+  const onDone = (r: Result) => { setResult(r); qc.invalidateQueries({ queryKey: ["docs"] }); };
+  const upload = useMutation({ mutationFn: (file: File) => api.uploadFile(file), onSuccess: onDone });
+  const email = useMutation({ mutationFn: () => api.submitEmail(emailBody, emailSubject), onSuccess: onDone });
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-xl font-semibold mb-1">Submit timesheet</h1>
-      <p className="text-sm text-ink-600 mb-4">Upload a file, paste an email body — anything goes; the agent figures it out.</p>
+      <PageHeader
+        icon={Upload}
+        title="Submit timesheet"
+        description="Upload a file or paste an email body — any of the 7 shapes. The agent does the rest."
+      />
 
-      <div className="flex gap-1 mb-4">
-        {[
-          { id: "upload", label: "Upload (xlsx, pdf, png)" },
-          { id: "email", label: "Email body" },
-        ].map((t) => (
+      <div className="inline-flex p-1 rounded-lg bg-ink-100 border border-ink-200 mb-4">
+        {([["upload", "File upload", Upload], ["email", "Email body", FileText]] as const).map(([id, label, Icon]) => (
           <button
-            key={t.id}
-            className={`px-3 py-2 text-sm rounded-md ${tab === t.id ? "bg-brand-50 text-brand-700 font-medium" : "text-ink-600 hover:bg-ink-100"}`}
-            onClick={() => setTab(t.id as "upload" | "email")}
+            key={id}
+            onClick={() => setTab(id)}
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+              tab === id ? "bg-white text-ink-900 shadow-xs" : "text-ink-500 hover:text-ink-800",
+            )}
           >
-            {t.label}
+            <Icon size={15} /> {label}
           </button>
         ))}
       </div>
 
       {tab === "upload" && (
-        <div className="card p-6">
-          <label className="block">
-            <span className="block text-sm font-medium mb-2">Pick a file</span>
+        <Panel>
+          <label className="field-label">Choose a file</label>
+          <label className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed border-ink-300 bg-ink-50 px-6 py-10 text-center cursor-pointer hover:border-brand-400 hover:bg-brand-50/30 transition-colors">
+            <span className="grid place-items-center h-10 w-10 rounded-lg bg-white border border-ink-200 text-ink-500">
+              <Upload size={18} />
+            </span>
+            <span className="text-sm font-medium text-ink-700">Click to select a file</span>
+            <span className="text-xs text-ink-400">xlsx · csv · pdf · png · jpg · eml · txt</span>
             <input
               type="file"
+              className="hidden"
               accept=".xlsx,.xls,.csv,.eml,.txt,.png,.jpg,.jpeg,.pdf"
-              className="block w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-brand-600 file:text-white file:font-medium hover:file:bg-brand-700 cursor-pointer"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); }}
             />
           </label>
-          <p className="text-xs text-ink-500 mt-3">
-            Excel + email parse instantly. Handwritten images go through GLM-OCR on Modal (warm: ~2s, cold: up to ~90s).
+          <p className="text-xs text-ink-400 mt-3">
+            Excel and email parse instantly. Handwritten images route through GLM-OCR on Modal (warm ≈ 2s, cold up to ≈ 90s).
           </p>
-          {upload.isPending && <p className="text-sm text-brand-700 mt-3">Processing…</p>}
-        </div>
+          {upload.isPending && <p className="flex items-center gap-2 text-sm text-brand-700 mt-3"><Spinner /> Processing…</p>}
+        </Panel>
       )}
 
       {tab === "email" && (
-        <div className="card p-6 space-y-3">
-          <div>
-            <span className="block text-sm font-medium mb-1">Try a sample</span>
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(SAMPLE_EMAILS).map(([label, body]) => (
-                <button
-                  key={label}
-                  className="btn-outline text-xs"
-                  onClick={() => { setEmailSubject(label); setEmailBody(body); }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+        <Panel>
+          <label className="field-label">Try a sample</label>
+          <div className="flex flex-wrap gap-2 mb-4">
+            {Object.entries(SAMPLE_EMAILS).map(([label, body]) => (
+              <button key={label} className="btn-outline btn-sm" onClick={() => { setEmailSubject(label); setEmailBody(body); }}>
+                {label}
+              </button>
+            ))}
           </div>
-          <input
-            className="w-full border border-ink-200 rounded-md px-3 py-2 text-sm"
-            placeholder="Subject (optional)"
-            value={emailSubject}
-            onChange={(e) => setEmailSubject(e.target.value)}
-          />
+          <label className="field-label">Subject</label>
+          <input className="input mb-3" placeholder="Optional" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
+          <label className="field-label">Body</label>
           <textarea
-            className="w-full border border-ink-200 rounded-md px-3 py-2 text-sm h-56 font-mono"
+            className="textarea h-52 font-mono text-xs"
             placeholder="Paste the email body here…"
             value={emailBody}
             onChange={(e) => setEmailBody(e.target.value)}
           />
-          <div className="flex justify-end">
-            <button
-              className="btn-primary"
-              disabled={!emailBody || email.isPending}
-              onClick={() => email.mutate()}
-            >
-              {email.isPending ? "Submitting…" : "Submit"}
+          <div className="flex justify-end mt-3">
+            <button className="btn-primary" disabled={!emailBody || email.isPending} onClick={() => email.mutate()}>
+              {email.isPending ? <><Spinner /> Submitting…</> : <>Submit <ArrowRight size={15} /></>}
             </button>
           </div>
-        </div>
+        </Panel>
       )}
 
       {result && (
-        <div className="card p-5 mt-5">
-          <div className="text-sm">
-            <span className="text-ink-500">Doc</span>{" "}
-            <span className="font-mono text-xs">{result.doc_id}</span>{" "}
-            <span className={statusBadgeClass(result.status)}>{result.status}</span>{" "}
-            <span className={routingBadgeClass(result.routing)}>{result.routing}</span>
+        <div className="card mt-4 p-4 animate-fade-in">
+          <div className="flex items-center gap-2 text-sm">
+            <CheckCircle2 size={16} className="text-emerald-600" />
+            <span className="font-medium text-ink-800">Received</span>
+            <span className="font-mono text-xs text-ink-400">{result.doc_id.slice(0, 8)}</span>
+            <StatusBadge status={result.status} />
+            <RoutingBadge routing={result.routing} />
           </div>
-          <div className="mt-3 flex gap-2">
-            <Link to={`/finops/review/${result.doc_id}`} className="btn-primary text-sm">Open in FinOps Review →</Link>
-            <Link to="/client/invoices" className="btn-outline text-sm">View invoices</Link>
+          <div className="flex gap-2 mt-3">
+            <Link to={`/finops/review/${result.doc_id}`} className="btn-primary btn-sm">Open in FinOps review <ArrowRight size={14} /></Link>
+            <Link to="/client/invoices" className="btn-outline btn-sm">View invoices</Link>
           </div>
         </div>
       )}
