@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from tia_ai.config import DATA_DIR
+from PIL import Image
+
 from tia_ai.extract.vision import extract_image
 
 
@@ -29,14 +30,19 @@ Date: 02/07/2026
 """
 
 
-def test_image_extraction_parses_real_monthly_timesheet_markdown(monkeypatch):
+def test_image_extraction_parses_real_monthly_timesheet_markdown(monkeypatch, tmp_path):
     import tia_ai.ocr as ocr
 
     monkeypatch.setattr(ocr, "glm_markdown", lambda *args, **kwargs: REAL_HANDWRITTEN_MARKDOWN)
     monkeypatch.setattr(ocr, "glm_kie", lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError))
     monkeypatch.setattr(ocr, "glm_layout", lambda *args, **kwargs: [])
 
-    ex = extract_image(DATA_DIR / "synthetic" / "handwritten.png")
+    # OCR is mocked, so the image content is irrelevant; extract_image only needs
+    # a readable file to exist for Path.read_bytes(). Write a tiny valid PNG.
+    img_path = tmp_path / "handwritten.png"
+    Image.new("RGB", (8, 8), "white").save(img_path)
+
+    ex = extract_image(img_path)
 
     assert ex.client_code == "CL001"
     assert ex.period == "June 2026"
