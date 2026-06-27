@@ -3,19 +3,12 @@ import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Inbox, ChevronLeft } from "lucide-react";
 import { api } from "../api";
-import { cn, fmtAge, fmtPct } from "../lib";
+import { cn, fmtAge } from "../lib";
 import { ConfidenceBadge, Badge, EmptyState, Spinner } from "../ui";
 import { DocFocus } from "../components/DocFocus";
 import type { DocSummary, Invoice } from "../types";
 
 type StageId = "intake" | "review" | "validate" | "invoice" | "dispatch";
-const STAGES: { id: StageId; label: string }[] = [
-  { id: "intake", label: "Intake" },
-  { id: "review", label: "Review" },
-  { id: "validate", label: "Validated" },
-  { id: "invoice", label: "Invoice" },
-  { id: "dispatch", label: "Dispatch" },
-];
 
 function stageOf(d: DocSummary, invByTs: Record<string, Invoice>): StageId {
   if (d.status === "ingested") return "intake";
@@ -38,52 +31,30 @@ export function Console() {
     return m;
   }, [invoices]);
 
-  const buckets = useMemo(() => {
-    const b: Record<StageId, DocSummary[]> = { intake: [], review: [], validate: [], invoice: [], dispatch: [] };
-    (docs ?? []).forEach((d) => b[stageOf(d, invByTs)].push(d));
-    return b;
-  }, [docs, invByTs]);
-
-  const touchless = useMemo(() => {
-    const routed = (docs ?? []).filter((d) => d.routing != null);
-    const auto = routed.filter((d) => d.routing === "auto").length;
-    return routed.length ? auto / routed.length : 0;
-  }, [docs]);
+  // Optional stage filter — the command palette and external links can deep-link
+  // via ?stage=review; without the param, we show every doc newest-first.
+  const stage = params.get("stage") as StageId | null;
+  const queue = useMemo(() => {
+    const sorted = [...(docs ?? [])].sort((a, b) => (b.uploaded_at ?? "").localeCompare(a.uploaded_at ?? ""));
+    if (!stage) return sorted;
+    return sorted.filter((d) => stageOf(d, invByTs) === stage);
+  }, [docs, invByTs, stage]);
 
   const docParam = params.get("doc");
-  const stage = (params.get("stage") as StageId) || (buckets.review.length ? "review" : "invoice");
-  const queue = buckets[stage] ?? [];
   const selectedId = docParam ?? queue[0]?.doc_id ?? null;
 
-  const setStage = (s: StageId) => { const p = new URLSearchParams(params); p.set("stage", s); p.delete("doc"); setParams(p); };
   const setDoc = (id: string) => { const p = new URLSearchParams(params); p.set("doc", id); setParams(p); };
   const clearDoc = () => { const p = new URLSearchParams(params); p.delete("doc"); setParams(p); };
 
   return (
     <div className="h-[calc(100vh-3rem)] flex flex-col">
-      {/* Stage rail = navigation */}
-      <div className="border-b border-ink-200 bg-white px-3 sm:px-4 py-2.5 flex items-center gap-1.5 sm:gap-2 overflow-x-auto">
-        {STAGES.map((s, i) => (
-          <div key={s.id} className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {i > 0 && <span className="text-ink-300 select-none hidden sm:inline">→</span>}
-            <button className={cn("stage", stage === s.id ? "stage-on" : "stage-off")} onClick={() => setStage(s.id)}>
-              {s.label}<span className="stage-count">{buckets[s.id].length}</span>
-            </button>
-          </div>
-        ))}
-        <div className="ml-auto hidden md:flex items-center gap-2 pl-3 shrink-0">
-          <span className="eyebrow">Touchless</span>
-          <span className={cn("text-sm font-semibold tnum", touchless >= 0.8 ? "text-emerald-600" : "text-ink-700")}>{fmtPct(touchless)}</span>
-        </div>
-      </div>
-
       {/* Queue + focus — master/detail on small, split on large */}
       <div className="flex-1 lg:grid lg:grid-cols-[minmax(300px,360px)_1fr] min-h-0 overflow-hidden">
         {/* Queue */}
         <div className={cn("border-r border-ink-200 bg-white overflow-y-auto p-2 h-full", docParam ? "hidden lg:block" : "block")}>
           {isLoading && <div className="p-4 flex items-center gap-2 text-ink-500 text-sm"><Spinner /> Loading…</div>}
           {!isLoading && queue.length === 0 && (
-            <EmptyState icon={Inbox} title="Nothing in this stage" hint="Documents flow through here as they're processed." />
+            <EmptyState icon={Inbox} title={stage ? `Nothing in '${stage}'` : "No documents"} hint="Documents flow through here as they're processed." />
           )}
           <div className="space-y-1">
             {queue.map((d) => (
