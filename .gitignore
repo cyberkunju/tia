@@ -23,6 +23,7 @@ __pycache__/
 .env.*
 !.env.example
 !.env.docker.example
+!.env.development
 
 # Runtime SQLite (Postgres in prod)
 *.db
@@ -41,6 +42,10 @@ data/synthetic/*.eml
 # OS
 .DS_Store
 Thumbs.db
+
+# Editor
+.vscode/
+.idea/
 
 # Observability volumes
 infra/volumes/
