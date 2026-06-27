@@ -412,6 +412,26 @@ def get_wps_sif(client_code: str, period: str, s: Session = Depends(db_session))
     return FileResponse(path, media_type="text/plain", filename=path.name)
 
 
+# ---------- /qa chat agent (brief §4.8 cross-cutting) ----------
+
+
+class QAQuery(BaseModel):
+    question: str
+    entity_context: dict | None = None  # {"kind": "invoice|client|timesheet", "id": "..."}
+
+
+@app.post("/qa")
+def qa(payload: QAQuery, s: Session = Depends(db_session)) -> dict:
+    """Context-aware grounded Q&A. OpenAI tool-calling, 5 DB tools, strict
+    citations. Swap to local model by setting OPENAI_BASE_URL / OPENAI_MODEL."""
+    from ..qa import answer
+
+    try:
+        return answer(s, payload.question, payload.entity_context)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"qa agent failed: {e}") from e
+
+
 @app.get("/invoices/{inv_id}/audit")
 def get_invoice_audit(inv_id: str, s: Session = Depends(db_session)) -> dict:
     i = s.get(Invoice, inv_id)
