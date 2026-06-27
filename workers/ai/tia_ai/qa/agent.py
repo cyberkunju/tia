@@ -134,7 +134,9 @@ def route_intent(text: str) -> str | None:
                 {"role": "system", "content": ROUTER_PROMPT},
                 {"role": "user", "content": (text or "")[:1500]},
             ],
-            max_tokens=16,
+            # gpt-5.4-nano is a reasoning model: it rejects max_tokens and needs enough
+            # max_completion_tokens for its hidden reasoning + the one-word answer.
+            max_completion_tokens=2000,
         )
         word = (resp.choices[0].message.content or "").strip().upper()
         if "TIMESHEET" in word:

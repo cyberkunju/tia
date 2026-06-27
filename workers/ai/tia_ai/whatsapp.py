@@ -101,25 +101,41 @@ def classify_inbound_text(text: str | None) -> str:
 def route_message(text: str | None) -> str:
     """Decide what an inbound WhatsApp text is: "timesheet", "greeting", or "chat".
 
-    Uses the LLM intent router (robust to any natural-language phrasing — no keyword
-    matching), and degrades to the regex classifier only when the model is
-    unavailable (no API key / error). So live traffic gets true language
-    understanding; offline/tests still work deterministically.
+    Robust by design:
+      - clear cases resolve deterministically (fast, no LLM): pure greeting; a
+        question/conversational message → chat; structured timesheet data → timesheet.
+      - genuinely ambiguous messages go to the LLM router (natural-language
+        understanding).
+      - CRITICAL SAFETY DEFAULT: anything uncertain falls to "chat", never the
+        pipeline. Misrouting a chat into OCR creates a junk "couldn't read it"
+        escalate (the old bug); routing a stray timesheet to chat just lets AIDA
+        guide the user. So we always bias to chat on doubt.
     """
     t = (text or "").strip()
     if not t:
         return "greeting"
+    if _GREETING.fullmatch(t):
+        return "greeting"
+
+    is_question = bool(t.endswith("?") or _QUESTION_LEAD.search(t) or _QUESTION_VOCAB.search(t))
+    is_timesheet = any(p.search(t) for p in _TIMESHEET_PATTERNS)
+
+    # clear, unambiguous cases — no LLM needed
+    if is_timesheet and not is_question:
+        return "timesheet"
+    if is_question and not is_timesheet:
+        return "chat"
+
+    # ambiguous (looks like both, or like neither) → ask the LLM; safe-default to chat
     try:
         from .qa.agent import route_intent
 
         routed = route_intent(t)
-        if routed in ("timesheet", "greeting", "chat"):
-            return routed
     except Exception:  # noqa: BLE001
-        pass
-    # fallback: regex classifier ("question" maps to the conversational "chat")
-    c = classify_inbound_text(t)
-    return "chat" if c == "question" else c
+        routed = None
+    if routed in ("timesheet", "greeting", "chat"):
+        return routed
+    return "chat"
 
 
 # ---------------------------------------------------------------- sender → client
