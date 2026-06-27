@@ -1428,6 +1428,83 @@ def metric_headcount(s: Session = Depends(db_session)) -> dict:
     }
 
 
+@app.get("/metrics/sla")
+def metric_sla(s: Session = Depends(db_session)) -> dict:
+    """SLA aging — how long is each invoice spending in each status?
+
+    Drives the brief §4.6 'track progress' requirement + the §4.8 'within
+    minutes' KPI. We compute time-in-current-status from the most recent
+    status-change event for each invoice.
+    """
+    import datetime as dt
+
+    invoices = s.query(Invoice).all()
+    now = dt.datetime.utcnow()
+    by_status: dict[str, dict] = {}
+    samples: list[dict] = []
+    over_sla: list[dict] = []
+    for inv in invoices:
+        if not inv.created_at:
+            continue
+        # Use the most recent transition event for this invoice, else created_at
+        last_event = (
+            s.query(Event)
+            .filter(
+                Event.entity_id == inv.id,
+                Event.action.in_(
+                    (
+                        "generated",
+                        "finance_approved",
+                        "client_approved",
+                        "client_rejected",
+                        "finance_rejected",
+                        "dispatched",
+                    )
+                ),
+            )
+            .order_by(Event.at.desc())
+            .first()
+        )
+        since = last_event.at if last_event else inv.created_at
+        age_min = (now - since).total_seconds() / 60.0
+        status = inv.status
+        b = by_status.setdefault(status, {"count": 0, "total_min": 0.0, "max_min": 0.0})
+        b["count"] += 1
+        b["total_min"] += age_min
+        b["max_min"] = max(b["max_min"], age_min)
+        samples.append({"id": inv.id, "status": status, "age_min": round(age_min, 2)})
+        # SLA breach: pending client approval > 5 days OR finance approval > 2 days
+        if status in ("generated", "pending_client_review") and age_min > 5 * 24 * 60:
+            over_sla.append(
+                {
+                    "id": inv.id,
+                    "status": status,
+                    "age_min": round(age_min, 2),
+                    "limit_min": 5 * 24 * 60,
+                }
+            )
+        elif status == "finance_approved" and age_min > 2 * 24 * 60:
+            over_sla.append(
+                {
+                    "id": inv.id,
+                    "status": status,
+                    "age_min": round(age_min, 2),
+                    "limit_min": 2 * 24 * 60,
+                }
+            )
+
+    for v in by_status.values():
+        v["mean_min"] = round(v["total_min"] / v["count"], 2) if v["count"] else 0
+        v["max_min"] = round(v["max_min"], 2)
+        del v["total_min"]
+    return {
+        "by_status": by_status,
+        "over_sla_count": len(over_sla),
+        "over_sla": over_sla[:20],
+        "checked_at": now.isoformat() + "Z",
+    }
+
+
 # ---------- /status + dispatch tracking ----------
 
 

@@ -336,3 +336,83 @@ export interface FinanceQueueRow {
   threshold: number;
   rule_failures: ValidationResult[];
 }
+
+/* ── Phase α/β additions ─────────────────────────────────────── */
+
+export interface Payment {
+  id: string;
+  amount: number;
+  currency: string;
+  method: "bank_transfer" | "wire" | "card" | "cheque" | "ach" | string;
+  reference: string | null;
+  paid_at: string | null;
+  paid_by: string | null;
+  status: "received" | "reconciled" | "disputed" | "refunded";
+  receipt_number: string | null;
+}
+
+export interface StatementPeriod {
+  period: string;
+  invoices: number;
+  billed_excl_vat: number;
+  vat: number;
+  billed_incl_vat: number;
+  paid: number;
+  outstanding: number;
+}
+
+export interface ClientStatement {
+  client_code: string;
+  client_name: string;
+  currency: string;
+  generated_at: string;
+  periods: StatementPeriod[];
+  summary: {
+    invoices: number;
+    total_billed_incl_vat: number;
+    total_paid: number;
+    outstanding: number;
+  };
+}
+
+export interface NotificationRow {
+  id: string;
+  at: string | null;
+  actor: string | null;
+  kind: string;
+  entity_id: string;
+  action: string;
+  summary: string;
+  read: boolean;
+}
+
+export interface ClientUser {
+  email: string;
+  name: string;
+  role: "viewer" | "approver" | "admin";
+}
+
+export interface AuditChainReport {
+  ok: boolean;
+  total: number;
+  errors: {
+    event_id: string;
+    at: string | null;
+    kind: "hash_mismatch" | "prev_mismatch";
+    [k: string]: unknown;
+  }[];
+  head: string | null;
+}
+
+export interface SlaByStatus {
+  count: number;
+  mean_min: number;
+  max_min: number;
+}
+
+export interface SlaMetric {
+  by_status: Record<string, SlaByStatus>;
+  over_sla_count: number;
+  over_sla: { id: string; status: string; age_min: number; limit_min: number }[];
+  checked_at: string;
+}

@@ -143,3 +143,63 @@ in the Client persona's header, and pass `currentClientCode` to `api.listInvoice
 
 Backend already supports `?client_code=CL001` on `/invoices` and `/clients/{code}/queries`
 takes a code; no API changes needed.
+
+## Phase α — Backend hardening (shipped 0cc3c3d)
+
+These all have backend + types.ts + api.ts client. UI wiring is your call.
+
+### Tamper-evident audit chain
+- Every `Event` now carries `prev_hash` + `hash` + `before` + `after` (diff).
+- `GET /audit/verify` re-walks the chain, returns `{ok, total, errors, head}`.
+- Use case for UI: "Verify audit chain" button on Finance dashboard with a green ✓ if `ok=true`, errors listed otherwise. `api.verifyAuditChain()`.
+
+### Invoice state machine
+- `workers/ai/tia_ai/invoice/fsm.py` — explicit `ALLOWED` transition table.
+- All approve/reject endpoints already FSM-guarded; illegal transitions return `409`.
+- For UI: no work needed; the 409s will be visible to the user. Future: a "next legal actions" hint endpoint if you want a polished UX.
+
+### Period close lock
+- `POST /clients/{code}/periods/{period}/close` and `…/reopen`
+- `Client.settings.closed_periods: string[]` — list of closed periods
+- New rule R14 fires when a doc's period is in this list.
+- For UI: an "Close period" button on each client config screen + a 🔒 lock icon when a period is in `closed_periods`.
+
+### Payment flow
+- `POST /invoices/{id}/payments` body `{amount, method, reference?, notes?, paid_by?}`
+- Methods: `bank_transfer | wire | card | cheque | ach`
+- Auto-generates receipt number `RCPT-{client}-{ts}`, returns it
+- `GET /invoices/{id}/payments` — payment ledger
+- For UI: "Pay invoice" modal on ClientInvoices. `api.payInvoice(id, ...)`.
+
+### Statement of account
+- `GET /client/{code}/statement?months=12` → 12-period rollup with billed / VAT / paid / outstanding
+- For UI: new `/client/statement` page. Use `api.clientStatement(code)`.
+
+### Audit bundle ZIP (compliance gold)
+- `GET /client/{code}/audit/{quarter}.zip` — manifest + invoices.jsonl + payments.jsonl + events.jsonl + invoice PDFs
+- `api.clientAuditBundleUrl(code, quarter)` → click-to-download link
+
+### Notifications feed
+- `GET /notifications?persona=&client_code=&limit=`
+- Filtered per persona. Returns human-readable `summary` per item.
+- For UI: bell icon in header with badge + dropdown. `api.notifications("client", currentClientCode)`.
+
+### Multi-user roles per client
+- `GET/PUT /clients/{code}/users` — `[{email, name, role: viewer|approver|admin}]`
+- Stored on `Client.settings.users[]`
+- For UI: user-table editor on client config screen + "Acting as [user]" switcher in client header.
+
+### SLA aging
+- `GET /metrics/sla` — by-status mean/max age + over-SLA invoices
+- For UI: a tile on Finance dashboard. `api.metricsSla()`.
+
+### Safety hardening (already enforced at API edge)
+- 25 MB upload cap → `413` if exceeded
+- MIME whitelist → `415` if not allowed
+- OCR call timeout ≤ 180s (configurable in `_call(timeout=...)`)
+
+## OCR endpoint swap (shipped 0cc3c3d)
+- Default endpoint now points at our self-hosted vLLM at `ocr.cyberkunju.com/v1`
+- Same OpenAI-compatible chat-completions API shape
+- Configurable via `GLM_OCR_BASE_URL`, `GLM_OCR_API_KEY`, `GLM_OCR_MODEL`
+- This proves the "no-vendor-lock" architecture claim — swap to any compatible endpoint via one env var.
