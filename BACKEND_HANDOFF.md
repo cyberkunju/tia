@@ -129,3 +129,17 @@ export interface STPMetric { total: number; auto: number; hitl: number; escalate
 - All WhatsApp wiring (you own this end-to-end; backend has nothing to expose beyond `/qa`)
 
 Ping me if anything in the shape isn't what you wanted — the backend's flexible.
+
+## Known frontend gap (your call to fix)
+
+`/client/invoices` and `/client/queries` are **not scoped to a single client** — they
+fetch all invoices/queries across all 10 clients because TIA has no auth in scope.
+
+Proposal (didn't ship since you took over the frontend): extend the `usePersona`
+Zustand store with `currentClientCode`, add an "Acting as: [client picker]" badge
+in the Client persona's header, and pass `currentClientCode` to `api.listInvoices()`
++ `api.listQueries()`. Optionally collapse the "All invoices" table to just
+"Awaiting your approval" + "Recent (last 5)".
+
+Backend already supports `?client_code=CL001` on `/invoices` and `/clients/{code}/queries`
+takes a code; no API changes needed.
