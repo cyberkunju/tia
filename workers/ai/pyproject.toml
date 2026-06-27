@@ -1,0 +1,38 @@
+[project]
+name = "tia-ai"
+version = "0.1.0"
+description = "TIA AI/document workers: extraction, entity resolution, validation, OCR clients"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "httpx>=0.27",
+    "sqlalchemy>=2.0",
+    "openpyxl>=3.1",
+    "pdfplumber>=0.11",
+    "rapidfuzz>=3.9",
+    "scipy>=1.13",
+    "jellyfish>=1.0",
+    "pillow>=10.3",
+    "imagehash>=4.3",
+    "fpdf2>=2.7",
+    "python-dateutil>=2.9",
+]
+
+[project.optional-dependencies]
+ocr = ["opencv-python-headless>=4.10", "pytesseract>=0.3.10"]
+dev = ["pytest>=8.2", "ruff>=0.5"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tia_ai"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
