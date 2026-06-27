@@ -33,10 +33,10 @@ function entityContext(): { kind: string; id: string } | undefined {
   return doc ? { kind: "document", id: doc } : undefined;
 }
 
-/** The TIA mark — the wordmark glyph in brand orange, no background tile. */
+/** The TIA mark — the full wordmark in the brand orange (#d9531e), no background. */
 function AidaMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const glyph = size === "lg" ? "h-10" : size === "sm" ? "h-4" : "h-5";
-  return <Logo className={`${glyph} text-brand-600 shrink-0`} accent="fill-brand-400" />;
+  return <Logo className={`${glyph} text-brand-500 shrink-0`} accent="fill-brand-500" />;
 }
 
 function CiteChip({ kind, id }: { kind: string; id: string }) {
@@ -127,13 +127,10 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
           >
             {/* Header */}
             <header className="flex items-center justify-between gap-3 px-4 h-14 border-b border-ink-100 shrink-0">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <AidaMark />
-                <div className="leading-tight min-w-0">
-                  <div className="text-sm font-semibold text-ink-900 tracking-tight">TIA</div>
-                  <div className="text-2xs text-ink-400 truncate">
-                    {clientScoped ? <>Scoped to <span className="font-mono text-brand-600">{currentClientCode}</span> · live data</> : "Grounded in live data"}
-                  </div>
+              <div className="leading-tight min-w-0">
+                <div className="text-sm font-semibold text-ink-900 tracking-tight">TIA</div>
+                <div className="text-2xs text-ink-400 truncate">
+                  {clientScoped ? <>Scoped to <span className="font-mono text-brand-600">{currentClientCode}</span> · live data</> : "Grounded in live data"}
                 </div>
               </div>
               <button onClick={onClose} aria-label="Close chat" className="grid place-items-center h-8 w-8 rounded-lg text-ink-400 hover:text-ink-700 hover:bg-ink-100 transition-colors shrink-0">
@@ -183,9 +180,8 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                         </div>
                       </motion.div>
                     ) : (
-                      <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex gap-2.5">
-                        <AidaMark size="sm" />
-                        <div className="min-w-0 max-w-[85%]">
+                      <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.18 }} className="flex justify-start">
+                        <div className="min-w-0 max-w-[88%]">
                           <div className="rounded-2xl rounded-tl-md border border-ink-200 bg-white text-ink-800 px-3.5 py-2.5 text-sm leading-relaxed shadow-xs whitespace-pre-wrap">
                             {stripMarkdown(m.text)}
                           </div>
@@ -201,8 +197,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                     ),
                   )}
                   {busy && (
-                    <div className="flex gap-2.5">
-                      <AidaMark size="sm" />
+                    <div className="flex justify-start">
                       <div className="rounded-2xl rounded-tl-md border border-ink-200 bg-white px-3.5 py-2.5 shadow-xs">
                         <span className="aida-thinking text-sm font-medium">Thinking…</span>
                       </div>
