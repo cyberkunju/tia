@@ -20,6 +20,11 @@ from .extract import extract
 from .invoice.render import render_invoice
 from .match.resolver import resolve
 from .models import DocAsset, Event, Invoice, Timesheet
+from .validate.rules_v2 import (
+    find_active_contract,
+    has_blocking_failure,
+    run_rule_engine,
+)
 
 
 def _hash_file(path: Path) -> str:
@@ -142,6 +147,41 @@ def process_doc(session: Session, doc: DocAsset) -> Timesheet:
     inv = build_invoice(extraction, match, session)
     client_code = inv.get("client_code")
 
+    # ---- BTP-style contract-bound rule engine (brief §4.5) ----
+    contract = find_active_contract(session, client_code)
+    # Enrich invoice payload with VAT fields BEFORE rule evaluation so R7 (vat_calc)
+    # sees the same numbers the PDF will print.
+    if contract is not None:
+        excl = float(inv.get("amount") or 0)
+        vat_rate = float(contract.vat_rate or 0.05)
+        vat_amount = round(excl * vat_rate, 2)
+        inv["vat_rate"] = vat_rate
+        inv["vat_amount"] = vat_amount
+        inv["total_excl_vat"] = excl
+        inv["total_incl_vat"] = round(excl + vat_amount, 2)
+    rule_results = run_rule_engine(
+        inv,
+        contract,
+        session,
+        ctx={"signed_by": extraction.signed_by, "period": extraction.period},
+    )
+    rule_blocked = has_blocking_failure(rule_results)
+    log_event(
+        session,
+        "system",
+        "doc",
+        doc.id,
+        "rules_evaluated",
+        {
+            "contract_id": contract.id if contract else None,
+            "rules_run": len({r["rule_id"] for r in rule_results}),
+            "blocking_failures": sum(
+                1 for r in rule_results if not r["passed"] and r.get("severity") != "warning"
+            ),
+            "warnings": sum(1 for r in rule_results if r.get("severity") == "warning"),
+        },
+    )
+
     ts_id = str(uuid.uuid4())
     ts = Timesheet(
         id=ts_id,
@@ -151,7 +191,19 @@ def process_doc(session: Session, doc: DocAsset) -> Timesheet:
         status="validated",
         extraction=extraction.model_dump(mode="json"),
         match_result=match.model_dump(mode="json"),
-        validations=inv["validations"],
+        validations=inv["validations"]
+        + [
+            {
+                "rule_id": r["rule_id"],
+                "rule_name": r["rule_name"],
+                "passed": r["passed"],
+                "severity": r["severity"],
+                "message": r.get("message", ""),
+                "emp_id": r.get("emp_id"),
+                "line_idx": r.get("line_idx"),
+            }
+            for r in rule_results
+        ],
         resolved_rows=inv["line_items"],
     )
     session.add(ts)
@@ -175,6 +227,19 @@ def process_doc(session: Session, doc: DocAsset) -> Timesheet:
         ts.confidence_calibrated = round(
             min((m.confidence for m in match.matches if m.ambiguous), default=0.0), 4
         )
+    elif rule_blocked:
+        # BTP-style rule failure → HITL with rule_id surfaced for the chat agent
+        failed_ids = sorted(
+            {
+                r["rule_id"]
+                for r in rule_results
+                if not r["passed"] and r.get("severity") != "warning"
+            }
+        )
+        ts.routing = "hitl"
+        ts.status = "awaiting_review"
+        ts.hitl_reason = f"contract rule(s) failed: {', '.join(failed_ids)}"
+        ts.confidence_calibrated = 0.6
     elif has_failed_validation:
         ts.routing = "hitl"
         ts.status = "awaiting_review"
@@ -197,14 +262,52 @@ def process_doc(session: Session, doc: DocAsset) -> Timesheet:
 
     # generate invoice immediately for auto-routed; HITL waits for approval
     if ts.routing == "auto":
-        _generate_invoice(session, ts, inv)
+        _generate_invoice(session, ts, inv, rule_results=rule_results, contract=contract)
 
     return ts
 
 
-def _generate_invoice(session: Session, ts: Timesheet, inv: dict) -> Invoice:
+def _generate_invoice(
+    session: Session,
+    ts: Timesheet,
+    inv: dict,
+    rule_results: list | None = None,
+    contract=None,
+) -> Invoice:
     inv_id = str(uuid.uuid4())
-    pdf = render_invoice(inv, inv_id[:8])
+    # populate brief-required UAE tax invoice fields
+    from .models import Client
+
+    client = session.get(Client, inv["client_code"]) if inv.get("client_code") else None
+    customer_trn = (client.settings or {}).get("customer_trn") if client else None
+    vat_rate = float(contract.vat_rate) if contract else 0.05
+    excl = float(inv["amount"] or 0)
+    vat_amount = round(excl * vat_rate, 2)
+    incl = round(excl + vat_amount, 2)
+    sac_code = contract.sac_code if contract else None
+    place_of_supply = ((contract.extra or {}).get("place_of_supply") if contract else None) or "UAE"
+    # sequential invoice number per period
+    seq_count = (
+        session.query(Invoice).filter(Invoice.client_code == inv["client_code"]).count()
+    ) + 1
+    period_for_seq = (inv.get("period") or "0000-00").replace(" ", "").upper()
+    sequence_no = f"TIA-{inv['client_code'] or 'NA'}-{period_for_seq}-{seq_count:04d}"
+
+    # inv payload for Typst — extend with tax fields
+    inv_for_pdf = {
+        **inv,
+        "supplier_trn": "100123456700003",
+        "customer_trn": customer_trn,
+        "vat_rate": vat_rate,
+        "vat_amount": vat_amount,
+        "total_excl_vat": excl,
+        "total_incl_vat": incl,
+        "sac_code": sac_code,
+        "place_of_supply": place_of_supply,
+        "invoice_sequence_no": sequence_no,
+    }
+    pdf = render_invoice(inv_for_pdf, inv_id[:8])
+
     invoice = Invoice(
         id=inv_id,
         timesheet_id=ts.id,
@@ -215,6 +318,18 @@ def _generate_invoice(session: Session, ts: Timesheet, inv: dict) -> Invoice:
         line_items=inv["line_items"],
         pdf_path=pdf,
         status="generated",
+        invoice_sequence_no=sequence_no,
+        supplier_trn="100123456700003",
+        customer_trn=customer_trn,
+        vat_rate=vat_rate,
+        vat_amount=vat_amount,
+        total_excl_vat=excl,
+        total_incl_vat=incl,
+        sac_code=sac_code,
+        place_of_supply=place_of_supply,
+        contract_id=contract.id if contract else None,
+        client_approval_status="pending" if (inv.get("client_code") or "") else None,
+        rule_results=[dict(r) for r in (rule_results or [])],
     )
     session.add(invoice)
     ts.status = "invoice_generated"
@@ -225,7 +340,15 @@ def _generate_invoice(session: Session, ts: Timesheet, inv: dict) -> Invoice:
         "invoice",
         inv_id,
         "generated",
-        {"timesheet_id": ts.id, "amount": inv["amount"], "client": inv["client_code"], "pdf": pdf},
+        {
+            "timesheet_id": ts.id,
+            "amount": inv["amount"],
+            "vat_amount": vat_amount,
+            "total_incl_vat": incl,
+            "client": inv["client_code"],
+            "sequence_no": sequence_no,
+            "pdf": pdf,
+        },
     )
     return invoice
 
