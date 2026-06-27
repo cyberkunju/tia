@@ -16,7 +16,14 @@ import type { MessageContext, NormalizedInbound } from "../whatsapp/types.ts";
 import type { UpstreamClient } from "../upstream.ts";
 import type { BytesStore } from "./storage.ts";
 
-export type IngestStatus = "forwarded" | "invoiced" | "review" | "skipped" | "unsupported" | "welcome";
+export type IngestStatus =
+  | "forwarded"
+  | "invoiced"
+  | "review"
+  | "answered"
+  | "skipped"
+  | "unsupported"
+  | "welcome";
 
 export interface IngestResult {
   readonly status: IngestStatus;
@@ -139,6 +146,12 @@ export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
     if (result === null) {
       await sender.sendText(to, UPSTREAM_FAILED_TEXT);
       return { status: "skipped", reason: "upstream_failed" };
+    }
+    // "talk to the invoice" — the core answered a question rather than ingesting a sheet.
+    if (result.mode === "answer") {
+      const body = (result.answer ?? "").trim();
+      await sender.sendText(to, body.length > 0 ? body : "I couldn't find an answer to that.");
+      return { status: "answered" };
     }
     return deliverOutcome(to, result);
   }

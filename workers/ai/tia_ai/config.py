@@ -43,4 +43,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+# WhatsApp loop — the core pushes the approved invoice to the bridge's /internal/notify,
+# and the bridge fetches the invoice PDF back from the core at TIA_SELF_URL.
+# INTERNAL_SECRET must match the bridge's own INTERNAL_SECRET.
+WHATSAPP_BRIDGE_URL = os.getenv("WHATSAPP_BRIDGE_URL", "http://localhost:8088")
+TIA_SELF_URL = os.getenv("TIA_SELF_URL", "http://localhost:8000")
+INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", "tia-internal-dev")
+
 STAGING_DIR.mkdir(parents=True, exist_ok=True)

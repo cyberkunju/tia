@@ -575,9 +575,45 @@ def intake_whatsapp(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """Teammate's WhatsApp bridge posts here. We download the attachment (if any) or
-    treat message_text as an email-shaped body, then run the pipeline."""
+    """The WhatsApp bridge posts every inbound message here. We branch:
+
+      - an attachment (file/photo) → always a timesheet → run the pipeline.
+      - typed text that reads like a *question* AND comes from a sender who already
+        has a timesheet/invoice on file → "talk to the invoice": answer it with the
+        grounded chat agent, scoped to that sender's client. (mode="answer")
+      - everything else → treat as a timesheet body → run the pipeline. (mode="intake")
+
+    The bridge reads `mode` to decide whether to send the answer text or the invoice.
+    """
     import httpx
+
+    from ..whatsapp import answer_for_sender, classify_inbound_text, resolve_sender
+
+    # ---- talk-to-the-invoice: a question from a known sender, no attachment ----
+    if not payload.attachment_url and (payload.message_text or "").strip():
+        if classify_inbound_text(payload.message_text) == "question":
+            ctx = resolve_sender(s, payload.from_)
+            if ctx is not None:
+                result = answer_for_sender(s, payload.from_, payload.message_text)
+                log_event(
+                    s,
+                    payload.from_ or "whatsapp",
+                    "client",
+                    ctx.get("client_code") or "unknown",
+                    "whatsapp.question_answered",
+                    {
+                        "question": (payload.message_text or "")[:300],
+                        "tool_calls": [t.get("name") for t in result.get("tool_calls", [])],
+                        "invoice_id": ctx.get("invoice_id"),
+                    },
+                )
+                return {
+                    "mode": "answer",
+                    "answer": result.get("answer", ""),
+                    "citations": result.get("citations", []),
+                    "tool_calls": result.get("tool_calls", []),
+                    "model": result.get("model"),
+                }
 
     if payload.attachment_url:
         r = httpx.get(payload.attachment_url, timeout=60.0)
@@ -607,6 +643,7 @@ def intake_whatsapp(
     return JSONResponse(
         status_code=202,
         content={
+            "mode": "intake",
             "doc_id": doc.id,
             "timesheet_id": ts.id,
             "status": ts.status,
@@ -694,7 +731,27 @@ def approve(
     inv = approve_timesheet(
         s, ts, payload.by_user, payload.corrections, idempotency_key=idempotency_key
     )
-    return {"timesheet_id": ts.id, "status": ts.status, "invoice_id": inv.id, "amount": inv.amount}
+    # If this timesheet came in over WhatsApp, push the finished invoice back to the
+    # sender automatically (best-effort; never fails the approval).
+    from ..whatsapp import push_invoice_to_sender
+
+    push = push_invoice_to_sender(s, inv)
+    if push is not None:
+        log_event(
+            s,
+            "system",
+            "invoice",
+            inv.id,
+            "whatsapp.invoice_pushed" if push["ok"] else "whatsapp.invoice_push_failed",
+            push,
+        )
+    return {
+        "timesheet_id": ts.id,
+        "status": ts.status,
+        "invoice_id": inv.id,
+        "amount": inv.amount,
+        "whatsapp_push": push,
+    }
 
 
 class RejectPayload(BaseModel):
@@ -713,7 +770,25 @@ def reject(
     if not ts:
         raise HTTPException(404, "timesheet not found")
     reject_timesheet(s, ts, payload.by_user, payload.reason, idempotency_key=idempotency_key)
-    return {"timesheet_id": ts.id, "status": ts.status}
+    # Notify the WhatsApp sender (if this came in over WhatsApp) so they aren't left waiting.
+    from ..whatsapp import push_text_to_sender
+
+    note = (
+        "⚠️ We couldn't process your timesheet automatically and our team has closed it "
+        f"after review.\nReason: {payload.reason}\nPlease resend a corrected timesheet or "
+        "reply here and we'll help."
+    )
+    push = push_text_to_sender(s, ts, note)
+    if push is not None:
+        log_event(
+            s,
+            "system",
+            "timesheet",
+            ts.id,
+            "whatsapp.reject_notified" if push["ok"] else "whatsapp.reject_notify_failed",
+            push,
+        )
+    return {"timesheet_id": ts.id, "status": ts.status, "whatsapp_notified": bool(push and push["ok"])}
 
 
 # ---------------------------------------------------------------- invoices

@@ -45,6 +45,11 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TIA_SEED_ON_START: ${TIA_SEED_ON_START:-true}
       TIA_SYNTH_ON_START: ${TIA_SYNTH_ON_START:-true}
+      # WhatsApp loop: where the core pushes the approved invoice, and how the bridge
+      # fetches the PDF back from the core. INTERNAL_SECRET must match the bridge.
+      WHATSAPP_BRIDGE_URL: http://whatsapp:8088
+      TIA_SELF_URL: http://api:8000
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-tia-internal-dev}
     volumes:
       - staging:/app/staging
     expose:

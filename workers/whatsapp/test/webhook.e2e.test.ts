@@ -54,7 +54,7 @@ function fakeUpstream(status: string, invoice: InvoiceRef | null): { upstream: U
     async intakeWhatsapp(payload, idem): Promise<IntakeResult | null> {
       intakes.push({ payload, idem });
       n += 1;
-      return { docId: `doc-${n}`, timesheetId: `ts-${n}`, status };
+      return { mode: "intake", docId: `doc-${n}`, timesheetId: `ts-${n}`, status };
     },
     async invoiceForTimesheet(): Promise<InvoiceRef | null> { return invoice; },
     async invoicePdf() { return { bytes: new Uint8Array([1, 2, 3]), mime: "application/pdf" }; },
@@ -127,6 +127,25 @@ describe("bridge adapter → core /intake/whatsapp", () => {
     await fire(built.app, payload); await built.whenIdle();
     await fire(built.app, payload); await built.whenIdle();
     expect(intakes).toHaveLength(1);
+  });
+
+  test("answer mode → sends the chat answer text back, no intake side-effects", async () => {
+    const { sender, sent, docs } = capturingSender();
+    const intakes: any[] = [];
+    const upstream: UpstreamClient = {
+      async intakeWhatsapp(payload, idem): Promise<IntakeResult | null> {
+        intakes.push({ payload, idem });
+        return { mode: "answer", docId: "", timesheetId: "", status: "answer", answer: "Your invoice total is AED 10,446.75 incl. VAT [invoice:inv-1]." };
+      },
+      async invoiceForTimesheet(): Promise<InvoiceRef | null> { return null; },
+      async invoicePdf() { return null; },
+    };
+    const built = buildApp({ config, media: fakeMedia, sender, upstream });
+    await fire(built.app, [{ from: "9720", id: "wamid.q1", type: "text", text: { body: "what is my invoice total?" } }]);
+    await built.whenIdle();
+    expect(intakes).toHaveLength(1);
+    expect(docs).toHaveLength(0);
+    expect(sent.some((m) => m.body.includes("10,446.75"))).toBe(true);
   });
 
   test("rejects unsigned POST with 403 and forwards nothing", async () => {

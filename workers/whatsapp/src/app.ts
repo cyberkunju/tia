@@ -49,7 +49,13 @@ export function buildApp(overrides: BuildAppOverrides = {}): BuiltApp {
   const config = overrides.config ?? getConfig();
 
   const media = overrides.media ?? createMediaServiceFromConfig(config);
-  const sender = overrides.sender ?? createSenderFromConfig(config);
+  const sender =
+    overrides.sender ??
+    createSenderFromConfig(config, {
+      // Surface send outcomes (incl. closed-window / allowlist errors) for live ops.
+      onAudit: (e) =>
+        console.log(`[whatsapp] send ${e.kind} → ${e.to ?? "?"}: ${e.reason}${e.errorCode ? ` (code ${e.errorCode})` : ""}`),
+    });
   const storage = createDiskBytesStore(config.storage.stagingDir);
   const upstream =
     overrides.upstream ?? createUpstreamClient({ apiUrl: config.upstream.apiUrl });
@@ -67,8 +73,12 @@ export function buildApp(overrides: BuildAppOverrides = {}): BuiltApp {
     const id = normalized.messageId;
     if ((await dedup.claim(id)) === "duplicate") return;
     try {
-      await withSendFrom(normalized.phoneNumberId ?? ctx.phoneNumberId, () =>
+      const result = await withSendFrom(normalized.phoneNumberId ?? ctx.phoneNumberId, () =>
         intake.ingest(normalized, ctx),
+      );
+      console.log(
+        `[whatsapp] inbound ${normalized.kind} from ${normalized.phone} → ${result.status}` +
+          `${result.docId ? ` (${result.docId})` : ""}${result.reason ? ` [${result.reason}]` : ""}`,
       );
       if (id !== undefined) await dedup.markProcessed(id);
     } catch (error) {

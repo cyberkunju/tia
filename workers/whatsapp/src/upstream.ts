@@ -6,9 +6,16 @@
 export type FetchLike = typeof fetch;
 
 export interface IntakeResult {
+  /**
+   * "intake" — a timesheet was ingested (docId/timesheetId/status are set; the bridge
+   * delivers the invoice or a review notice). "answer" — the core answered a question
+   * ("talk to the invoice"); `answer` holds the reply text to send back.
+   */
+  readonly mode: "intake" | "answer";
   readonly docId: string;
   readonly timesheetId: string;
   readonly status: string;
+  readonly answer?: string;
 }
 
 export interface InvoiceRef {
@@ -64,9 +71,30 @@ export function createUpstreamClient(deps: UpstreamDeps): UpstreamClient {
         signal: AbortSignal.timeout(timeoutMs),
       });
       if (!res.ok) return null;
-      const j = (await res.json()) as { doc_id?: string; timesheet_id?: string; status?: string };
+      const j = (await res.json()) as {
+        mode?: string;
+        doc_id?: string;
+        timesheet_id?: string;
+        status?: string;
+        answer?: string;
+      };
+      // "talk to the invoice" — the core answered a question; no timesheet was created.
+      if (j.mode === "answer") {
+        return {
+          mode: "answer",
+          docId: "",
+          timesheetId: "",
+          status: "answer",
+          answer: j.answer ?? "",
+        };
+      }
       if (!j.doc_id || !j.timesheet_id) return null;
-      return { docId: j.doc_id, timesheetId: j.timesheet_id, status: j.status ?? "" };
+      return {
+        mode: "intake",
+        docId: j.doc_id,
+        timesheetId: j.timesheet_id,
+        status: j.status ?? "",
+      };
     } catch {
       return null;
     }
