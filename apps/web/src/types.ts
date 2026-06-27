@@ -259,11 +259,35 @@ export interface StatusResponse {
   api: string; db: string;
   openai: "configured" | "missing_key" | "down";
   modal_ocr: "configured" | "missing_key" | "down";
+  zoho_mail?: "configured" | "missing_creds" | string;
+  zoho_mail_address?: string | null;
   rust_dispatch: "ok" | "in_process" | "unreachable" | string;
   last_eval?: {
     passed: number | null; runnable: number | null;
     macro_f1: Record<string, number> | null;
   };
+}
+
+/* ── Audit chain integrity ─────────────────────────────────────── */
+
+export interface AuditChainReport {
+  ok: boolean;
+  total: number;
+  errors: {
+    event_id: string;
+    at: string | null;
+    kind: "hash_mismatch" | "prev_mismatch";
+    [k: string]: unknown;
+  }[];
+  head: string | null;
+}
+
+/* ── Rule catalogue (for /rules friendly subtext) ──────────────── */
+
+export interface RuleCatalogue {
+  count: number;
+  rules: { rule_id: string; function_name: string; friendly_message: string }[];
+  friendly_message_table: Record<string, string>;
 }
 
 /* ΓöÇΓöÇ Contract / RateCard / SOW for the Contract panel ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */

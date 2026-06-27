@@ -65,6 +65,30 @@ def _startup() -> None:
     init_db()
 
 
+@app.get("/rules")
+def list_rule_definitions() -> dict:
+    """Public catalogue of the BTP-style rule engine.
+
+    Surfaces every rule_id with its function name AND its client-friendly
+    explanation, so the frontend can render rule chips with prose subtext
+    instead of internal `message` payloads.
+    """
+    from ..validate.rules_v2 import FRIENDLY_RULE_MESSAGES, RULES
+
+    return {
+        "count": len(RULES),
+        "rules": [
+            {
+                "rule_id": rid,
+                "function_name": fn.__name__,
+                "friendly_message": FRIENDLY_RULE_MESSAGES.get(rid, ""),
+            }
+            for rid, fn in RULES
+        ],
+        "friendly_message_table": FRIENDLY_RULE_MESSAGES,
+    }
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}

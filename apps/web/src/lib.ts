@@ -73,3 +73,35 @@ export function humanize(s?: string | null): string {
 
 // TASC billing entity shown on tax invoices (sample/demo entity).
 export const TASC_ENTITY = { name: "TASC Outsourcing LLC", trn: "100312345600003" } as const;
+
+/**
+ * Visual heuristic for the ⚡ AUTO chip — matches the auto-dispatch concept
+ * (an invoice that went straight from validation to dispatched with no human
+ * click). The authoritative signal lives in the audit chain
+ * (event `auto_dispatched_within_tolerance`); the chip is only a hint, the
+ * Why? affordance reads the real chain.
+ *
+ * ponytail: status-only heuristic; tighten when an over-counting case shows up.
+ */
+export function isAutoDispatched(status: string | null | undefined): boolean {
+  return status === "dispatched";
+}
+
+/**
+ * Strip the common markdown tokens an LLM tends to emit even when told not to —
+ * `**bold**`, `*italics*`, leading `#` headers, `- ` bullets, inline `\`code\``,
+ * fenced code blocks. The AIDA panel renders text verbatim, so raw asterisks
+ * look broken. Belt-and-suspenders with the system prompt.
+ */
+export function stripMarkdown(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/```[\w-]*\n?([\s\S]*?)```/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2")
+    .replace(/(^|\s)([*_])(?!\s)([^*_\n]+?)\2(?=\s|[.,;:!?)]|$)/g, "$1$3")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "• ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}

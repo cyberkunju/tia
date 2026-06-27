@@ -45,8 +45,13 @@ STRICT RULES:
 3. Cite your sources as [kind:id] inline, e.g. "Invoice [invoice:9c2d...] failed
    rule R4 with OT 50h vs cap 20%."
 4. Prefer the smallest tool call set. Don't dump everything.
-5. Be concise: short paragraphs, no marketing tone.
-6. If you call get_invoice / get_contract / get_events / get_client_settings,
+5. **REPLY IN PLAIN PROSE. NO MARKDOWN.** Do not use **bold**, *italics*,
+   numbered lists, bullet points, headers (#), backticks, or any other markdown
+   formatting. Just plain sentences. Use semicolons or paragraph breaks for
+   structure if needed. The chat UI renders text verbatim — markdown leaks as
+   raw asterisks which looks broken.
+6. Be concise: short paragraphs, no marketing tone.
+7. If you call get_invoice / get_contract / get_events / get_client_settings,
    you may use their `rule_results` / `payload` / `settings` JSON to cite specific
    rule IDs (R1..R10) or events.
 """
@@ -73,9 +78,10 @@ _DENIED = {"found": False, "access": "denied", "reason": "outside your client sc
 
 def _inv_client(session: Session, entity_id: str) -> str | None:
     """Resolve the owning client_code for an invoice/timesheet/client entity id."""
-    inv = session.get(Invoice, entity_id) or session.query(Invoice).filter(
-        Invoice.invoice_sequence_no == entity_id
-    ).first()
+    inv = (
+        session.get(Invoice, entity_id)
+        or session.query(Invoice).filter(Invoice.invoice_sequence_no == entity_id).first()
+    )
     if inv:
         return inv.client_code
     ts = session.get(Timesheet, entity_id)

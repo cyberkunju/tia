@@ -218,4 +218,12 @@ export const api = {
   /* ΓöÇΓöÇ admin (stage demo helper) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   demoReset: () => req<{ status: string; wiped: Record<string, number> }>("/admin/demo-reset", { method: "POST" }),
+
+  /* ── rule catalogue (for friendly subtext on chips & config) ── */
+
+  listRules: () => req<import("./types").RuleCatalogue>("/rules"),
+
+  /* ── audit chain integrity (tamper-evident hash chain) ──────── */
+
+  verifyAuditChain: () => req<import("./types").AuditChainReport>("/audit/verify"),
 };
