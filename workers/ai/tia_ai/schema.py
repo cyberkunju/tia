@@ -52,6 +52,10 @@ class TimesheetExtraction(BaseModel):
     signed_by: str | None = None
     rows: list[TimesheetRow] = Field(default_factory=list)
     confidence_per_field: dict[str, float] = Field(default_factory=dict)
+    # Per-row provenance anchored to the source document (vision path only).
+    # Each entry: {row_idx, bbox: [x1,y1,x2,y2], coord_space: "pixel"|"norm",
+    #             image_w, image_h, source_text, source_block_id}
+    row_provenance: list[dict] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------

@@ -201,7 +201,7 @@ def list_docs(s: Session = Depends(db_session), limit: int = 100) -> list[dict]:
     docs = s.query(DocAsset).order_by(DocAsset.uploaded_at.desc()).limit(limit).all()
     out = []
     for d in docs:
-        ts = s.query(Timesheet).filter_by(doc_id=d.id).first()
+        ts = s.query(Timesheet).filter_by(doc_id=d.id).order_by(Timesheet.created_at.desc()).first()
         out.append(
             {
                 "doc_id": d.id,
@@ -225,7 +225,7 @@ def get_doc(doc_id: str, s: Session = Depends(db_session)) -> dict:
     d = s.get(DocAsset, doc_id)
     if not d:
         raise HTTPException(404, "doc not found")
-    ts = s.query(Timesheet).filter_by(doc_id=doc_id).first()
+    ts = s.query(Timesheet).filter_by(doc_id=doc_id).order_by(Timesheet.created_at.desc()).first()
     invoices = s.query(Invoice).filter_by(timesheet_id=ts.id).all() if ts else []
     return {
         "doc": {
@@ -430,6 +430,25 @@ def dispatch(
     i = s.get(Invoice, inv_id)
     if not i:
         raise HTTPException(404, "invoice not found")
+    # Delegate to the Rust dispatch service when configured, else inline.
+    import os
+
+    rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
+    if rust_url:
+        import httpx
+
+        s.commit()  # release sqlite lock so the Rust process can write
+        try:
+            r = httpx.post(
+                f"{rust_url}/dispatch/{inv_id}",
+                json={"by_user": payload.by_user},
+                headers={"Idempotency-Key": idempotency_key},
+                timeout=10.0,
+            )
+            r.raise_for_status()
+            return r.json()
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"rust dispatch unreachable: {e}") from e
     return dispatch_invoice(s, i, payload.by_user, idempotency_key)
 
 

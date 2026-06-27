@@ -19,6 +19,16 @@ export interface ExtractedRow {
   notes?: string | null;
 }
 
+export interface RowProvenance {
+  row_idx: number;
+  bbox: [number, number, number, number];
+  coord_space: "pixel" | "norm";
+  image_w: number;
+  image_h: number;
+  source_text: string | null;
+  source_block_id: string | null;
+}
+
 export interface TimesheetExtraction {
   client_code?: string | null;
   client_hint?: string | null;
@@ -26,6 +36,7 @@ export interface TimesheetExtraction {
   signed_by?: string | null;
   rows: ExtractedRow[];
   confidence_per_field: Record<string, number>;
+  row_provenance?: RowProvenance[];
 }
 
 export interface Candidate {

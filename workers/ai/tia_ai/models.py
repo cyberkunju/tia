@@ -158,6 +158,119 @@ class Invoice(Base):
     dispatch_idempotency_key: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
     dispatch_attempted_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)
+    # UAE Federal Tax Authority requirements
+    invoice_sequence_no: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    supplier_trn: Mapped[str | None] = mapped_column(String, nullable=True)
+    customer_trn: Mapped[str | None] = mapped_column(String, nullable=True)
+    vat_rate: Mapped[float] = mapped_column(Float, default=0.05)
+    vat_amount: Mapped[float] = mapped_column(Float, default=0)
+    total_excl_vat: Mapped[float] = mapped_column(Float, default=0)
+    total_incl_vat: Mapped[float] = mapped_column(Float, default=0)
+    sac_code: Mapped[str | None] = mapped_column(String, nullable=True)  # India only
+    place_of_supply: Mapped[str | None] = mapped_column(String, nullable=True)
+    due_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    contract_id: Mapped[str | None] = mapped_column(
+        ForeignKey("contracts.id"), index=True, nullable=True
+    )
+    # client-approval flow (brief §4.7)
+    client_approval_status: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # pending|approved|rejected
+    client_approved_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    client_approval_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # validation provenance — list of {rule_id, passed, expected, actual, severity}
+    rule_results: Mapped[list] = mapped_column(JSON, default=list)
+
+
+# --------------------------- contracts (BTP-style validation profile) -------
+
+
+class Contract(Base):
+    """Per-client × period contract — the source of truth for billing rules.
+
+    Mentor's key insight (brief §4.5 calls it a "BTP-style configurable rule set"):
+    the invoice must reconcile against the *contract*, not just the timesheet.
+    """
+
+    __tablename__ = "contracts"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    client_code: Mapped[str] = mapped_column(ForeignKey("clients.code"), index=True)
+    name: Mapped[str] = mapped_column(String)  # human label
+    type: Mapped[str] = mapped_column(String, default="TIME_AND_MATERIALS")
+    # TIME_AND_MATERIALS | FIXED_SCOPE | RETAINER
+    start_date: Mapped[str] = mapped_column(String)  # YYYY-MM-DD
+    end_date: Mapped[str | None] = mapped_column(String, nullable=True)
+    jurisdiction: Mapped[str] = mapped_column(String, default="UAE")  # UAE|KSA|IN
+    currency: Mapped[str] = mapped_column(String, default="AED")
+    vat_rate: Mapped[float] = mapped_column(Float, default=0.05)  # 5% UAE, 15% KSA, 18% IN
+    sac_code: Mapped[str | None] = mapped_column(String, nullable=True)  # 998513 for IN
+    markup_pct: Mapped[float] = mapped_column(Float, default=0.20)  # 20% over employee cost
+    max_ot_pct: Mapped[float] = mapped_column(Float, default=0.20)  # OT cap
+    payment_terms_days: Mapped[int] = mapped_column(Integer, default=30)
+    billing_cadence: Mapped[str] = mapped_column(String, default="MONTHLY")
+    approver_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    approver_email: Mapped[str | None] = mapped_column(String, nullable=True)
+    # roster of authorized emp_ids (subset of Employees.emp_id under this client)
+    authorized_emp_ids: Mapped[list] = mapped_column(JSON, default=list)
+    # free-form extra params used by BTP-style rules
+    extra: Mapped[dict] = mapped_column(JSON, default=dict)
+    active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[dt.datetime] = mapped_column(default=_now)
+
+
+class RateCard(Base):
+    """Billing rate per labor category for a given contract.
+
+    Drives rule R2 (rate_compliance_per_category).
+    """
+
+    __tablename__ = "rate_cards"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    contract_id: Mapped[str] = mapped_column(ForeignKey("contracts.id"), index=True)
+    labor_category: Mapped[str] = mapped_column(String)
+    # e.g. "Software Engineer", "HR Manager", "Operations Manager"
+    regular_rate: Mapped[float] = mapped_column(Float, default=0)  # AED/hr
+    ot_rate: Mapped[float] = mapped_column(Float, default=0)  # 1.25x basic
+    night_rate: Mapped[float] = mapped_column(Float, default=0)  # 1.5x basic
+    weekend_rate: Mapped[float] = mapped_column(Float, default=0)
+    holiday_rate: Mapped[float] = mapped_column(Float, default=0)
+
+
+class SOW(Base):
+    """Statement of Work — drives rule R5 (sow_hours_not_exceeded).
+
+    For FIXED_SCOPE contracts the SOW caps total hours per deliverable. If a worker
+    completes the deliverable early but a timesheet keeps charging hours, R5 fires.
+    """
+
+    __tablename__ = "sows"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    contract_id: Mapped[str] = mapped_column(ForeignKey("contracts.id"), index=True)
+    deliverable: Mapped[str] = mapped_column(String)
+    hours_expected: Mapped[float] = mapped_column(Float, default=0)
+    hours_consumed: Mapped[float] = mapped_column(Float, default=0)
+    status: Mapped[str] = mapped_column(String, default="OPEN")  # OPEN|COMPLETED|CANCELLED
+    completed_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# --------------------------- queries / threads ---------------------------
+
+
+class Query(Base):
+    """Client-raised query (brief §4.7 'raise queries for FinOps to answer')."""
+
+    __tablename__ = "queries"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    client_code: Mapped[str] = mapped_column(ForeignKey("clients.code"), index=True)
+    invoice_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    subject: Mapped[str] = mapped_column(String)
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String, default="open")  # open|answered|closed
+    raised_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    raised_at: Mapped[dt.datetime] = mapped_column(default=_now)
+    answered_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    # message thread: list of {at, by, role, body}
+    thread: Mapped[list] = mapped_column(JSON, default=list)
 
 
 class Correction(Base):

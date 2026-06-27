@@ -1,4 +1,4 @@
-.PHONY: help install seed synth eval test api web whatsapp dev demo demo-seed-3 clean
+.PHONY: help install seed synth eval test api web whatsapp dispatch dispatch-build dev demo demo-seed-3 clean
 
 help:
 	@echo "TIA — Touchless Invoice Agent"
@@ -11,6 +11,7 @@ help:
 	@echo "  make api        run the core FastAPI on :8000"
 	@echo "  make web        run the Vite dev server on :5173"
 	@echo "  make whatsapp   run the WhatsApp bridge on :8088 (forwards to the core)"
+	@echo "  make dispatch   build + run Rust dispatch service on :8001"
 	@echo "  make dev        api + web in parallel"
 	@echo "  make demo       full: install, seed, synth, eval, then run dev"
 
@@ -40,6 +41,15 @@ web:
 
 whatsapp:
 	cd workers/whatsapp && bun run dev
+
+dispatch-build:
+	cd services/dispatch && cargo build --release
+
+dispatch: dispatch-build
+	@DATABASE_URL="sqlite:///$(PWD)/tia.db" \
+	 OUTBOX_DIR="$(PWD)/staging/outbox" \
+	 PORT=8001 \
+	 ./services/dispatch/target/release/tia-dispatch
 
 dev:
 	@( cd workers/ai && uv run uvicorn tia_ai.api.app:app --host 0.0.0.0 --port 8000 --reload ) & \

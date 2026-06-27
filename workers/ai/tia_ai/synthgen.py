@@ -395,6 +395,10 @@ def generate_all() -> list[str]:
     case08_aisha_3way()
     case09_messy_excel()
     case10_email_quoted_reply()
+    case11_clean_pdf()
+    case12_rate_mismatch()
+    case13_out_of_scope_sow()
+    case14_ot_over_cap()
     return sorted(p.name for p in SYN.iterdir() if p.is_file() and p.name != ".gitkeep")
 
 
@@ -544,6 +548,199 @@ Finance team
                         "ambiguous": False,
                     },
                 ],
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------- case 11 (clean PDF — required §7.5 deliverable)
+def case11_clean_pdf() -> None:
+    """A typed/printed PDF with a real text layer — satisfies brief §7.5
+    'sample inputs: Excel, PDF, handwritten'. Uses Typst so pdfplumber can
+    extract text cleanly without OCR."""
+    import typst
+
+    src = f"""
+#set page(paper: "a4", margin: 1.5cm)
+#set text(size: 11pt)
+
+#text(size: 18pt, weight: "bold")[Monthly Timesheet]
+
+#v(6pt)
+Client: Emirates Steel Industries LLC (CL001)
+
+Period: {PERIOD}
+
+#v(10pt)
+
+EMP10001 Carlos Smith - 22 days, 2 OT hours
+
+EMP10002 Ahmed Khan - 20 days, leave: AL
+
+EMP10003 Meera Al Rashid - 21 days
+
+#v(20pt)
+Approved by: Site Manager
+"""
+    typ_path = SYN / "_case_11_clean.typ"
+    pdf_path = SYN / "case_11_clean_pdf.pdf"
+    typ_path.write_text(src, encoding="utf-8")
+    typst.compile(str(typ_path), output=str(pdf_path))
+    typ_path.unlink(missing_ok=True)
+    _gold(
+        "11",
+        {
+            "case": "11",
+            "channel": "upload",
+            "input": "case_11_clean_pdf.pdf",
+            "expect": {
+                "client_code": "CL001",
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "emp_id": "EMP10001",
+                        "employee_name": "Carlos Smith",
+                        "days_worked": 22,
+                        "ot_hours": 2,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                    {
+                        "emp_id": "EMP10002",
+                        "employee_name": "Ahmed Khan",
+                        "days_worked": 20,
+                        "leave_codes": ["AL"],
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                    {
+                        "emp_id": "EMP10003",
+                        "employee_name": "Meera Al Rashid",
+                        "days_worked": 21,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                ],
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------- case 12 (rate mismatch — rule R2 fires)
+def case12_rate_mismatch() -> None:
+    """Client bills Carlos Smith at AED 300/hr but contract rate card says 225/hr."""
+    body = f"""Subject: June timesheet — special rate request
+
+Client: Emirates Steel Industries LLC (CL001)
+Period: {PERIOD}
+
+EMP10001 Carlos Smith - 22 days, 2 OT hours
+Billing rate: AED 300/hr (please honor this rate per Q1 agreement)
+
+Best,
+Site Manager
+"""
+    _write(SYN / "case_12_rate_mismatch.eml", body)
+    _gold(
+        "12",
+        {
+            "case": "12",
+            "channel": "email",
+            "input": "case_12_rate_mismatch.eml",
+            "expect": {
+                "client_code": "CL001",
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "emp_id": "EMP10001",
+                        "employee_name": "Carlos Smith",
+                        "days_worked": 22,
+                        "ot_hours": 2,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                ],
+                # contract-bound rule R2 should fire (billed rate exceeds rate-card regular_rate)
+                "expected_routing": "hitl",
+                "expected_rule_violation": "R2_rate_compliance_per_category",
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------- case 13 (out-of-scope hours — rule R5 fires)
+def case13_out_of_scope_sow() -> None:
+    """CL002 Emaar has FIXED_SCOPE contract; 'Design phase' SOW is COMPLETED. Bill hours
+    against that closed deliverable to trigger R5."""
+    body = f"""Subject: June work — Design phase continuation
+
+Client: Emaar Properties PJSC (CL002)
+Period: {PERIOD}
+SOW: Design phase
+
+EMP10021 - 22 days, 16 OT hours (design rework as agreed)
+
+The team continued refining the design through June.
+
+Regards,
+Operations
+"""
+    _write(SYN / "case_13_out_of_scope_sow.eml", body)
+    _gold(
+        "13",
+        {
+            "case": "13",
+            "channel": "email",
+            "input": "case_13_out_of_scope_sow.eml",
+            "expect": {
+                "client_code": "CL002",
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "emp_id": "EMP10021",
+                        "days_worked": 22,
+                        "ot_hours": 16,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                ],
+                "expected_routing": "hitl",
+                "expected_rule_violation": "R5_sow_hours_not_exceeded",
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------- case 14 (OT over contract cap — rule R4 fires)
+def case14_ot_over_cap() -> None:
+    """OT 50 hours on top of 22×8=176 regular hours = 28% — exceeds contract max_ot_pct=20%."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Timesheet"
+    ws.append(["Emp ID", "Full Name", "Client Code", "Period", "Working Days", "OT Hours", "Leave"])
+    ws.append(("EMP10001", "Carlos Smith", "CL001", PERIOD, 22, 50, ""))
+    wb.save(SYN / "case_14_ot_over_cap.xlsx")
+    _gold(
+        "14",
+        {
+            "case": "14",
+            "channel": "upload",
+            "input": "case_14_ot_over_cap.xlsx",
+            "expect": {
+                "client_code": "CL001",
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "emp_id": "EMP10001",
+                        "employee_name": "Carlos Smith",
+                        "days_worked": 22,
+                        "ot_hours": 50,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                ],
+                "expected_routing": "hitl",
+                "expected_rule_violation": "R4_ot_within_contract_cap",
             },
         },
     )

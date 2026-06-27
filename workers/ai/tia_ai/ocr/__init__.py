@@ -36,7 +36,13 @@ return ONLY a JSON object matching exactly this schema (no prose, no code fences
 }
 Transcribe handwriting faithfully. Do not invent values; use null when unsure."""
 
-LAYOUT_PROMPT = "prompt_layout_all_en"
+LAYOUT_PROMPT = """Identify each text block in this document and respond with ONLY a JSON array
+(no prose, no code fences) of objects matching this schema:
+[{"bbox": [x1, y1, x2, y2], "category": "Header|Text|Table|Picture", "text": "<exact transcription>"}]
+
+Use pixel coordinates relative to the input image with origin at the top-left. Each block
+should be a contiguous logical region (a single line of body text, a heading, a table cell
+group, etc). Do not invent coordinates; if you cannot localize a region, omit it."""
 
 
 def _headers() -> dict[str, str]:
@@ -97,9 +103,23 @@ def glm_kie(
 
 
 def glm_layout(image_bytes: bytes, mime: str = "image/png", timeout: float = 180.0) -> list[dict]:
-    """[{bbox,category,text}] for provenance anchoring."""
+    """[{bbox,category,text}] for provenance anchoring.
+
+    Tolerant of three shapes the model occasionally returns:
+      - a JSON array (the schema we asked for)
+      - a single object with bbox/text (a "whole-page" block)
+      - `{"blocks": [...]}` wrapper
+    """
     content = _call(image_bytes, LAYOUT_PROMPT, mime=mime, timeout=timeout)
     try:
-        return json.loads(_strip_json(content))
+        data = json.loads(_strip_json(content))
     except (json.JSONDecodeError, ValueError):
         return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if "blocks" in data and isinstance(data["blocks"], list):
+            return data["blocks"]
+        if "bbox" in data:
+            return [data]
+    return []

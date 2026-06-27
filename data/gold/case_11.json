@@ -1,0 +1,36 @@
+{
+  "case": "11",
+  "channel": "upload",
+  "input": "case_11_clean_pdf.pdf",
+  "expect": {
+    "client_code": "CL001",
+    "period": "June 2026",
+    "rows": [
+      {
+        "emp_id": "EMP10001",
+        "employee_name": "Carlos Smith",
+        "days_worked": 22,
+        "ot_hours": 2,
+        "resolved": true,
+        "ambiguous": false
+      },
+      {
+        "emp_id": "EMP10002",
+        "employee_name": "Ahmed Khan",
+        "days_worked": 20,
+        "leave_codes": [
+          "AL"
+        ],
+        "resolved": true,
+        "ambiguous": false
+      },
+      {
+        "emp_id": "EMP10003",
+        "employee_name": "Meera Al Rashid",
+        "days_worked": 21,
+        "resolved": true,
+        "ambiguous": false
+      }
+    ]
+  }
+}

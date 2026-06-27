@@ -1,0 +1,20 @@
+[package]
+name = "tia-dispatch"
+version = "0.1.0"
+edition = "2021"
+description = "TIA invoice dispatch service (Rust + axum + sqlx). Idempotent external side-effect adapter."
+
+[dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "sqlite", "macros"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter"] }
+
+[profile.release]
+lto = "thin"
+strip = true

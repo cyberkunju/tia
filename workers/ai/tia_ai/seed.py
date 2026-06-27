@@ -1,5 +1,8 @@
 """Seed master data from the TASC sample xlsx into the DB.
 
+Also seeds Contract / RateCard / SOW per-client so the BTP-style validation
+rule engine has the per-jurisdiction config it needs (brief §4.1 & §4.5).
+
 Run: `uv run python -m tia_ai.seed`
 """
 
@@ -8,8 +11,8 @@ from __future__ import annotations
 import openpyxl
 
 from .config import SEED_XLSX
-from .db import get_session, init_db
-from .models import Client, Employee, Payroll
+from .db import SessionLocal, engine, init_db
+from .models import Base, Client, Employee, Payroll
 
 
 def _rows(ws):
@@ -28,17 +31,22 @@ def _num(v) -> float:
         return 0.0
 
 
+def get_session():
+    # local accessor so the rest of this module reads naturally; mirrors db.get_session
+    from .db import get_session as _gs
+
+    return _gs()
+
+
 def seed() -> dict[str, int]:
-    init_db()
+    # Drop+create so new columns/tables (Contract, RateCard, SOW, Query +
+    # extended Invoice fields) are picked up on every reseed.
+    Base.metadata.drop_all(engine)
+    Base.metadata.create_all(engine)
     wb = openpyxl.load_workbook(SEED_XLSX, read_only=True, data_only=True)
     counts = {"clients": 0, "employees": 0, "payroll": 0}
 
     with get_session() as s:
-        # wipe master tables for idempotent reseed
-        s.query(Payroll).delete()
-        s.query(Employee).delete()
-        s.query(Client).delete()
-
         for r in _rows(wb["Customers"]):
             s.add(
                 Client(
@@ -103,6 +111,10 @@ def seed() -> dict[str, int]:
                 )
                 counts["payroll"] += 1
 
+    # contracts depend on master data
+    from .seed_contracts import seed_contracts
+
+    counts.update(seed_contracts())
     return counts
 
 

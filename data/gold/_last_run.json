@@ -1,17 +1,17 @@
 {
-  "total_cases": 7,
-  "passed": 7,
-  "runnable": 7,
+  "total_cases": 14,
+  "passed": 13,
+  "runnable": 13,
   "macro_f1": {
-    "emp_id": 0.5714,
+    "emp_id": 0.6923,
     "days_worked": 1.0,
-    "ot_hours": 0.5714,
-    "hours": 0.1429,
-    "leave_codes": 0.4286,
+    "ot_hours": 0.6923,
+    "hours": 0.0769,
+    "leave_codes": 0.3077,
     "resolved": 1.0,
     "ambiguous": 1.0
   },
-  "ece": 0.0775,
+  "ece": 0.0712,
   "results": [
     {
       "case": "01",
@@ -98,7 +98,7 @@
           "confidence": 0.99
         }
       ],
-      "invoice_amount": 10374.87,
+      "invoice_amount": 10825.96,
       "client_code": "CL001",
       "exceptions": 0,
       "latency_s": 0.0,
@@ -169,7 +169,7 @@
           "confidence": 0.9
         }
       ],
-      "invoice_amount": 33888.24,
+      "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
       "latency_s": 0.0,
@@ -253,126 +253,8 @@
     },
     {
       "case": "04",
-      "input": "case_04_handwritten.png",
-      "channel": "upload",
-      "passed": true,
-      "f1": {
-        "emp_id": 0.0,
-        "days_worked": 1.0,
-        "ot_hours": 1.0,
-        "hours": 0.0,
-        "leave_codes": 1.0,
-        "resolved": 1.0,
-        "ambiguous": 1.0
-      },
-      "extracted_rows": 3,
-      "expected_rows": 3,
-      "matches": [
-        {
-          "row_idx": 0,
-          "chosen": "EMP10001",
-          "ambiguous": false,
-          "confidence": 0.9
-        },
-        {
-          "row_idx": 1,
-          "chosen": "EMP10002",
-          "ambiguous": false,
-          "confidence": 0.9
-        },
-        {
-          "row_idx": 2,
-          "chosen": "EMP10003",
-          "ambiguous": false,
-          "confidence": 0.9
-        }
-      ],
-      "invoice_amount": 33888.24,
-      "client_code": "CL001",
-      "exceptions": 0,
-      "latency_s": 2.112,
-      "calibration": [
-        [
-          0.9,
-          true
-        ],
-        [
-          0.9,
-          true
-        ],
-        [
-          0.9,
-          true
-        ]
-      ],
-      "details": [
-        {
-          "employee_name": "Carlos Smith",
-          "matched": true,
-          "expected": {
-            "employee_name": "Carlos Smith",
-            "days_worked": 22,
-            "ot_hours": 2,
-            "resolved": true,
-            "ambiguous": false
-          },
-          "actual": {
-            "emp_id": "EMP10001",
-            "days_worked": 22.0,
-            "ot_hours": 2.0,
-            "hours": null,
-            "leave_codes": [],
-            "resolved": true,
-            "ambiguous": false
-          },
-          "row_ok": true
-        },
-        {
-          "employee_name": "Ahmed Khan",
-          "matched": true,
-          "expected": {
-            "employee_name": "Ahmed Khan",
-            "days_worked": 20,
-            "leave_codes": [
-              "AL"
-            ],
-            "resolved": true,
-            "ambiguous": false
-          },
-          "actual": {
-            "emp_id": "EMP10002",
-            "days_worked": 20.0,
-            "ot_hours": null,
-            "hours": null,
-            "leave_codes": [
-              "AL"
-            ],
-            "resolved": true,
-            "ambiguous": false
-          },
-          "row_ok": true
-        },
-        {
-          "employee_name": "Meera Al Rashid",
-          "matched": true,
-          "expected": {
-            "employee_name": "Meera Al Rashid",
-            "days_worked": 21,
-            "resolved": true,
-            "ambiguous": false
-          },
-          "actual": {
-            "emp_id": "EMP10003",
-            "days_worked": 21.0,
-            "ot_hours": null,
-            "hours": null,
-            "leave_codes": [],
-            "resolved": true,
-            "ambiguous": false
-          },
-          "row_ok": true
-        }
-      ]
+      "skipped": true,
+      "reason": "vision case \u2014 no GLM_OCR_API_KEY set"
     },
     {
       "case": "05",
@@ -410,10 +292,10 @@
           "confidence": 0.99
         }
       ],
-      "invoice_amount": 6431.05,
+      "invoice_amount": 6710.67,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.005,
+      "latency_s": 0.004,
       "calibration": [
         [
           0.99,
@@ -537,7 +419,7 @@
           "confidence": 0.99
         }
       ],
-      "invoice_amount": 19546.36,
+      "invoice_amount": 20380.13,
       "client_code": "CL001",
       "exceptions": 0,
       "latency_s": 0.0,
@@ -639,7 +521,7 @@
           "confidence": 0.99
         }
       ],
-      "invoice_amount": 33888.24,
+      "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
       "latency_s": 0.003,
@@ -719,6 +601,586 @@
             "emp_id": "EMP10003",
             "days_worked": 21.0,
             "ot_hours": 0.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "08",
+      "input": "case_08_aisha_3way.eml",
+      "channel": "email",
+      "passed": true,
+      "f1": {
+        "emp_id": 0.0,
+        "days_worked": 1.0,
+        "ot_hours": 0.0,
+        "hours": 0.0,
+        "leave_codes": 0.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 1,
+      "expected_rows": 1,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": null,
+          "ambiguous": true,
+          "confidence": 0.45
+        }
+      ],
+      "invoice_amount": 0.0,
+      "client_code": null,
+      "exceptions": 1,
+      "latency_s": 0.0,
+      "calibration": [
+        [
+          0.45,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": "Aisha Al Zaabi",
+          "matched": true,
+          "expected": {
+            "employee_name": "Aisha Al Zaabi",
+            "days_worked": 22,
+            "resolved": false,
+            "ambiguous": true,
+            "candidate_emp_ids": [
+              "EMP10058",
+              "EMP10072",
+              "EMP10077"
+            ]
+          },
+          "actual": {
+            "emp_id": null,
+            "days_worked": 22.0,
+            "ot_hours": null,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": false,
+            "ambiguous": true
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "09",
+      "input": "case_09_messy.xlsx",
+      "channel": "upload",
+      "passed": true,
+      "f1": {
+        "emp_id": 1.0,
+        "days_worked": 1.0,
+        "ot_hours": 1.0,
+        "hours": 0.0,
+        "leave_codes": 1.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 3,
+      "expected_rows": 3,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": "EMP10001",
+          "ambiguous": false,
+          "confidence": 0.99
+        },
+        {
+          "row_idx": 1,
+          "chosen": "EMP10002",
+          "ambiguous": false,
+          "confidence": 0.99
+        },
+        {
+          "row_idx": 2,
+          "chosen": "EMP10003",
+          "ambiguous": false,
+          "confidence": 0.99
+        }
+      ],
+      "invoice_amount": 35361.65,
+      "client_code": "CL001",
+      "exceptions": 0,
+      "latency_s": 0.003,
+      "calibration": [
+        [
+          0.99,
+          true
+        ],
+        [
+          0.99,
+          true
+        ],
+        [
+          0.99,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": "Carlos Smith",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10001",
+            "employee_name": "Carlos Smith",
+            "days_worked": 22,
+            "ot_hours": 2,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10001",
+            "days_worked": 22.0,
+            "ot_hours": 2.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        },
+        {
+          "employee_name": "Ahmed Khan",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10002",
+            "employee_name": "Ahmed Khan",
+            "days_worked": 20,
+            "ot_hours": 4,
+            "leave_codes": [
+              "AL"
+            ],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10002",
+            "days_worked": 20.0,
+            "ot_hours": 4.0,
+            "hours": null,
+            "leave_codes": [
+              "AL"
+            ],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        },
+        {
+          "employee_name": "Meera Al Rashid",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10003",
+            "employee_name": "Meera Al Rashid",
+            "days_worked": 21,
+            "ot_hours": 0,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10003",
+            "days_worked": 21.0,
+            "ot_hours": 0.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "10",
+      "input": "case_10_email_quoted_reply.eml",
+      "channel": "email",
+      "passed": true,
+      "f1": {
+        "emp_id": 0.0,
+        "days_worked": 1.0,
+        "ot_hours": 1.0,
+        "hours": 0.0,
+        "leave_codes": 0.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 2,
+      "expected_rows": 2,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": "EMP10001",
+          "ambiguous": false,
+          "confidence": 0.9
+        },
+        {
+          "row_idx": 1,
+          "chosen": "EMP10002",
+          "ambiguous": false,
+          "confidence": 0.9
+        }
+      ],
+      "invoice_amount": 20077.3,
+      "client_code": "CL001",
+      "exceptions": 0,
+      "latency_s": 0.0,
+      "calibration": [
+        [
+          0.9,
+          true
+        ],
+        [
+          0.9,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": "Carlos Smith",
+          "matched": true,
+          "expected": {
+            "employee_name": "Carlos Smith",
+            "days_worked": 22,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10001",
+            "days_worked": 22.0,
+            "ot_hours": null,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        },
+        {
+          "employee_name": "Ahmed Khan",
+          "matched": true,
+          "expected": {
+            "employee_name": "Ahmed Khan",
+            "days_worked": 20,
+            "ot_hours": 4,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10002",
+            "days_worked": 20.0,
+            "ot_hours": 4.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "11",
+      "input": "case_11_clean_pdf.pdf",
+      "channel": "upload",
+      "passed": true,
+      "f1": {
+        "emp_id": 1.0,
+        "days_worked": 1.0,
+        "ot_hours": 1.0,
+        "hours": 0.0,
+        "leave_codes": 1.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 3,
+      "expected_rows": 3,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": "EMP10001",
+          "ambiguous": false,
+          "confidence": 0.99
+        },
+        {
+          "row_idx": 1,
+          "chosen": "EMP10002",
+          "ambiguous": false,
+          "confidence": 0.99
+        },
+        {
+          "row_idx": 2,
+          "chosen": "EMP10003",
+          "ambiguous": false,
+          "confidence": 0.99
+        }
+      ],
+      "invoice_amount": 35361.65,
+      "client_code": "CL001",
+      "exceptions": 0,
+      "latency_s": 0.044,
+      "calibration": [
+        [
+          0.99,
+          true
+        ],
+        [
+          0.99,
+          true
+        ],
+        [
+          0.99,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": "Carlos Smith",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10001",
+            "employee_name": "Carlos Smith",
+            "days_worked": 22,
+            "ot_hours": 2,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10001",
+            "days_worked": 22.0,
+            "ot_hours": 2.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        },
+        {
+          "employee_name": "Ahmed Khan",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10002",
+            "employee_name": "Ahmed Khan",
+            "days_worked": 20,
+            "leave_codes": [
+              "AL"
+            ],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10002",
+            "days_worked": 20.0,
+            "ot_hours": null,
+            "hours": null,
+            "leave_codes": [
+              "AL"
+            ],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        },
+        {
+          "employee_name": "Meera Al Rashid",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10003",
+            "employee_name": "Meera Al Rashid",
+            "days_worked": 21,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10003",
+            "days_worked": 21.0,
+            "ot_hours": null,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "12",
+      "input": "case_12_rate_mismatch.eml",
+      "channel": "email",
+      "passed": true,
+      "f1": {
+        "emp_id": 1.0,
+        "days_worked": 1.0,
+        "ot_hours": 1.0,
+        "hours": 0.0,
+        "leave_codes": 0.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 1,
+      "expected_rows": 1,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": "EMP10001",
+          "ambiguous": false,
+          "confidence": 0.99
+        }
+      ],
+      "invoice_amount": 10825.96,
+      "client_code": "CL001",
+      "exceptions": 0,
+      "latency_s": 0.0,
+      "calibration": [
+        [
+          0.99,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": "Carlos Smith",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10001",
+            "employee_name": "Carlos Smith",
+            "days_worked": 22,
+            "ot_hours": 2,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10001",
+            "days_worked": 22.0,
+            "ot_hours": 2.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "13",
+      "input": "case_13_out_of_scope_sow.eml",
+      "channel": "email",
+      "passed": true,
+      "f1": {
+        "emp_id": 1.0,
+        "days_worked": 1.0,
+        "ot_hours": 1.0,
+        "hours": 0.0,
+        "leave_codes": 0.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 1,
+      "expected_rows": 1,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": "EMP10021",
+          "ambiguous": false,
+          "confidence": 0.99
+        }
+      ],
+      "invoice_amount": 22903.57,
+      "client_code": "CL002",
+      "exceptions": 0,
+      "latency_s": 0.0,
+      "calibration": [
+        [
+          0.99,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": null,
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10021",
+            "days_worked": 22,
+            "ot_hours": 16,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10021",
+            "days_worked": 22.0,
+            "ot_hours": 16.0,
+            "hours": null,
+            "leave_codes": [],
+            "resolved": true,
+            "ambiguous": false
+          },
+          "row_ok": true
+        }
+      ]
+    },
+    {
+      "case": "14",
+      "input": "case_14_ot_over_cap.xlsx",
+      "channel": "upload",
+      "passed": true,
+      "f1": {
+        "emp_id": 1.0,
+        "days_worked": 1.0,
+        "ot_hours": 1.0,
+        "hours": 0.0,
+        "leave_codes": 0.0,
+        "resolved": 1.0,
+        "ambiguous": 1.0
+      },
+      "extracted_rows": 1,
+      "expected_rows": 1,
+      "matches": [
+        {
+          "row_idx": 0,
+          "chosen": "EMP10001",
+          "ambiguous": false,
+          "confidence": 0.99
+        }
+      ],
+      "invoice_amount": 13249.04,
+      "client_code": "CL001",
+      "exceptions": 0,
+      "latency_s": 0.004,
+      "calibration": [
+        [
+          0.99,
+          true
+        ]
+      ],
+      "details": [
+        {
+          "employee_name": "Carlos Smith",
+          "matched": true,
+          "expected": {
+            "emp_id": "EMP10001",
+            "employee_name": "Carlos Smith",
+            "days_worked": 22,
+            "ot_hours": 50,
+            "resolved": true,
+            "ambiguous": false
+          },
+          "actual": {
+            "emp_id": "EMP10001",
+            "days_worked": 22.0,
+            "ot_hours": 50.0,
             "hours": null,
             "leave_codes": [],
             "resolved": true,
