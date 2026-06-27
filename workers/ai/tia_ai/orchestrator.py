@@ -184,7 +184,7 @@ def process_doc(session: Session, doc: DocAsset, client_hint: str | None = None)
         raise ValueError("doc has no staged file")
     p = Path(doc.staging_path)
 
-    extraction = extract(p, mime=doc.mime, channel=doc.source_channel)
+    extraction = extract(p, mime=doc.mime, channel=doc.source_channel, filename=doc.filename)
     if client_hint and not extraction.client_code:
         extraction.client_code = client_hint
         log_event(

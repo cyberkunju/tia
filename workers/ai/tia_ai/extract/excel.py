@@ -43,9 +43,53 @@ def _num(v) -> float | None:
 
 
 def extract_excel(path: str | Path) -> TimesheetExtraction:
-    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    """Modern Excel (.xlsx/.xlsm) via openpyxl.
+
+    Loaded from bytes (not the path) so openpyxl's extension check never rejects a
+    correctly-typed file that happens to carry the wrong name (e.g. a WhatsApp xlsx
+    saved as .png)."""
+    import io
+
+    data = Path(path).read_bytes()
+    wb = openpyxl.load_workbook(io.BytesIO(data), read_only=True, data_only=True)
     ws = wb.active
     rows = list(ws.iter_rows(values_only=True))
+    return parse_grid(rows)
+
+
+def extract_xls(path: str | Path) -> TimesheetExtraction:
+    """Legacy Excel (.xls, OLE binary) via xlrd — openpyxl cannot read this format.
+
+    Loaded via file_contents (bytes) so the extension is irrelevant."""
+    import xlrd
+
+    book = xlrd.open_workbook(file_contents=Path(path).read_bytes())
+    sheet = book.sheet_by_index(0)
+    rows = [tuple(sheet.row_values(r)) for r in range(sheet.nrows)]
+    return parse_grid(rows)
+
+
+def extract_csv(path: str | Path) -> TimesheetExtraction:
+    """CSV / TSV — sniff the delimiter, then reuse the grid parser."""
+    import csv
+
+    raw = Path(path).read_text(encoding="utf-8", errors="ignore")
+    if not raw.strip():
+        return TimesheetExtraction()
+    try:
+        dialect = csv.Sniffer().sniff(raw[:4096], delimiters=",;\t|")
+    except csv.Error:
+        dialect = csv.excel
+    rows = [tuple(r) for r in csv.reader(raw.splitlines(), dialect)]
+    return parse_grid(rows)
+
+
+def parse_grid(rows: list) -> TimesheetExtraction:
+    """Parse a grid of cell values (any source: xlsx, xls, csv, or a Word table)
+    into a TimesheetExtraction. Auto-detects the clean vs punch-clock layout from
+    the header row. This is the shared backbone so every tabular format reuses the
+    same proven logic."""
+    rows = [r for r in rows if r is not None]
     if not rows:
         return TimesheetExtraction()
 

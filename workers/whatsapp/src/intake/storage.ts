@@ -13,6 +13,8 @@ export interface BytesStore {
 const MIME_EXT: Record<string, string> = {
   "application/pdf": "pdf",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+  "application/msword": "doc",
   "application/vnd.ms-excel": "xls",
   "text/csv": "csv",
   "image/png": "png",
