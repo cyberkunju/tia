@@ -67,8 +67,14 @@ export interface ValidationResult {
   rule: string;
   passed: boolean;
   message: string;
-  severity?: "error" | "warning";
+  severity?: "error" | "warning" | "info";
   emp_id?: string;
+  // contract-bound rule fields (Phase 1 backend additions)
+  rule_id?: string;
+  rule_name?: string;
+  expected?: unknown;
+  actual?: unknown;
+  line_idx?: number | null;
 }
 
 export interface LineItem {
@@ -77,9 +83,11 @@ export interface LineItem {
   job_title?: string;
   days_worked: number;
   standard_days: number;
+  ot_hours?: number;
   monthly_gross: number;
   prorated: number;
   ot_amount: number;
+  ot_hourly_rate?: number;
   reimbursements: number;
   markup_pct: number;
   amount: number;
@@ -126,9 +134,26 @@ export interface Invoice {
   line_items: LineItem[];
   pdf_available: boolean;
   dispatched_at: string | null;
+  // Phase 2 tax compliance fields
+  invoice_sequence_no?: string | null;
+  supplier_trn?: string | null;
+  customer_trn?: string | null;
+  vat_rate?: number | null;
+  vat_amount?: number | null;
+  total_excl_vat?: number | null;
+  total_incl_vat?: number | null;
+  sac_code?: string | null;
+  place_of_supply?: string | null;
+  due_date?: string | null;
+  client_approval_status?: "pending" | "approved" | "rejected" | null;
+  client_approval_reason?: string | null;
+  rule_results?: ValidationResult[];
 }
 
-export interface ApiClient { code: string; name: string; city: string; industry: string; settings: Record<string, unknown> }
+export interface ApiClient {
+  code: string; name: string; city: string; industry: string;
+  settings: Record<string, unknown>;
+}
 
 export interface EventRow {
   id: string;
@@ -174,4 +199,140 @@ export interface EvalCaseResult {
   exceptions: number;
   latency_s: number;
   details: { employee_name: string; matched: boolean; row_ok?: boolean; expected: Record<string, unknown>; actual?: Record<string, unknown> }[];
+}
+
+/* ── Phase 3+ types ────────────────────────────────────────────── */
+
+export interface QAResponse {
+  answer: string;
+  citations: { kind: string; id: string }[];
+  tool_calls: { name: string; args: Record<string, unknown>; result_keys?: string[] }[];
+  model: string;
+}
+
+export interface QueryThreadMessage {
+  by: string;
+  role: "client" | "finops";
+  body: string;
+  at: string;
+}
+
+export interface QueryThread {
+  id: string;
+  subject: string;
+  body: string | null;
+  status: "open" | "answered" | "closed";
+  invoice_id: string | null;
+  raised_by: string | null;
+  raised_at: string | null;
+  thread: QueryThreadMessage[];
+}
+
+/* ── Phase 5 metric/status types ───────────────────────────────── */
+
+export interface StpMetric {
+  total: number; auto: number; hitl: number; escalate: number;
+  touchless_rate: number; target: number;
+}
+
+export interface TimeMetric {
+  invoices: number; samples: number;
+  mean_minutes: number; target_max_minutes: number;
+}
+
+export interface AccuracyMetric {
+  target: number;
+  macro_f1: Record<string, number>;
+  overall_macro_f1: number | null;
+  passed: number | null;
+  runnable: number | null;
+  ece: number | null;
+  note?: string;
+}
+
+export interface HeadcountMetric {
+  by_period: Record<string, number>;
+  total_unique_emps: number;
+}
+
+export interface StatusResponse {
+  api: string; db: string;
+  openai: "configured" | "missing_key" | "down";
+  modal_ocr: "configured" | "missing_key" | "down";
+  rust_dispatch: "ok" | "in_process" | "unreachable" | string;
+  last_eval?: {
+    passed: number | null; runnable: number | null;
+    macro_f1: Record<string, number> | null;
+  };
+}
+
+/* ── Contract / RateCard / SOW for the Contract panel ─────────── */
+
+export interface RateCard {
+  labor_category: string;
+  regular_rate: number;
+  ot_rate: number;
+  night_rate: number;
+  holiday_rate: number;
+}
+
+export interface SOW {
+  deliverable: string;
+  hours_expected: number;
+  hours_consumed: number;
+  status: "OPEN" | "COMPLETED" | "CANCELLED";
+  completed_at: string | null;
+}
+
+export interface ContractDetail {
+  id: string;
+  client_code: string;
+  name: string;
+  type: "TIME_AND_MATERIALS" | "FIXED_SCOPE" | "RETAINER";
+  jurisdiction: "UAE" | "KSA" | "IN" | string;
+  currency: string;
+  vat_rate: number;
+  sac_code: string | null;
+  markup_pct: number;
+  max_ot_pct: number;
+  payment_terms_days: number;
+  billing_cadence: string;
+  start_date: string;
+  end_date: string | null;
+  authorized_emp_count?: number;
+  rate_cards: RateCard[];
+  sows: SOW[];
+}
+
+/* ── Dispatch tracking ─────────────────────────────────────────── */
+
+export interface DispatchTrackingRow {
+  id: string;
+  invoice_sequence_no: string | null;
+  client_code: string;
+  period: string | null;
+  amount: number;
+  total_incl_vat: number | null;
+  status: string;
+  client_approval_status: "pending" | "approved" | "rejected" | null;
+  dispatch_idempotency_key: string | null;
+  dispatch_attempted_at: string | null;
+  confidence: number | null;
+  rule_results_failed: ValidationResult[];
+}
+
+/* ── Finance queue ─────────────────────────────────────────────── */
+
+export interface FinanceQueueRow {
+  id: string;
+  invoice_sequence_no: string | null;
+  client_code: string;
+  client_name: string | null;
+  period: string | null;
+  amount: number;
+  total_incl_vat: number | null;
+  currency: string;
+  status: string;
+  threshold: number;
+  rule_failures: ValidationResult[];
 }

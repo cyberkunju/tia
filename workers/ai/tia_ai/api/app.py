@@ -518,6 +518,21 @@ def _inv_dict(i: Invoice) -> dict:
         "line_items": i.line_items,
         "pdf_available": bool(i.pdf_path and Path(i.pdf_path).exists()),
         "dispatched_at": i.dispatch_attempted_at.isoformat() if i.dispatch_attempted_at else None,
+        # UAE Tax Invoice mandatory fields
+        "invoice_sequence_no": i.invoice_sequence_no,
+        "supplier_trn": i.supplier_trn,
+        "customer_trn": i.customer_trn,
+        "vat_rate": i.vat_rate,
+        "vat_amount": i.vat_amount,
+        "total_excl_vat": i.total_excl_vat,
+        "total_incl_vat": i.total_incl_vat,
+        "sac_code": i.sac_code,
+        "place_of_supply": i.place_of_supply,
+        "due_date": i.due_date,
+        # client approval flow + rule provenance
+        "client_approval_status": i.client_approval_status,
+        "client_approval_reason": i.client_approval_reason,
+        "rule_results": i.rule_results or [],
     }
 
 
@@ -1410,3 +1425,98 @@ def admin_demo_reset(s: Session = Depends(db_session)) -> dict:
     s.commit()
     log_event(s, "admin", "system", "reset", "admin.demo_reset", counts)
     return {"status": "ok", "wiped": counts}
+
+
+@app.get("/contracts/{client_code}")
+def get_contract_for_client(client_code: str, s: Session = Depends(db_session)) -> dict:
+    """Return the active contract for a client, including its rate cards and SOWs."""
+    from ..models import Contract, RateCard, SOW
+
+    c = (
+        s.query(Contract)
+        .filter(Contract.client_code == client_code, Contract.active.is_(True))
+        .first()
+    )
+    if not c:
+        raise HTTPException(404, f"no active contract for {client_code}")
+    cards = (
+        s.query(RateCard)
+        .filter(RateCard.contract_id == c.id)
+        .order_by(RateCard.regular_rate.desc())
+        .all()
+    )
+    sows = s.query(SOW).filter(SOW.contract_id == c.id).all()
+    return {
+        "id": c.id,
+        "client_code": c.client_code,
+        "name": c.name,
+        "type": c.type,
+        "jurisdiction": c.jurisdiction,
+        "currency": c.currency,
+        "vat_rate": c.vat_rate,
+        "sac_code": c.sac_code,
+        "markup_pct": c.markup_pct,
+        "max_ot_pct": c.max_ot_pct,
+        "payment_terms_days": c.payment_terms_days,
+        "billing_cadence": c.billing_cadence,
+        "start_date": c.start_date,
+        "end_date": c.end_date,
+        "authorized_emp_count": len(c.authorized_emp_ids or []),
+        "rate_cards": [
+            {
+                "labor_category": rc.labor_category,
+                "regular_rate": rc.regular_rate,
+                "ot_rate": rc.ot_rate,
+                "night_rate": rc.night_rate,
+                "holiday_rate": rc.holiday_rate,
+            }
+            for rc in cards
+        ],
+        "sows": [
+            {
+                "deliverable": sw.deliverable,
+                "hours_expected": sw.hours_expected,
+                "hours_consumed": sw.hours_consumed,
+                "status": sw.status,
+                "completed_at": sw.completed_at,
+            }
+            for sw in sows
+        ],
+    }
+
+
+@app.get("/events")
+def list_events(
+    entity_id: str | None = None,
+    limit: int = 100,
+    s: Session = Depends(db_session),
+) -> list[dict]:
+    """Append-only audit feed. Filter by entity_id (doc/timesheet/invoice/client) when set."""
+    q = s.query(Event)
+    if entity_id:
+        # also include doc_id and timesheet_id chains for an invoice id
+        related: list[str] = [entity_id]
+        inv = s.get(Invoice, entity_id)
+        if inv:
+            related.append(inv.timesheet_id)
+            ts = s.get(Timesheet, inv.timesheet_id)
+            if ts and ts.doc_id:
+                related.append(ts.doc_id)
+        ts = s.get(Timesheet, entity_id)
+        if ts and ts.doc_id:
+            related.append(ts.doc_id)
+        q = q.filter(Event.entity_id.in_(set(related)))
+    rows = q.order_by(Event.at.asc()).limit(limit).all()
+    return [
+        {
+            "id": e.id,
+            "at": e.at.isoformat() if e.at else None,
+            "actor": e.actor,
+            "kind": e.entity_kind,
+            "entity_id": e.entity_id,
+            "action": e.action,
+            "payload": e.payload or {},
+            "idempotency_key": e.idempotency_key,
+        }
+        for e in rows
+    ]

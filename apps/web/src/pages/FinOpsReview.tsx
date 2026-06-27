@@ -1,15 +1,25 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link } from "react-router-dom";
-import { useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { api, API_BASE } from "../api";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  confidenceBadgeClass, fmtMoney, fmtPct, routingBadgeClass, statusBadgeClass,
-} from "../lib";
-import type { Candidate, ExtractedRow, RowMatch, RowProvenance } from "../types";
+  ArrowLeft, FileText, FileImage, Mail, FileSpreadsheet, ExternalLink,
+  CheckCircle2, XCircle, ShieldAlert, Activity, Users, Loader2, AlertCircle,
+  Receipt, Truck,
+} from "lucide-react";
+import { api, API_BASE } from "../api";
+import type { Candidate, ExtractedRow, RowMatch } from "../types";
+import {
+  PageHeader, Panel, StatusBadge, RoutingBadge, ConfidenceBadge, Spinner, Badge,
+} from "../ui";
+import { fmtMoney, cn } from "../lib";
+import { ContractPanel } from "../components/ContractPanel";
+import { RuleChip, RuleSummary } from "../components/RuleChip";
+import { EmlCard } from "../components/EmlCard";
+import { EventTimeline } from "../components/EventTimeline";
 
 export function FinOpsReview() {
   const { docId = "" } = useParams();
+  const nav = useNavigate();
   const qc = useQueryClient();
 
   const { data, isLoading, refetch } = useQuery({
@@ -23,465 +33,340 @@ export function FinOpsReview() {
   const ex = ts?.extraction;
   const mr = ts?.match_result;
   const invoices = data?.invoices ?? [];
+  const invoice = invoices[0];
+
+  const events = useQuery({
+    queryKey: ["events", docId],
+    queryFn: () => api.listEvents(docId, 50),
+    enabled: !!docId,
+    refetchInterval: 3_000,
+  });
 
   const [picks, setPicks] = useState<Record<number, string>>({});
-  const [whyOpen, setWhyOpen] = useState(false);
-  const [hoverRow, setHoverRow] = useState<number | null>(null);
+  const [hoverRow, _setHoverRow] = useState<number | null>(null);
+  // _setHoverRow keeps the prop interface stable for future highlighting on hover
+  void hoverRow; void _setHoverRow;
 
   const approve = useMutation({
-    mutationFn: () => api.approve(ts!.id, Object.entries(picks).map(([k, v]) => ({ row_idx: Number(k), chosen_emp_id: v }))),
-    onSuccess: async () => {
-      setPicks({});
-      await qc.invalidateQueries({ queryKey: ["doc", docId] });
-      await qc.invalidateQueries({ queryKey: ["invoices"] });
-      await qc.invalidateQueries({ queryKey: ["docs"] });
-      refetch();
-    },
+    mutationFn: () => api.approve(
+      ts!.id,
+      Object.entries(picks).map(([idx, emp]) => ({ row_idx: Number(idx), chosen_emp_id: emp })),
+    ),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["doc", docId] }); refetch(); },
   });
-
   const reject = useMutation({
     mutationFn: (reason: string) => api.reject(ts!.id, reason),
-    onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["doc", docId] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["doc", docId] }); refetch(); },
   });
 
-  const dispatchInv = useMutation({
-    mutationFn: (id: string) => api.dispatchInvoice(id),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["doc", docId] });
-      await qc.invalidateQueries({ queryKey: ["invoices"] });
-    },
-  });
+  if (isLoading) return <div className="text-ink-500 text-sm flex items-center gap-2"><Spinner /> Loading review…</div>;
+  if (!data || !ts) return <div className="text-ink-500 text-sm">Document not found.</div>;
 
-  const sourceUrl = useMemo(() => (docId ? api.docSourceUrl(docId) : null), [docId]);
-  const sourceIsImage = data?.doc.mime?.startsWith("image/");
-  const sourceIsPdf = data?.doc.mime === "application/pdf";
+  const mime = data.doc.mime ?? "";
+  const sourceUrl = api.docSourceUrl(docId);
+  const sourceIsImage = mime.startsWith("image/");
+  const sourceIsPdf = mime === "application/pdf";
+  const sourceIsEml = mime === "message/rfc822" || data.doc.filename?.toLowerCase().endsWith(".eml");
+  const sourceIsExcel = mime.includes("spreadsheet") || mime.includes("excel") || data.doc.filename?.toLowerCase().endsWith(".xlsx");
 
-  if (isLoading) return <div className="text-ink-500">Loading…</div>;
-  if (!data || !ts) {
-    return <div className="text-ink-500">Document not found. <Link to="/finops" className="underline">Back to inbox</Link></div>;
-  }
-
-  const allResolved = mr?.matches.every((m) => m.chosen_emp_id && !m.ambiguous || picks[m.row_idx]);
-  const ambiguousRows = mr?.matches.filter((m) => m.ambiguous) ?? [];
+  const ambiguous = mr?.matches?.some((m) => m.ambiguous);
+  const canApprove = ts.routing === "hitl" || ts.routing === "escalate";
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-      {/* LEFT: source */}
-      <section className="card p-4 lg:sticky lg:top-20 self-start">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="font-semibold">Source document</h2>
-            <p className="text-xs text-ink-500">
-              {data.doc.filename} · {data.doc.channel} · {data.doc.mime || "unknown mime"}
-            </p>
-          </div>
-          <a href={sourceUrl!} target="_blank" rel="noreferrer" className="btn-outline text-xs">
-            Open raw
-          </a>
-        </div>
-        <div className="bg-ink-50 rounded-lg overflow-auto h-[560px] flex items-center justify-center">
-          {sourceIsImage && (
-            <SourceImageWithBBoxes
-              src={sourceUrl!}
-              provenance={ex?.row_provenance ?? []}
-              hoverRow={hoverRow}
-            />
-          )}
-          {sourceIsPdf && (
-            <iframe src={sourceUrl!} title="source pdf" className="w-full h-full" />
-          )}
-          {!sourceIsImage && !sourceIsPdf && (
-            <div className="text-ink-500 text-sm px-6 text-center">
-              Source is {data.doc.mime || "text"}. Click "Open raw" to view.
-            </div>
-          )}
-        </div>
-        {sourceIsImage && (ex?.row_provenance?.length ?? 0) > 0 && (
-          <p className="text-xs text-ink-500 mt-2">
-            {ex!.row_provenance!.length} row{ex!.row_provenance!.length === 1 ? "" : "s"} anchored to the source via GLM-OCR layout — hover a row on the right to highlight its evidence.
-          </p>
-        )}
-      </section>
-
-      {/* RIGHT: extracted, matched, validated */}
-      <section className="space-y-4">
-        <div className="card p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="font-semibold">Timesheet</h2>
-                <span className={statusBadgeClass(ts.status)}>{ts.status}</span>
-                {ts.routing && <span className={routingBadgeClass(ts.routing)}>{ts.routing}</span>}
-                {ts.confidence != null && (
-                  <span className={confidenceBadgeClass(ts.confidence)}>conf {fmtPct(ts.confidence)}</span>
-                )}
-              </div>
-              <p className="text-xs text-ink-500 mt-1">
-                {ts.client_code ?? "client unknown"} · {ts.period ?? "period unknown"}
-                {ts.hitl_reason ? ` · ${ts.hitl_reason}` : ""}
-              </p>
-            </div>
-            <button className="btn-outline text-xs" onClick={() => setWhyOpen(true)}>
-              Why this invoice?
+    <div className="space-y-4">
+      <PageHeader
+        icon={FileText}
+        title={data.doc.filename || `Document · ${docId.slice(0, 8)}`}
+        description={
+          <span className="inline-flex flex-wrap items-center gap-2">
+            <span className="text-2xs uppercase tracking-wide text-ink-400 font-semibold">{data.doc.channel}</span>
+            <span className="text-ink-300">·</span>
+            <span>{data.doc.uploaded_at?.slice(0, 19).replace("T", " ")}</span>
+            {data.doc.uploaded_by && <span className="text-ink-400">· by {data.doc.uploaded_by}</span>}
+          </span>
+        }
+        actions={
+          <>
+            <button onClick={() => nav("/finops")} className="btn-outline btn-sm">
+              <ArrowLeft size={14} /> Inbox
             </button>
-          </div>
-        </div>
+            <a href={sourceUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm">
+              Open raw <ExternalLink size={12} />
+            </a>
+          </>
+        }
+      />
 
-        <div className="card p-4">
-          <h3 className="font-semibold mb-3">Extracted rows</h3>
-          <div className="space-y-2">
-            {ex?.rows.map((r, idx) => {
-              const m = mr?.matches[idx];
-              return (
-                <RowCard
-                  key={idx}
-                  rowIdx={idx}
-                  row={r}
-                  match={m}
-                  pick={picks[idx]}
-                  onPick={(emp) => setPicks((p) => ({ ...p, [idx]: emp }))}
-                  onHover={setHoverRow}
-                />
-              );
-            })}
-            {(!ex?.rows || ex.rows.length === 0) && (
-              <div className="text-ink-400 text-sm">No rows extracted.</div>
+      <div className="grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] gap-4">
+        {/* LEFT — source viewer */}
+        <div className="card-flush overflow-hidden flex flex-col">
+          <header className="flex items-center justify-between px-4 py-2.5 border-b border-ink-200 bg-ink-50/50">
+            <div className="flex items-center gap-2 text-2xs uppercase tracking-wide text-ink-500 font-semibold">
+              {sourceIsImage ? <FileImage size={13} /> :
+                sourceIsPdf ? <FileText size={13} /> :
+                sourceIsEml ? <Mail size={13} /> :
+                sourceIsExcel ? <FileSpreadsheet size={13} /> : <FileText size={13} />}
+              Source · {mime || data.doc.channel}
+            </div>
+            <span className="text-2xs text-ink-400 font-mono">{data.doc.filename}</span>
+          </header>
+
+          <div className="flex-1 min-h-[520px] bg-ink-50/40 overflow-auto">
+            {sourceIsImage && (
+              <div className="h-full flex items-center justify-center p-3">
+                <img src={sourceUrl} alt="source" className="max-h-[560px] max-w-full object-contain" />
+              </div>
+            )}
+            {sourceIsPdf && (
+              <iframe src={sourceUrl} title="source pdf" className="w-full h-[640px] border-0" />
+            )}
+            {sourceIsEml && <EmlCard sourceUrl={sourceUrl} />}
+            {sourceIsExcel && (
+              <div className="h-full flex flex-col items-center justify-center text-ink-500 text-sm gap-2 px-6 text-center">
+                <FileSpreadsheet size={36} className="text-emerald-600" />
+                <p>Excel source · use Open raw or see the extracted rows on the right.</p>
+                <a href={sourceUrl} target="_blank" rel="noreferrer" className="btn-outline btn-sm mt-1">
+                  Download .xlsx
+                </a>
+              </div>
+            )}
+            {!sourceIsImage && !sourceIsPdf && !sourceIsEml && !sourceIsExcel && (
+              <div className="h-full flex flex-col items-center justify-center text-ink-500 text-sm px-6 text-center">
+                Source: {mime || "text"}.{" "}
+                <a className="text-brand-700 underline ml-1" href={sourceUrl} target="_blank" rel="noreferrer">
+                  Open raw
+                </a>
+              </div>
             )}
           </div>
         </div>
 
-        {ambiguousRows.length > 0 && mr && (
-          <div className="card p-4">
-            <h3 className="font-semibold mb-2">Hungarian assignment — cost matrix</h3>
-            <p className="text-xs text-ink-500 mb-3">
-              Lower cost = stronger match. Equal columns ({"\u0394"}≈0) signal ambiguity; the assignment minimizes total cost across all rows.
-            </p>
-            <CostMatrix
-              cost={mr.cost_matrix}
-              rowLabels={mr.row_labels}
-              colLabels={mr.candidate_labels}
-            />
-          </div>
-        )}
-
-        {(ts.validations?.length ?? 0) > 0 && (
-          <div className="card p-4">
-            <h3 className="font-semibold mb-2">Validations</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
-              {ts.validations.map((v, i) => (
-                <div key={i} className="flex items-start gap-2">
-                  <span className={v.passed ? "badge-green" : "badge-red"}>{v.passed ? "PASS" : "FAIL"}</span>
-                  <div>
-                    <div className="font-medium text-ink-900">{v.rule}{v.emp_id && <span className="text-ink-400"> · {v.emp_id}</span>}</div>
-                    <div className="text-ink-600 text-xs">{v.message}</div>
-                  </div>
-                </div>
-              ))}
+        {/* RIGHT — extracted + contract + rules + activity */}
+        <div className="space-y-4 min-w-0">
+          {/* Status / routing strip */}
+          <Panel
+            title={<span className="flex items-center gap-2">
+              <ShieldAlert size={14} className="text-brand-700" />
+              Pipeline status
+            </span>}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusBadge status={ts.status} />
+              <RoutingBadge routing={ts.routing} />
+              <ConfidenceBadge value={ts.confidence} />
+              {ts.client_code && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-teal-50 text-teal-800 border border-teal-200 px-2 py-0.5 text-xs font-medium">
+                  Client {ts.client_code}
+                </span>
+              )}
+              {ts.period && (
+                <span className="inline-flex items-center gap-1 rounded-md bg-ink-100 text-ink-700 border border-ink-200 px-2 py-0.5 text-xs font-medium">
+                  Period {ts.period}
+                </span>
+              )}
             </div>
-          </div>
-        )}
+            {ts.hitl_reason && (
+              <div className="mt-3 text-xs rounded-md border border-amber-200 bg-amber-50 text-amber-900 px-3 py-2 font-medium">
+                <ShieldAlert size={12} className="inline mr-1.5" /> {ts.hitl_reason}
+              </div>
+            )}
+          </Panel>
 
-        {ts.status === "awaiting_review" && (
-          <div className="card p-4 flex items-center justify-between">
-            <div className="text-sm text-ink-600">
-              {ambiguousRows.length > 0
-                ? `Pick a candidate for ${ambiguousRows.length} ambiguous row${ambiguousRows.length === 1 ? "" : "s"}.`
-                : "Approve to generate the invoice."}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                className="btn-outline"
-                onClick={() => {
-                  const r = prompt("Reason for rejection?");
-                  if (r) reject.mutate(r);
-                }}
-              >
-                Reject
-              </button>
-              <button
-                className="btn-primary"
-                disabled={!allResolved || approve.isPending}
-                onClick={() => approve.mutate()}
-              >
-                {approve.isPending ? "Approving…" : "Approve & generate invoice"}
-              </button>
-            </div>
-          </div>
-        )}
+          {/* Contract panel (BTP-rule parameters we validate against) */}
+          <ContractPanel clientCode={ts.client_code} />
 
-        {invoices.length > 0 && (
-          <div className="card p-4">
-            <h3 className="font-semibold mb-2">Invoice</h3>
-            {invoices.map((inv) => (
-              <div key={inv.id} className="flex items-center justify-between py-2 border-b border-ink-100 last:border-0">
-                <div>
-                  <div className="font-medium">{fmtMoney(inv.amount, inv.currency)}</div>
-                  <div className="text-xs text-ink-500">{inv.client_code} · {inv.period}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={statusBadgeClass(inv.status)}>{inv.status}</span>
-                  {inv.pdf_available && (
-                    <a className="btn-outline text-xs" href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer">PDF</a>
-                  )}
-                  {inv.status === "generated" && (
-                    <button className="btn-primary text-xs" disabled={dispatchInv.isPending}
-                            onClick={() => dispatchInv.mutate(inv.id)}>
-                      {dispatchInv.isPending ? "Dispatching…" : "Dispatch"}
-                    </button>
-                  )}
+          {/* Extracted rows + Hungarian resolution */}
+          {ex?.rows && ex.rows.length > 0 && (
+            <Panel
+              title={<span className="flex items-center gap-2">
+                <Users size={14} className="text-teal-700" />
+                Extracted {ex.rows.length} row{ex.rows.length === 1 ? "" : "s"}
+              </span>}
+              subtitle={ex.client_code ? `Resolved against ${ex.client_code}'s roster` : undefined}
+            >
+              <div className="space-y-2">
+                {ex.rows.map((r, idx) => (
+                  <RowCard
+                    key={idx}
+                    row={r}
+                    match={mr?.matches[idx]}
+                    pick={picks[idx]}
+                    onPick={(emp) => setPicks((p) => ({ ...p, [idx]: emp }))}
+                  />
+                ))}
+              </div>
+            </Panel>
+          )}
+
+          {/* BTP-style validation rules */}
+          {ts.validations && ts.validations.length > 0 && (
+            <Panel
+              title={<span className="flex items-center gap-2">
+                <ShieldAlert size={14} className="text-brand-700" />
+                Validation rules
+              </span>}
+              subtitle="BTP-style rule engine output. Failures route to HITL."
+            >
+              <RuleSummary results={ts.validations} />
+              <div className="mt-3 space-y-2">
+                {ts.validations
+                  .filter((v) => !v.passed || v.severity === "warning")
+                  .map((r, i) => <RuleChip key={i} result={r} />)}
+              </div>
+              {ts.validations.every((v) => v.passed && v.severity !== "warning") && (
+                <p className="mt-2 text-xs text-emerald-700">
+                  ✓ All {ts.validations.length} rules passed.
+                </p>
+              )}
+            </Panel>
+          )}
+
+          {/* Activity */}
+          <Panel
+            title={<span className="flex items-center gap-2">
+              <Activity size={14} className="text-teal-700" />
+              Activity
+            </span>}
+            subtitle="Append-only audit. Replay-safe."
+          >
+            <EventTimeline events={events.data ?? []} />
+          </Panel>
+
+          {/* Generated invoice */}
+          {invoice && (
+            <Panel
+              title={<span className="flex items-center gap-2">
+                <Receipt size={14} className="text-brand-700" /> Generated invoice
+              </span>}
+            >
+              <div className="flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-mono text-xs">{invoice.invoice_sequence_no ?? invoice.id.slice(0, 8)}</span>
+                <span className="tnum font-semibold">{fmtMoney(invoice.total_incl_vat ?? invoice.amount, invoice.currency)}</span>
+                <StatusBadge status={invoice.status} />
+                {invoice.pdf_available && (
+                  <a href={`${API_BASE}/invoices/${invoice.id}/pdf`} target="_blank" rel="noreferrer" className="btn-outline btn-sm">
+                    <FileText size={14} /> Open PDF
+                  </a>
+                )}
+                <a href={`/finops/dispatch/${invoice.client_code}`} className="btn-outline btn-sm">
+                  <Truck size={14} /> Dispatch view
+                </a>
+              </div>
+            </Panel>
+          )}
+
+          {/* Approve / Reject (only when HITL) */}
+          {canApprove && (
+            <div className="card p-4 sticky bottom-3 z-10 bg-white shadow-md">
+              <div className="flex flex-wrap items-center gap-3">
+                {ambiguous && (
+                  <Badge tone="amber">Pick a candidate for each ambiguous row, then approve.</Badge>
+                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const r = window.prompt("Reject reason:");
+                      if (r) reject.mutate(r);
+                    }}
+                    disabled={reject.isPending}
+                    className="btn-danger btn-sm"
+                  >
+                    {reject.isPending ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Reject
+                  </button>
+                  <button
+                    onClick={() => approve.mutate()}
+                    disabled={approve.isPending}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-brand-500 hover:bg-brand-400 text-teal-950 text-sm font-semibold px-4 py-2 shadow-sm disabled:opacity-60"
+                  >
+                    {approve.isPending ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    Approve & generate invoice
+                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <AnimatePresence>
-        {whyOpen && (
-          <WhyDrawer invoiceId={invoices[0]?.id ?? null} timesheetId={ts.id} onClose={() => setWhyOpen(false)} />
-        )}
-      </AnimatePresence>
+              {(approve.isError || reject.isError) && (
+                <div className="mt-2 text-xs text-red-700 inline-flex items-center gap-1">
+                  <AlertCircle size={12} /> {String(approve.error ?? reject.error)}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
 
-function RowCard({ row, match, pick, onPick, onHover, rowIdx }: {
+/* ───────────── row card ───────────── */
+
+function RowCard({ row, match, pick, onPick }: {
   row: ExtractedRow; match?: RowMatch; pick?: string;
   onPick: (emp: string) => void;
-  onHover?: (idx: number | null) => void;
-  rowIdx?: number;
 }) {
   const chosen = pick ?? match?.chosen_emp_id;
   const ambiguous = !!match?.ambiguous && !pick;
+
   return (
-    <div
-      className={`border rounded-lg p-3 transition-colors ${ambiguous ? "border-amber-300 bg-amber-50/40" : "border-ink-100 hover:border-brand-300"}`}
-      onMouseEnter={() => onHover && rowIdx != null && onHover(rowIdx)}
-      onMouseLeave={() => onHover && onHover(null)}
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="font-medium">{row.employee_name}</span>
-          {chosen && <span className="badge-blue">{chosen}</span>}
-          {match?.confidence != null && (
-            <span className={confidenceBadgeClass(match.confidence)}>{fmtPct(match.confidence)}</span>
-          )}
-          {ambiguous && <span className="badge-amber">ambiguous</span>}
+    <div className={cn(
+      "rounded-md border p-3 transition-colors",
+      ambiguous ? "border-amber-300 bg-amber-50/40" : "border-ink-200 bg-white",
+    )}>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-ink-900">
+            {row.employee_name || <em className="text-ink-400">(no name)</em>}
+          </p>
+          <p className="mt-0.5 text-2xs text-ink-500 flex flex-wrap items-center gap-1.5">
+            {row.emp_id && <code className="font-mono">{row.emp_id}</code>}
+            {row.days_worked != null && <span>· {row.days_worked} days</span>}
+            {row.ot_hours != null && row.ot_hours > 0 && <span>· {row.ot_hours} OT hrs</span>}
+            {row.leave_codes?.length > 0 && (
+              <span>· leave: <span className="font-mono">{row.leave_codes.join(", ")}</span></span>
+            )}
+          </p>
         </div>
-        <div className="text-xs text-ink-500">{match?.reason}</div>
-      </div>
-      <div className="text-sm text-ink-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
-        {row.days_worked != null && <span><span className="text-ink-400">days</span> {row.days_worked}</span>}
-        {row.hours != null && <span><span className="text-ink-400">hrs</span> {row.hours}</span>}
-        {row.ot_hours != null && <span><span className="text-ink-400">OT</span> {row.ot_hours}</span>}
-        {row.leave_codes?.length > 0 && (
-          <span><span className="text-ink-400">leave</span> {row.leave_codes.join(", ")}</span>
+        {chosen && !ambiguous && (
+          <Badge tone="green">→ {chosen}</Badge>
         )}
-        {row.reimbursements?.length > 0 && (
-          <span>
-            <span className="text-ink-400">reimb</span>{" "}
-            {row.reimbursements.map((r) => `${r.reason}:${r.amount_aed}`).join(", ")}
-          </span>
+        {ambiguous && (
+          <Badge tone="amber">Ambiguous · pick one</Badge>
         )}
       </div>
-      {ambiguous && match!.candidates.length > 1 && (
-        <div className="mt-3 pt-3 border-t border-amber-200">
-          <div className="text-xs font-medium text-ink-700 mb-1.5">Pick the correct employee:</div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {match!.candidates.map((c: Candidate) => (
-              <button
-                key={c.emp_id}
-                onClick={() => onPick(c.emp_id)}
-                className={`text-left text-sm px-3 py-2 rounded-md border transition ${
-                  pick === c.emp_id
-                    ? "border-brand-600 bg-brand-50"
-                    : "border-ink-200 hover:border-brand-400 hover:bg-ink-50"
-                }`}
-              >
-                <div className="font-medium">{c.emp_id} · {c.full_name}</div>
-                <div className="text-xs text-ink-500">
-                  {c.client_code} · score {c.score.toFixed(3)}
-                </div>
-              </button>
-            ))}
-          </div>
+
+      {match && match.candidates.length > 0 && (
+        <div className="mt-2 grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+          {match.candidates.slice(0, 6).map((c) => {
+            const active = chosen === c.emp_id;
+            return (
+              <CandidateButton key={c.emp_id} c={c} active={active} onPick={() => onPick(c.emp_id)} />
+            );
+          })}
         </div>
+      )}
+
+      {match?.reason && (
+        <p className="mt-2 text-2xs text-ink-500 italic">{match.reason}</p>
       )}
     </div>
   );
 }
 
-function CostMatrix({ cost, rowLabels, colLabels }: { cost: number[][]; rowLabels: string[]; colLabels: string[] }) {
-  if (cost.length === 0 || cost[0].length === 0) return <div className="text-ink-400 text-sm">no candidates</div>;
-  const flat = cost.flat();
-  const max = Math.max(...flat, 0.01);
+function CandidateButton({ c, active, onPick }: { c: Candidate; active: boolean; onPick: () => void }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="text-xs border-separate border-spacing-0">
-        <thead>
-          <tr>
-            <th className="text-left p-2 text-ink-500"></th>
-            {colLabels.map((c) => (
-              <th key={c} className="text-left p-2 text-ink-500 font-medium whitespace-nowrap">{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {cost.map((row, i) => (
-            <tr key={i}>
-              <td className="p-2 text-ink-700 font-medium whitespace-nowrap">{rowLabels[i]}</td>
-              {row.map((v, j) => {
-                const intensity = 1 - Math.min(1, v / max);
-                const bg = `rgba(234, 88, 12, ${0.08 + intensity * 0.5})`;
-                return (
-                  <td
-                    key={j}
-                    className="p-2 text-center border border-ink-100 font-mono"
-                    style={{ background: bg }}
-                    title={`cost ${v.toFixed(3)}`}
-                  >
-                    {v.toFixed(2)}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-function SourceImageWithBBoxes({
-  src, provenance, hoverRow,
-}: { src: string; provenance: RowProvenance[]; hoverRow: number | null }) {
-  return (
-    <div className="relative inline-block max-w-full max-h-full">
-      <img src={src} alt="source" className="block max-w-full max-h-[560px] h-auto w-auto" />
-      {provenance.map((p) => {
-        if (!p.image_w || !p.image_h) return null;
-        const [x1, y1, x2, y2] = p.bbox;
-        const left = (x1 / p.image_w) * 100;
-        const top = (y1 / p.image_h) * 100;
-        const width = ((x2 - x1) / p.image_w) * 100;
-        const height = ((y2 - y1) / p.image_h) * 100;
-        const active = hoverRow === p.row_idx;
-        return (
-          <div
-            key={p.row_idx}
-            className={`absolute pointer-events-none rounded-sm transition-all ${
-              active
-                ? "border-2 border-brand-500 bg-brand-500/20 shadow-lg"
-                : "border border-brand-400/60 bg-brand-400/5"
-            }`}
-            style={{
-              left: `${left}%`,
-              top: `${top}%`,
-              width: `${width}%`,
-              height: `${height}%`,
-            }}
-          >
-            <span
-              className={`absolute -top-5 left-0 text-[10px] font-mono px-1 rounded-sm whitespace-nowrap ${
-                active ? "bg-brand-600 text-white" : "bg-brand-100 text-brand-700"
-              }`}
-            >
-              row {p.row_idx + 1}
-            </span>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function WhyDrawer({ invoiceId, timesheetId: _ts, onClose }: { invoiceId: string | null; timesheetId: string; onClose: () => void }) {
-  const { data } = useQuery({
-    queryKey: ["why", invoiceId],
-    queryFn: () => invoiceId ? api.invoiceWhy(invoiceId) : Promise.resolve(null),
-    enabled: !!invoiceId,
-  });
-
-  return (
-    <>
-      <motion.div
-        className="fixed inset-0 bg-ink-900/40 z-40"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-        onClick={onClose}
-      />
-      <motion.aside
-        className="fixed right-0 top-0 bottom-0 w-full max-w-[520px] bg-white shadow-xl z-50 overflow-y-auto"
-        initial={{ x: 600 }} animate={{ x: 0 }} exit={{ x: 600 }}
-        transition={{ type: "spring", stiffness: 280, damping: 32 }}
-      >
-        <div className="sticky top-0 bg-white border-b border-ink-200 px-5 py-3 flex items-center justify-between">
-          <div>
-            <div className="text-xs uppercase tracking-wider text-ink-500">Provenance</div>
-            <h3 className="font-semibold">Why this invoice?</h3>
-          </div>
-          <button className="btn-ghost" onClick={onClose}>Close</button>
-        </div>
-        <div className="p-5 space-y-5">
-          {!invoiceId && (
-            <div className="text-ink-500 text-sm">
-              No invoice yet for this timesheet — approve it to generate.
-            </div>
-          )}
-          {data?.invoice && (
-            <div>
-              <h4 className="font-medium mb-2">Invoice</h4>
-              <div className="text-sm text-ink-700">
-                <div>{fmtMoney(data.invoice.amount, data.invoice.currency)} · {data.invoice.client_code} · {data.invoice.period}</div>
-                <div className="text-xs text-ink-500">status: {data.invoice.status}</div>
-              </div>
-            </div>
-          )}
-          {data?.match_result && data.match_result.cost_matrix.length > 0 && (
-            <div>
-              <h4 className="font-medium mb-2">Entity resolution</h4>
-              <CostMatrix
-                cost={data.match_result.cost_matrix}
-                rowLabels={data.match_result.row_labels}
-                colLabels={data.match_result.candidate_labels}
-              />
-            </div>
-          )}
-          {data?.validations && data.validations.length > 0 && (
-            <div>
-              <h4 className="font-medium mb-2">Validations</h4>
-              <div className="space-y-1.5 text-sm">
-                {data.validations.map((v, i) => (
-                  <div key={i} className="flex items-start gap-2">
-                    <span className={v.passed ? "badge-green" : "badge-red"}>{v.passed ? "✓" : "×"}</span>
-                    <div>
-                      <div className="font-medium text-xs">{v.rule}{v.emp_id ? ` · ${v.emp_id}` : ""}</div>
-                      <div className="text-ink-600 text-xs">{v.message}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-          {data?.events && (
-            <div>
-              <h4 className="font-medium mb-2">Audit timeline</h4>
-              <ol className="space-y-2 text-xs">
-                {data.events.map((e) => (
-                  <li key={e.id} className="border-l-2 border-brand-300 pl-3">
-                    <div className="font-medium text-ink-800">
-                      {e.kind}.{e.action} <span className="text-ink-400">· {e.actor}</span>
-                    </div>
-                    <div className="text-ink-500">{new Date(e.at).toLocaleString()}</div>
-                    {e.idempotency_key && (
-                      <div className="text-ink-400 font-mono text-[10px] truncate">key {e.idempotency_key}</div>
-                    )}
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </div>
-      </motion.aside>
-    </>
+    <button
+      onClick={onPick}
+      className={cn(
+        "text-left rounded border px-2 py-1.5 text-xs transition-colors",
+        active
+          ? "border-brand-500 bg-brand-50"
+          : "border-ink-200 hover:border-brand-300 hover:bg-brand-50/40",
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-2xs text-ink-700">{c.emp_id}</span>
+        <span className="tnum text-2xs text-ink-500">{(c.score * 100).toFixed(0)}%</span>
+      </div>
+      <div className="truncate text-ink-800">{c.full_name}</div>
+      <div className="text-2xs text-ink-500">{c.client_code}</div>
+    </button>
   );
 }
