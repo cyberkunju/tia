@@ -15,10 +15,13 @@ import re
 
 import httpx
 
-from ..config import GLM_OCR_API_KEY, GLM_OCR_BASE_URL
+from ..config import GLM_OCR_API_KEY, GLM_OCR_BASE_URL, GLM_OCR_MODEL
 from ..schema import TimesheetExtraction
 
-MARKDOWN_PROMPT = "Convert this document to Markdown. Transcribe handwriting faithfully. Preserve structure (tables as Markdown tables, lists as lists). Do not add commentary."
+# Proven on the live glm-ocr endpoint: the terse prompt transcribes faithfully,
+# whereas verbose "preserve structure…" instructions made this model emit empty
+# code fences. Keep it short.
+MARKDOWN_PROMPT = "Extract all text as Markdown. Transcribe handwriting faithfully."
 
 KIE_PROMPT = """You are extracting a staffing timesheet. Read the document image and
 return ONLY a JSON object matching exactly this schema (no prose, no code fences):
@@ -56,6 +59,30 @@ def _b64_data_url(image_bytes: bytes, mime: str = "image/png") -> str:
     return f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
 
 
+def _completions_url() -> str:
+    """Build the chat-completions URL whether or not BASE_URL already ends in /v1."""
+    base = (GLM_OCR_BASE_URL or "").rstrip("/")
+    if base.endswith("/v1"):
+        base = base[:-3]
+    return f"{base}/v1/chat/completions"
+
+
+def _dedupe_looped(text: str) -> str:
+    """Small OCR models loop — they transcribe the page once, then repeat it in
+    code fences until they hit the token cap. Keep one clean copy: the text before
+    the first fence, or (if it opens with a fence) the longest fenced block."""
+    if not text:
+        return ""
+    head = text.strip().split("```", 1)[0].strip()
+    if len(head) >= 20:
+        return head
+    blocks = [b.strip() for b in re.findall(r"```[a-zA-Z]*\n?(.*?)```", text, re.DOTALL)]
+    blocks = [b for b in blocks if b]
+    if blocks:
+        return max(blocks, key=len)
+    return text.replace("```", "").strip()
+
+
 def _strip_json(text: str) -> str:
     text = text.strip()
     text = re.sub(r"^```(?:json)?", "", text).strip()
@@ -66,7 +93,7 @@ def _strip_json(text: str) -> str:
 
 def _call(image_bytes: bytes, prompt: str, mime: str = "image/png", timeout: float = 180.0) -> str:
     payload = {
-        "model": "glm-ocr",
+        "model": GLM_OCR_MODEL,
         "messages": [
             {
                 "role": "user",
@@ -77,20 +104,16 @@ def _call(image_bytes: bytes, prompt: str, mime: str = "image/png", timeout: flo
             }
         ],
         "temperature": 0.0,
+        "max_tokens": 2048,  # cap the loop; one transcription is well under this
     }
-    r = httpx.post(
-        f"{GLM_OCR_BASE_URL}/v1/chat/completions",
-        json=payload,
-        headers=_headers(),
-        timeout=timeout,
-    )
+    r = httpx.post(_completions_url(), json=payload, headers=_headers(), timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
 
 def glm_markdown(image_bytes: bytes, mime: str = "image/png", timeout: float = 180.0) -> str:
-    """Primary path: page → markdown. Robust and reusable."""
-    return _call(image_bytes, MARKDOWN_PROMPT, mime=mime, timeout=timeout)
+    """Primary path: page → markdown, de-looped to a single clean transcription."""
+    return _dedupe_looped(_call(image_bytes, MARKDOWN_PROMPT, mime=mime, timeout=timeout))
 
 
 def glm_kie(

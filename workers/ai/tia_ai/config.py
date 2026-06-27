@@ -31,9 +31,11 @@ STAGING_DIR = Path(os.getenv("TIA_STAGING_DIR", REPO_ROOT / "staging"))
 # sqlite default; set e.g. postgresql+psycopg://tia:tia@localhost:5432/tia
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{REPO_ROOT / 'tia.db'}")
 
-# GLM-OCR Modal endpoint (teammate-owned). See CONTRACTS.md §1.
+# GLM-OCR — OpenAI-compatible vision endpoint (handwriting/PDF). See CONTRACTS.md §1.
+# BASE_URL may be given with or without a trailing /v1; the client normalises it.
 GLM_OCR_BASE_URL = os.getenv("GLM_OCR_BASE_URL", "https://versifine--glm-ocr-serve.modal.run")
 GLM_OCR_API_KEY = os.getenv("GLM_OCR_API_KEY", "")
+GLM_OCR_MODEL = os.getenv("GLM_OCR_MODEL", "glm-ocr")
 
 # Chat agent — OpenAI-compatible. Swap to a local model for demo by overriding
 # OPENAI_BASE_URL (e.g. a Modal-served vLLM) + OPENAI_MODEL (e.g. "qwen2.5-7b").
