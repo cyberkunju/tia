@@ -62,9 +62,34 @@ def _client() -> Any:
 
 
 # ---------- Tool implementations (DB-grounded, no LLM in here) ----------
+#
+# Every tool takes `scope` (a client_code or None). When scope is set — i.e. a Client
+# persona is asking — the tool refuses to return data belonging to any other client.
+# This is the data-isolation boundary: the LLM cannot widen its own scope because the
+# server injects `scope`, never the model.
+
+_DENIED = {"found": False, "access": "denied", "reason": "outside your client scope"}
 
 
-def tool_get_client_settings(session: Session, client_code: str) -> dict:
+def _inv_client(session: Session, entity_id: str) -> str | None:
+    """Resolve the owning client_code for an invoice/timesheet/client entity id."""
+    inv = session.get(Invoice, entity_id) or session.query(Invoice).filter(
+        Invoice.invoice_sequence_no == entity_id
+    ).first()
+    if inv:
+        return inv.client_code
+    ts = session.get(Timesheet, entity_id)
+    if ts:
+        return ts.client_code
+    c = session.get(Client, entity_id)
+    if c:
+        return c.code
+    return None
+
+
+def tool_get_client_settings(session: Session, client_code: str, scope: str | None = None) -> dict:
+    if scope and client_code != scope:
+        return _DENIED
     c = session.get(Client, client_code)
     if not c:
         return {"found": False, "client_code": client_code}
@@ -79,7 +104,9 @@ def tool_get_client_settings(session: Session, client_code: str) -> dict:
     }
 
 
-def tool_get_contract(session: Session, client_code: str) -> dict:
+def tool_get_contract(session: Session, client_code: str, scope: str | None = None) -> dict:
+    if scope and client_code != scope:
+        return _DENIED
     contract = (
         session.query(Contract)
         .filter(Contract.client_code == client_code, Contract.active.is_(True))
@@ -129,13 +156,15 @@ def tool_get_contract(session: Session, client_code: str) -> dict:
     }
 
 
-def tool_get_invoice(session: Session, invoice_id: str) -> dict:
+def tool_get_invoice(session: Session, invoice_id: str, scope: str | None = None) -> dict:
     inv = session.get(Invoice, invoice_id)
     if not inv:
         # also accept a sequence_no
         inv = session.query(Invoice).filter(Invoice.invoice_sequence_no == invoice_id).first()
     if not inv:
         return {"found": False, "invoice_id": invoice_id}
+    if scope and inv.client_code != scope:
+        return _DENIED
     return {
         "found": True,
         "id": inv.id,
@@ -162,7 +191,41 @@ def tool_get_invoice(session: Session, invoice_id: str) -> dict:
     }
 
 
-def tool_get_events(session: Session, entity_id: str, limit: int = 20) -> dict:
+def tool_get_timesheet(session: Session, timesheet_id: str, scope: str | None = None) -> dict:
+    """Explain one timesheet: status, routing, confidence, why it was flagged, and a
+    summary of its validations — so users can ask 'why is this in review?'."""
+    ts = session.get(Timesheet, timesheet_id)
+    if not ts:
+        return {"found": False, "timesheet_id": timesheet_id}
+    if scope and ts.client_code != scope:
+        return _DENIED
+    vals = ts.validations or []
+    return {
+        "found": True,
+        "id": ts.id,
+        "client_code": ts.client_code,
+        "period": ts.period,
+        "status": ts.status,
+        "routing": ts.routing,
+        "confidence": ts.confidence_calibrated,
+        "hitl_reason": ts.hitl_reason,
+        "row_count": len((ts.extraction or {}).get("rows", [])),
+        "failed_validations": [
+            {"rule": v.get("rule"), "message": v.get("message")}
+            for v in vals
+            if isinstance(v, dict) and v.get("passed") is False
+        ],
+    }
+
+
+def tool_get_events(
+    session: Session, entity_id: str, limit: int = 20, scope: str | None = None
+) -> dict:
+    if scope:
+        owner = _inv_client(session, entity_id)
+        # deny if the entity isn't resolvable to the caller's client
+        if owner != scope:
+            return _DENIED
     rows = (
         session.query(Event)
         .filter(Event.entity_id == entity_id)
@@ -203,18 +266,18 @@ def tool_get_events(session: Session, entity_id: str, limit: int = 20) -> dict:
     }
 
 
-def tool_search_employees(session: Session, query: str, limit: int = 8) -> dict:
+def tool_search_employees(
+    session: Session, query: str, limit: int = 8, scope: str | None = None
+) -> dict:
     q = query.strip()
-    rows = (
-        session.query(Employee)
-        .filter(
-            (Employee.full_name.ilike(f"%{q}%"))
-            | (Employee.emp_id.ilike(f"%{q}%"))
-            | (Employee.email.ilike(f"%{q}%"))
-        )
-        .limit(limit)
-        .all()
+    qry = session.query(Employee).filter(
+        (Employee.full_name.ilike(f"%{q}%"))
+        | (Employee.emp_id.ilike(f"%{q}%"))
+        | (Employee.email.ilike(f"%{q}%"))
     )
+    if scope:
+        qry = qry.filter(Employee.client_code == scope)
+    rows = qry.limit(limit).all()
     return {
         "found": bool(rows),
         "query": query,
@@ -274,6 +337,18 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "get_timesheet",
+            "description": "Explain one timesheet by id: status, routing (auto/hitl/escalate), confidence, why it was flagged, and failed validations.",
+            "parameters": {
+                "type": "object",
+                "properties": {"timesheet_id": {"type": "string"}},
+                "required": ["timesheet_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "get_events",
             "description": "Append-only audit timeline for a doc/timesheet/invoice/client. Use after get_invoice to explain history.",
             "parameters": {
@@ -307,6 +382,7 @@ _DISPATCH = {
     "get_client_settings": tool_get_client_settings,
     "get_contract": tool_get_contract,
     "get_invoice": tool_get_invoice,
+    "get_timesheet": tool_get_timesheet,
     "get_events": tool_get_events,
     "search_employees": tool_search_employees,
 }
@@ -320,12 +396,17 @@ def answer(
     question: str,
     entity_context: dict | None = None,
     max_steps: int = 5,
+    client_scope: str | None = None,
 ) -> dict:
     """Run a tool-calling loop until the model returns a final answer.
 
     entity_context (optional): {"kind": "invoice|client|timesheet", "id": "..."}.
     If supplied, it's injected as a user-side hint so the agent doesn't have to
     guess which entity to look up first.
+
+    client_scope (optional): a client_code. When set (Client persona), every tool is
+    constrained to that client — the model cannot read another client's data. The
+    server injects this into each tool call; the LLM never controls it.
     """
     if not OPENAI_API_KEY:
         return {
@@ -336,6 +417,16 @@ def answer(
 
     client = _client()
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if client_scope:
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"[scope] You are answering for client {client_scope}. You may only "
+                    f"discuss this client's data; anything else is access-denied."
+                ),
+            }
+        )
     if entity_context:
         messages.append(
             {
@@ -388,7 +479,8 @@ def answer(
                     result = {"error": f"unknown tool {name}"}
                 else:
                     try:
-                        result = fn(session, **args)
+                        # scope is injected server-side, never from the model
+                        result = fn(session, scope=client_scope, **args)
                     except Exception as e:  # noqa: BLE001
                         result = {"error": str(e)}
                 tool_calls_log.append(

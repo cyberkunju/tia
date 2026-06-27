@@ -626,16 +626,24 @@ def get_wps_sif(client_code: str, period: str, s: Session = Depends(db_session))
 class QAQuery(BaseModel):
     question: str
     entity_context: dict | None = None  # {"kind": "invoice|client|timesheet", "id": "..."}
+    # When the asker is a Client, pass their client_code so the agent is data-isolated
+    # to that client. FinOps/Finance omit it for full visibility.
+    client_scope: str | None = None
 
 
 @app.post("/qa")
 def qa(payload: QAQuery, s: Session = Depends(db_session)) -> dict:
-    """Context-aware grounded Q&A. OpenAI tool-calling, 5 DB tools, strict
-    citations. Swap to local model by setting OPENAI_BASE_URL / OPENAI_MODEL."""
+    """Context-aware grounded Q&A. OpenAI tool-calling, DB tools, strict citations,
+    client-scoped data isolation. Swap to local model via OPENAI_BASE_URL/OPENAI_MODEL."""
     from ..qa import answer
 
     try:
-        return answer(s, payload.question, payload.entity_context)
+        return answer(
+            s,
+            payload.question,
+            payload.entity_context,
+            client_scope=payload.client_scope,
+        )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"qa agent failed: {e}") from e
 
