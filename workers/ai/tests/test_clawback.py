@@ -1,4 +1,4 @@
-"""Phase 9 — auto-dispatch + clawback test suite.
+"""Phase 9 - auto-dispatch + clawback test suite.
 
 These exercise the touchless + state-aware-clawback path end-to-end.
 """
@@ -27,7 +27,7 @@ def reset_state():
 def _upload_case_07() -> dict:
     fixture = Path(__file__).resolve().parents[3] / "data" / "synthetic" / "case_07_clean.xlsx"
     if not fixture.exists():
-        pytest.skip("seed data missing — run `make seed && make synth` first")
+        pytest.skip("seed data missing - run `make seed && make synth` first")
     with fixture.open("rb") as f:
         r = client.post(
             "/intake/upload",

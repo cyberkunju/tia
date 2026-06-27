@@ -1,4 +1,4 @@
-"""E-series email pipeline tests — TASC TIA hardening sprint.
+"""E-series email pipeline tests - TASC TIA hardening sprint.
 
 Covers:
   E1   friendly rule descriptions in cc_silent reply

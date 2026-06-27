@@ -1,10 +1,10 @@
-"""Zoho SMTP sender — close the loop on cc_silent replies.
+"""Zoho SMTP sender - close the loop on cc_silent replies.
 
 When the cc_silent flow drafts a reply, we write it to `staging/outbox/`.
 If ZOHO_SMTP_USE_SSL + credentials are set, we ALSO send it through Zoho's
 SMTP so the reply lands in the original sender's inbox.
 
-Production hook is the same module — swap in any other transport
+Production hook is the same module - swap in any other transport
 (SendGrid, SES, Mailgun) and the rest of TIA doesn't notice.
 """
 
@@ -35,7 +35,7 @@ def send_reply_via_zoho(eml_path: Path) -> dict:
     Reads From/To/Cc headers from the file itself. Auth uses the same Zoho
     account as the IMAP poller (single mailbox in/out).
 
-    With SMTP creds missing, returns `{"sent": False, "reason": ...}` —
+    With SMTP creds missing, returns `{"sent": False, "reason": ...}` -
     the draft still lives on disk and the demo still works.
     """
     if not smtp_configured():

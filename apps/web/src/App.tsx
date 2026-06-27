@@ -32,7 +32,7 @@ const router = createBrowserRouter([
     element: <AppShell />,
     children: [
       { index: true, element: <Navigate to="/console" replace /> },
-      // FinOps — the pipeline console
+      // FinOps - the pipeline console
       { path: "console", element: <Console /> },
       { path: "console/eval", element: <Padded><FinOpsEval /></Padded> },
       { path: "console/dispatch", element: <Padded><FinOpsDispatch /></Padded> },
@@ -40,11 +40,11 @@ const router = createBrowserRouter([
       { path: "console/dispatch/:clientCode", element: <Padded><FinOpsDispatch /></Padded> },
       { path: "console/settings/clients", element: <Padded><ClientsConfig /></Padded> },
       { path: "console/settings/rules", element: <Padded><RulesConfig /></Padded> },
-      // Client — portal
+      // Client - portal
       { path: "portal", element: <Padded><ClientSubmit /></Padded> },
       { path: "portal/invoices", element: <Padded><ClientInvoices /></Padded> },
       { path: "portal/queries", element: <Padded><ClientQueries /></Padded> },
-      // Finance — close
+      // Finance - close
       { path: "finance", element: <Padded><FinanceDashboard /></Padded> },
       { path: "finance/queue", element: <Padded><FinanceQueue /></Padded> },
       // legacy redirects

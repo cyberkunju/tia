@@ -1,4 +1,4 @@
-"""Email parser tests — every case in the brief plus injection / noise variants."""
+"""Email parser tests - every case in the brief plus injection / noise variants."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def test_case1_name_only_no_empid():
 
 
 def test_bare_leave_token_at_line_end():
-    """GLM-OCR markdown output shape: 'Ahmed Khan 20 days AL' — no 'leave:' keyword."""
+    """GLM-OCR markdown output shape: 'Ahmed Khan 20 days AL' - no 'leave:' keyword."""
     text = "Period: June 2026\n\nAhmed Khan 20 days AL\nMeera Al Rashid 21 days"
     ex = extract_email(text)
     ahmed = next(r for r in ex.rows if r.employee_name == "Ahmed Khan")
@@ -88,7 +88,7 @@ def test_dedupe_same_emp_same_name():
 def test_apostrophe_names_dont_corrupt_parsing():
     """Hawaiian / Kenyan / Irish names with apostrophes (Ng'ang'a, O'Connor) must
     parse as a single name, not split or dropped (regression of python-nameparser
-    issue #86 — multiple-quote handling)."""
+    issue #86 - multiple-quote handling)."""
     text = (
         "Client: Emirates Steel Industries LLC\n"
         "Period: June 2026\n\n"

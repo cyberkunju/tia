@@ -21,10 +21,10 @@ const ACTION_TONE: Record<string, string> = {
 };
 
 /**
- * LiveActivityRail — Server-Sent Events stream from /events/stream.
+ * LiveActivityRail - Server-Sent Events stream from /events/stream.
  *
  * Keeps a rolling window of the latest 30 events. The Radio dot pulses while
- * connected. ponytail: a single EventSource with no reconnect backoff — the
+ * connected. ponytail: a single EventSource with no reconnect backoff - the
  * browser handles reconnects automatically.
  */
 export function LiveActivityRail({ max = 25 }: { max?: number }) {
@@ -55,7 +55,7 @@ export function LiveActivityRail({ max = 25 }: { max?: number }) {
           </span>
         </span>
       }
-      subtitle="SSE feed of every event TIA emits — auto-reconnects."
+      subtitle="SSE feed of every event TIA emits - auto-reconnects."
     >
       {events.length === 0 ? (
         <p className="text-xs text-ink-400">Waiting for events…</p>

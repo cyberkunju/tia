@@ -1,9 +1,9 @@
-"""Quick Zoho-credentials tester — verifies IMAP + SMTP login work.
+"""Quick Zoho-credentials tester - verifies IMAP + SMTP login work.
 
     uv run python -m tia_ai.mailbox.test_creds
 
 Reads creds from .env (via the standard config loader). Doesn't fetch any
-messages, doesn't send anything — just logs in and out so you know the
+messages, doesn't send anything - just logs in and out so you know the
 password is good before starting the poller.
 """
 

@@ -1,7 +1,7 @@
 import { FileSpreadsheet, ExternalLink, Download } from "lucide-react";
 
 /**
- * Inline source card for binary spreadsheets (xlsx/xls) — TextCard would
+ * Inline source card for binary spreadsheets (xlsx/xls) - TextCard would
  * render the raw zip bytes ("PK..."), which looks broken on stage.
  * Instead show a clean "Excel workbook" placeholder with a download link;
  * the real, structured rows already appear in the Extracted column next to

@@ -618,9 +618,9 @@ Finance team
     )
 
 
-# ---------------------------------------------------------------- case 11 (clean PDF — required §7.5 deliverable)
+# ---------------------------------------------------------------- case 11 (clean PDF - required §7.5 deliverable)
 def case11_clean_pdf() -> None:
-    """A typed/printed PDF with a real text layer — satisfies brief §7.5
+    """A typed/printed PDF with a real text layer - satisfies brief §7.5
     'sample inputs: Excel, PDF, handwritten'. Uses Typst so pdfplumber can
     extract text cleanly without OCR."""
     import typst
@@ -691,10 +691,10 @@ Approved by: Site Manager
     )
 
 
-# ---------------------------------------------------------------- case 12 (rate mismatch — rule R2 fires)
+# ---------------------------------------------------------------- case 12 (rate mismatch - rule R2 fires)
 def case12_rate_mismatch() -> None:
     """Client bills Carlos Smith at AED 300/hr but contract rate card says 225/hr."""
-    body = f"""Subject: June timesheet — special rate request
+    body = f"""Subject: June timesheet - special rate request
 
 Client: Emirates Steel Industries LLC (CL001)
 Period: {PERIOD}
@@ -733,11 +733,11 @@ Site Manager
     )
 
 
-# ---------------------------------------------------------------- case 13 (out-of-scope hours — rule R5 fires)
+# ---------------------------------------------------------------- case 13 (out-of-scope hours - rule R5 fires)
 def case13_out_of_scope_sow() -> None:
     """CL002 Emaar has FIXED_SCOPE contract; 'Design phase' SOW is COMPLETED. Bill hours
     against that closed deliverable to trigger R5."""
-    body = f"""Subject: June work — Design phase continuation
+    body = f"""Subject: June work - Design phase continuation
 
 Client: Emaar Properties PJSC (CL002)
 Period: {PERIOD}
@@ -776,9 +776,9 @@ Operations
     )
 
 
-# ---------------------------------------------------------------- case 14 (OT over contract cap — rule R4 fires)
+# ---------------------------------------------------------------- case 14 (OT over contract cap - rule R4 fires)
 def case14_ot_over_cap() -> None:
-    """OT 50 hours on top of 22×8=176 regular hours = 28% — exceeds contract max_ot_pct=20%."""
+    """OT 50 hours on top of 22×8=176 regular hours = 28% - exceeds contract max_ot_pct=20%."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Timesheet"

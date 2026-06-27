@@ -1,16 +1,16 @@
 /**
- * Webhook router — the public Meta surface (`/webhook/whatsapp`).
+ * Webhook router - the public Meta surface (`/webhook/whatsapp`).
  *
  * GET  = the verification handshake (echo hub.challenge when mode+token are valid).
  * POST = inbound delivery, in this exact order:
  *   1. Read the RAW unparsed body BEFORE anything else (signature is over these exact bytes).
  *   2. Gate on the X-Hub-Signature-256 HMAC. A failure → 403, nothing parsed, nothing mutated.
  *      When no app secret is configured, warn and proceed (dev) rather than rejecting.
- *   3. ACK 200 immediately, BEFORE any slow work — Meta needs the ACK within seconds, so the heavy
+ *   3. ACK 200 immediately, BEFORE any slow work - Meta needs the ACK within seconds, so the heavy
  *      per-message processing is scheduled on a microtask and the ACK never waits on it.
  *   4. Parse JSON only after the ACK; invalid JSON simply stops.
  *   5. Status-only payloads (sent/delivered/read) carry no messages and do nothing.
- *   6. Each message is processed independently — one throwing never blocks its siblings and never
+ *   6. Each message is processed independently - one throwing never blocks its siblings and never
  *      changes the (already-sent) 200.
  *
  * The per-message processor is injected (default no-op), so the transport is testable with no

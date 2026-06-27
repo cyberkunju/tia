@@ -9,7 +9,7 @@ For each one:
   5. If processing raises, leaves message unseen so we retry next round
 
 Idempotency: we extract the `Message-ID` header and pass it as the
-Idempotency-Key on the intake call — replays return the original outcome.
+Idempotency-Key on the intake call - replays return the original outcome.
 
 Run it as a separate process:
 
@@ -153,7 +153,7 @@ class ZohoPoller:
         """Adapt a parsed email Message into our `/intake/email` shape and POST it.
 
         Attachments go through `/intake/upload` separately (one DocAsset each)
-        — the body itself goes through `/intake/email`.
+        - the body itself goes through `/intake/email`.
         """
         from_addr_list = _addrs_from_header(msg.get("From"))
         to_addrs = _addrs_from_header(msg.get("To"))
@@ -190,7 +190,7 @@ class ZohoPoller:
         )
 
         # 2) for each attachment, push it through /intake/upload as a separate
-        #    DocAsset. (We don't link parent_doc_id from here — the .eml route
+        #    DocAsset. (We don't link parent_doc_id from here - the .eml route
         #    handles that natively when the user uploads .eml; from IMAP we keep
         #    them as siblings tagged with the same Message-ID idempotency key.)
         att_results: list[dict] = []
@@ -224,7 +224,7 @@ class ZohoPoller:
     def poll_once(self) -> int:
         """One pass. Returns the count of messages processed."""
         if not self.configured():
-            log.warning("zoho poller not configured — set ZOHO_IMAP_USER and ZOHO_IMAP_PASSWORD")
+            log.warning("zoho poller not configured - set ZOHO_IMAP_USER and ZOHO_IMAP_PASSWORD")
             return 0
         n = 0
         for uid, msg in self.fetch_unseen():
@@ -256,7 +256,7 @@ class ZohoPoller:
                 if n:
                     log.info("zoho: processed %d message(s) this round", n)
             except (imaplib.IMAP4.error, OSError) as e:
-                log.warning("zoho transient error: %s — backing off", e)
+                log.warning("zoho transient error: %s - backing off", e)
             except Exception as e:  # noqa: BLE001
                 log.exception("zoho poller unexpected error: %s", e)
             time.sleep(interval_s)
@@ -284,7 +284,7 @@ def main() -> None:
         z.run_forever(interval_s=args.interval)
     else:
         n = z.poll_once()
-        log.info("done — %d message(s) processed", n)
+        log.info("done - %d message(s) processed", n)
 
 
 if __name__ == "__main__":

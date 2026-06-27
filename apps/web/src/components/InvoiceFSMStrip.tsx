@@ -2,7 +2,7 @@ import { Check } from "lucide-react";
 import { cn } from "../lib";
 
 /**
- * InvoiceFSMStrip — visual breadcrumb of the invoice lifecycle.
+ * InvoiceFSMStrip - visual breadcrumb of the invoice lifecycle.
  *
  * Two parallel paths from `generated`:
  *   generated → finance_approved → dispatched    (over-threshold path)

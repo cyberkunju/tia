@@ -1,4 +1,4 @@
-"""TIA `/qa` chat agent — context-aware Q&A grounded in the DB.
+"""TIA `/qa` chat agent - context-aware Q&A grounded in the DB.
 
 Brief §4.8 cross-cutting requirement: "context-aware AI chat assistant that
 understands the current client/invoice/timesheet context."
@@ -10,7 +10,7 @@ Design:
   backed by a tool result, and if no tool returns relevant data the model
   must answer "no evidence in TIA's database."
 - Returns: {answer, citations:[{kind,id,snippet}], tool_calls:[...]}
-- Swap-ready for local models — point OPENAI_BASE_URL at a vLLM/Ollama server.
+- Swap-ready for local models - point OPENAI_BASE_URL at a vLLM/Ollama server.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ STRICT RULES:
 5. **REPLY IN PLAIN PROSE. NO MARKDOWN.** Do not use **bold**, *italics*,
    numbered lists, bullet points, headers (#), backticks, or any other markdown
    formatting. Just plain sentences. Use semicolons or paragraph breaks for
-   structure if needed. The chat UI renders text verbatim — markdown leaks as
+   structure if needed. The chat UI renders text verbatim - markdown leaks as
    raw asterisks which looks broken.
 6. Be concise: short paragraphs, no marketing tone.
 7. If you call get_invoice / get_contract / get_events / get_client_settings,
@@ -69,8 +69,8 @@ def _client() -> Any:
 
 # ---------- Tool implementations (DB-grounded, no LLM in here) ----------
 #
-# Every tool takes `scope` (a client_code or None). When scope is set — i.e. a Client
-# persona is asking — the tool refuses to return data belonging to any other client.
+# Every tool takes `scope` (a client_code or None). When scope is set - i.e. a Client
+# persona is asking - the tool refuses to return data belonging to any other client.
 # This is the data-isolation boundary: the LLM cannot widen its own scope because the
 # server injects `scope`, never the model.
 
@@ -200,7 +200,7 @@ def tool_get_invoice(session: Session, invoice_id: str, scope: str | None = None
 
 def tool_get_timesheet(session: Session, timesheet_id: str, scope: str | None = None) -> dict:
     """Explain one timesheet: status, routing, confidence, why it was flagged, and a
-    summary of its validations — so users can ask 'why is this in review?'."""
+    summary of its validations - so users can ask 'why is this in review?'."""
     ts = session.get(Timesheet, timesheet_id)
     if not ts:
         return {"found": False, "timesheet_id": timesheet_id}
@@ -412,7 +412,7 @@ def answer(
     guess which entity to look up first.
 
     client_scope (optional): a client_code. When set (Client persona), every tool is
-    constrained to that client — the model cannot read another client's data. The
+    constrained to that client - the model cannot read another client's data. The
     server injects this into each tool call; the LLM never controls it.
     """
     if not OPENAI_API_KEY:

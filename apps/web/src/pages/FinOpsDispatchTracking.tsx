@@ -51,7 +51,7 @@ export function FinOpsDispatchTracking() {
                     <tr key={r.id}>
                       <td className="font-mono text-xs text-ink-600">{r.invoice_sequence_no ?? r.id.slice(0, 8)}</td>
                       <td className="font-medium text-ink-800">{r.client_code}</td>
-                      <td className="text-ink-600">{r.period ?? "—"}</td>
+                      <td className="text-ink-600">{r.period ?? "-"}</td>
                       <td className="text-right tnum font-medium">{fmtAED(r.total_incl_vat ?? r.amount)}</td>
                       <td>
                         <div className="inline-flex items-center gap-1">
@@ -61,7 +61,7 @@ export function FinOpsDispatchTracking() {
                       </td>
                       <td><Badge tone={r.client_approval_status === "approved" ? "green" : r.client_approval_status === "rejected" ? "red" : "amber"} dot={false}>{r.client_approval_status ?? "pending"}</Badge></td>
                       <td><ConfidenceBadge value={r.confidence} /></td>
-                      <td className="text-ink-500 text-xs whitespace-nowrap">{r.dispatch_attempted_at ? fmtAge(r.dispatch_attempted_at) + " ago" : "—"}</td>
+                      <td className="text-ink-500 text-xs whitespace-nowrap">{r.dispatch_attempted_at ? fmtAge(r.dispatch_attempted_at) + " ago" : "-"}</td>
                       <td>
                         <div className="flex items-center justify-end gap-1.5">
                           {auto && (

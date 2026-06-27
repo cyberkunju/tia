@@ -88,15 +88,15 @@ def assess_safety(text: str) -> GuardVerdict:
 
 SELF_HARM_RESPONSE = (
     "I'm really sorry you're feeling like this, and I'm glad you reached out. You matter. Please "
-    "contact your local emergency services or a trusted person nearby right now — you don't have "
+    "contact your local emergency services or a trusted person nearby right now - you don't have "
     "to face this alone."
 )
 UNSAFE_RESPONSE = (
-    "I can't help with that part. But I'm here for your timesheets and invoices — tell me what "
+    "I can't help with that part. But I'm here for your timesheets and invoices - tell me what "
     "you're trying to do and I'll help safely."
 )
 INJECTION_RESPONSE = (
-    "I'll keep helping the usual way. I can answer questions about your invoices and timesheets — "
+    "I'll keep helping the usual way. I can answer questions about your invoices and timesheets - "
     "what would you like to know?"
 )
 

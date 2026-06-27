@@ -1,9 +1,9 @@
 /**
- * Ingestion adapter — the per-message processor wired into the webhook.
+ * Ingestion adapter - the per-message processor wired into the webhook.
  *
  * The bridge owns no database. For each inbound message it: marks it read, downloads any
  * attachment from Meta and stages it (served back at a public URL the core can fetch), forwards
- * the message to the core's `POST /intake/whatsapp`, and replies to the user — sending the
+ * the message to the core's `POST /intake/whatsapp`, and replies to the user - sending the
  * generated invoice PDF when the pipeline auto-approved, or a status message otherwise.
  *
  * Fail-safe: a media-download or upstream failure is surfaced and replied to, never thrown.
@@ -44,8 +44,8 @@ const WELCOME_TEXT =
 const UNSUPPORTED_TEXT =
   "I can read timesheets sent as a *file* (Excel/PDF), a *photo*, or as *text*. Please resend in " +
   "one of those forms 🙏";
-const FETCH_FAILED_TEXT = "I couldn't download that attachment from WhatsApp — please try sending it again.";
-const UPSTREAM_FAILED_TEXT = "I couldn't reach the billing service just now — please try again shortly.";
+const FETCH_FAILED_TEXT = "I couldn't download that attachment from WhatsApp - please try sending it again.";
+const UPSTREAM_FAILED_TEXT = "I couldn't reach the billing service just now - please try again shortly.";
 
 function ref(docId: string): string {
   return `TIA-${docId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
@@ -83,7 +83,7 @@ export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
     if (REVIEW.has(r.status)) {
       await sender.sendText(
         to,
-        `⚠️ Got your timesheet (${ref(r.docId)}). A couple of details need a human check — our team will confirm shortly.`,
+        `⚠️ Got your timesheet (${ref(r.docId)}). A couple of details need a human check - our team will confirm shortly.`,
       );
       return { status: "review", docId: r.docId };
     }

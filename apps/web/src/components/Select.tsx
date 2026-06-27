@@ -20,7 +20,7 @@ type SelectProps = {
 };
 
 /**
- * Fully custom, accessible dropdown — replaces the native <select> so every
+ * Fully custom, accessible dropdown - replaces the native <select> so every
  * picker matches the TIA design language (brand focus ring, soft popover, a
  * brand check on the chosen row). Keyboard: ↑/↓ move, Enter/Space select,
  * Home/End jump, Esc close, type-to-find. Closes on outside click.

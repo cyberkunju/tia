@@ -23,7 +23,7 @@ export function computeSignatureHex(rawBody: string | Uint8Array, secret: string
 }
 
 /**
- * Verify the header against the raw body under an explicit secret. Pure — no env access. Returns
+ * Verify the header against the raw body under an explicit secret. Pure - no env access. Returns
  * true only when the header is `sha256=` followed by the correct 32-byte HMAC of exactly these
  * bytes. Every rejection path returns false so the caller can respond 403 and mutate nothing.
  */

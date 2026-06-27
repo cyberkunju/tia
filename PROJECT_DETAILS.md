@@ -1,4 +1,4 @@
-# TIA — Touchless Invoice Agent: Complete Project Documentation
+# TIA - Touchless Invoice Agent: Complete Project Documentation
 
 ## Overview
 
@@ -6,9 +6,9 @@ TIA is a self-hosted, open-weight AI agent that ingests staffing timesheets in 7
 
 **Built for:** HackArena 2.0 / IgniteRoom × TASC Outsourcing (UAE)
 
-**Key constraint:** No-AI-wrapper rule — every model in the inference path is open-weight and self-hosted (GLM-OCR on Modal GPU). The model is one node; the engineering (evidence graph, Hungarian matcher, deterministic validators, eval+CI gate, audit log) is the other twelve.
+**Key constraint:** No-AI-wrapper rule - every model in the inference path is open-weight and self-hosted (GLM-OCR on Modal GPU). The model is one node; the engineering (evidence graph, Hungarian matcher, deterministic validators, eval+CI gate, audit log) is the other twelve.
 
-**Headline differentiator:** Reverse-billing AR generated from a timesheet against a *deliberately ambiguous* master (e.g. two `Fatima Khan` at the same client), where a Hungarian assignment — not a fuzzy name lookup — does the entity resolution.
+**Headline differentiator:** Reverse-billing AR generated from a timesheet against a *deliberately ambiguous* master (e.g. two `Fatima Khan` at the same client), where a Hungarian assignment - not a fuzzy name lookup - does the entity resolution.
 
 ---
 
@@ -24,7 +24,7 @@ TIA is a self-hosted, open-weight AI agent that ingests staffing timesheets in 7
 | Matching | rapidfuzz similarity · jellyfish phonetic (Metaphone) · scipy Hungarian assignment (visible cost matrix) |
 | Validation | Deterministic rules · Decimal money math · threshold approval routing |
 | Invoice Rendering | Typst (Rust-backed Python wheel) · PDF generation with audit hash |
-| Package Managers | **Bun only** (JS/TS), **uv only** (Python) — no npm/yarn/pip/poetry |
+| Package Managers | **Bun only** (JS/TS), **uv only** (Python) - no npm/yarn/pip/poetry |
 
 **Target architecture** (additive layering): NATS JetStream events, Rust Axum backend, SeaweedFS object storage, Qdrant vector retrieval, OpenTelemetry/Prometheus/Grafana observability. Current demo runs on Postgres + local staging + direct calls.
 
@@ -75,7 +75,7 @@ tia/
 
 ---
 
-## Database Schema (SQLAlchemy ORM — `workers/ai/tia_ai/models.py`)
+## Database Schema (SQLAlchemy ORM - `workers/ai/tia_ai/models.py`)
 
 Portable across SQLite (dev) and PostgreSQL 18 (prod). Append-only `events` table is the audit spine.
 
@@ -281,13 +281,13 @@ Source of truth shared between all pipeline stages (mirrors CONTRACTS.md §4).
 ```
 
 ### Routing Enum
-- `auto` — fully resolved, all validations pass → invoice generated immediately
-- `hitl` — ambiguous match or validation failure → awaiting human review
-- `escalate` — no rows extracted (empty/corrupt document) → needs manual intervention
+- `auto` - fully resolved, all validations pass → invoice generated immediately
+- `hitl` - ambiguous match or validation failure → awaiting human review
+- `escalate` - no rows extracted (empty/corrupt document) → needs manual intervention
 
 ---
 
-## Pipeline Flow (Orchestrator — `workers/ai/tia_ai/orchestrator.py`)
+## Pipeline Flow (Orchestrator - `workers/ai/tia_ai/orchestrator.py`)
 
 The orchestrator drives a document through a deterministic state machine:
 
@@ -302,10 +302,10 @@ Ingest → Extract → Resolve → Validate → Route → [Invoice] → [Dispatc
 
 ### 2. Extract (`extract/`)
 - Route by mime/suffix to the appropriate extractor:
-  - `.xlsx/.xls` → `extract_excel()` — openpyxl, detects clean vs. punch layout
-  - `.eml/.txt` → `extract_email()` — regex/heuristic parser (no LLM)
+  - `.xlsx/.xls` → `extract_excel()` - openpyxl, detects clean vs. punch layout
+  - `.eml/.txt` → `extract_email()` - regex/heuristic parser (no LLM)
   - `.png/.jpg/.tiff` → `extract_image()` → GLM-OCR markdown → text parser → fallback KIE JSON
-  - `.pdf` → `extract_pdf()` — pdfplumber text layer → email parser; scanned → rasterize → vision
+  - `.pdf` → `extract_pdf()` - pdfplumber text layer → email parser; scanned → rasterize → vision
 - Empty/corrupt files return empty `TimesheetExtraction` (never crash)
 
 ### 3. Resolve (`match/resolver.py`)
@@ -443,7 +443,7 @@ Auto-detects two layouts from header row:
 Handles: blank rows, extra columns, missing cells, mixed leave code spellings.
 
 ### Email Extractor (`extract/email.py`)
-Pure regex/heuristic — handles 6 email shapes with no LLM:
+Pure regex/heuristic - handles 6 email shapes with no LLM:
 - Case 1: Payout request (name + client + period + total, no Emp ID)
 - Case 2: From employee (Emp ID + days in prose)
 - Case 3: From client (client + roster of names + days, no Emp IDs)
@@ -452,7 +452,7 @@ Pure regex/heuristic — handles 6 email shapes with no LLM:
 - Case 10: Quoted-reply email (must ignore `>` quoted history)
 
 **Key regex patterns:**
-- `EMP\d{4,}` — employee IDs
+- `EMP\d{4,}` - employee IDs
 - Period: `Mon YYYY`, `YYYY-MM`, `MM/YYYY`
 - `\d+ days`, `\d+ OT`, leave codes, reimbursement amounts
 - Leading name extraction with noise filtering (Dear, Hi, Subject, etc.)
@@ -487,13 +487,13 @@ Deterministic pure functions mapping messy real-world variants:
 React 19 + Vite 8 + TypeScript 6 SPA with persona-based navigation.
 
 ### Tech Stack
-- **React Router 7** — file-based routing with nested layout
-- **TanStack Query 5** — data fetching with 2s stale time
-- **Zustand 5** — persona state (persisted to localStorage)
-- **Tailwind CSS 3** — utility-first styling with TASC brand colors
-- **Framer Motion** — animations
-- **Lucide React** — icons
-- **oxlint** — linting (not ESLint)
+- **React Router 7** - file-based routing with nested layout
+- **TanStack Query 5** - data fetching with 2s stale time
+- **Zustand 5** - persona state (persisted to localStorage)
+- **Tailwind CSS 3** - utility-first styling with TASC brand colors
+- **Framer Motion** - animations
+- **Lucide React** - icons
+- **oxlint** - linting (not ESLint)
 
 ### Pages (8 total)
 
@@ -596,7 +596,7 @@ Fields gold is silent on → not penalized (no grade for what wasn't asked).
 | `frontend-build` | `bun install --frozen-lockfile` + `bun run lint` + `bun run build` (tsc + vite) | 8min |
 | `eval-harness` | seed + synth + run 9 cases + F1/ECE gates | 8min |
 | `api-smoke` | Boot uvicorn, curl health/clients/upload/eval/documents | 8min |
-| `ci-status` | Aggregator gate (all 4 must succeed) | — |
+| `ci-status` | Aggregator gate (all 4 must succeed) | - |
 
 Concurrency: `ci-${{ github.ref }}`, cancel-in-progress.
 
@@ -658,12 +658,12 @@ Minimal .env loader (no external dep). Checks repo root and worker dir.
 
 Stable interfaces for parallel development:
 
-1. **OCR serving** — GLM-OCR on Modal (OpenAI-compatible vLLM, KIE + Layout modes)
-2. **WhatsApp bridge** — POST `/intake/whatsapp` with idempotency
-3. **NATS JetStream events** — Stream "TIA" with 8 subject patterns (doc.*, invoice.*)
-4. **Canonical schema** — `TimesheetExtraction` (shared source of truth)
-5. **Worker RPC** — POST /extract, /match, /ocr/kie, /ocr/layout
-6. **Idempotency & audit** — Every mutation needs Idempotency-Key, events table dedup
+1. **OCR serving** - GLM-OCR on Modal (OpenAI-compatible vLLM, KIE + Layout modes)
+2. **WhatsApp bridge** - POST `/intake/whatsapp` with idempotency
+3. **NATS JetStream events** - Stream "TIA" with 8 subject patterns (doc.*, invoice.*)
+4. **Canonical schema** - `TimesheetExtraction` (shared source of truth)
+5. **Worker RPC** - POST /extract, /match, /ocr/kie, /ocr/layout
+6. **Idempotency & audit** - Every mutation needs Idempotency-Key, events table dedup
 
 ---
 

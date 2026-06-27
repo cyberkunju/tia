@@ -7,7 +7,7 @@ can render it as a chip on the Review screen, and the chat agent can cite it.
 Why "BTP-style"? The brief explicitly names this a "configurable rule set
 (BTP-style parameters)." The behaviour is the same rule set every time; the
 *parameters* (rate cards, OT cap, markup, scope hours) live on each contract.
-That's the configurability — same engine, per-client tuning.
+That's the configurability - same engine, per-client tuning.
 
 Rule IDs:
   R1  employee_in_contract_scope
@@ -251,7 +251,7 @@ def r5_sow_hours_not_exceeded(
     open_sows = [s for s in sows if s.status == "OPEN"]
     out: list[RuleResult] = []
     if completed and total_h > 0:
-        # billing against completed SOW — flag
+        # billing against completed SOW - flag
         names = ", ".join(s.deliverable for s in completed)
         out.append(
             _fail(
@@ -525,7 +525,7 @@ def r15_anomaly_vs_history(
                     expected=f"≈ AED {baseline:.2f} (normative baseline)",
                     actual=f"AED {billed:.2f} (+{delta_pct:.0f}%)",
                     message=(
-                        f"{emp_name} is billed AED {billed:.2f} this period — "
+                        f"{emp_name} is billed AED {billed:.2f} this period - "
                         f"{delta_pct:.0f}% above the historic baseline "
                         f"(AED {baseline:.2f}). Possible inflated hours / "
                         f"overlapping shifts / padded reimbursements."
@@ -589,19 +589,19 @@ RULES = (
 # Used by the cc_silent reply drafter (and any future client-visible surface)
 # so we don't leak internals like "rule R5 failed".
 FRIENDLY_RULE_MESSAGES: dict[str, str] = {
-    "R0": "We couldn't find an active contract for your account — please make sure your client code is up to date.",
-    "R1": "One or more employees on this timesheet aren't on your contract roster — we'll confirm with FinOps before billing.",
-    "R2": "The billing rate on this timesheet differs from your contract's rate card — we'll verify before invoicing.",
-    "R3": "This timesheet's period falls outside your contract's validity window — please double-check the dates.",
-    "R4": "Overtime hours on this timesheet exceed your contract's agreed cap — we're holding it for review.",
+    "R0": "We couldn't find an active contract for your account - please make sure your client code is up to date.",
+    "R1": "One or more employees on this timesheet aren't on your contract roster - we'll confirm with FinOps before billing.",
+    "R2": "The billing rate on this timesheet differs from your contract's rate card - we'll verify before invoicing.",
+    "R3": "This timesheet's period falls outside your contract's validity window - please double-check the dates.",
+    "R4": "Overtime hours on this timesheet exceed your contract's agreed cap - we're holding it for review.",
     "R5": "Hours were billed against a deliverable that's already marked complete on your Statement of Work.",
-    "R6": "The line totals didn't reconcile against the contract markup — we're double-checking the math.",
-    "R7": "VAT didn't reconcile against the line total — we're verifying the tax calculation.",
-    "R8": "An invoice already exists for this employee in the same billing period — we want to confirm this isn't a duplicate.",
-    "R9": "Your timesheet didn't include a clear approver signature — we may need confirmation before invoicing.",
+    "R6": "The line totals didn't reconcile against the contract markup - we're double-checking the math.",
+    "R7": "VAT didn't reconcile against the line total - we're verifying the tax calculation.",
+    "R8": "An invoice already exists for this employee in the same billing period - we want to confirm this isn't a duplicate.",
+    "R9": "Your timesheet didn't include a clear approver signature - we may need confirmation before invoicing.",
     "R10": "Overtime amounts didn't reconcile to the statutory rate (1.25× standard / 1.5× night, rest day, holiday).",
-    "R14": "The billing period is currently closed for your account — please reach out to your TASC FinOps contact.",
-    "R15": "The billed amount is unusually high compared to this employee's normal monthly cost — please confirm the hours.",
+    "R14": "The billing period is currently closed for your account - please reach out to your TASC FinOps contact.",
+    "R15": "The billed amount is unusually high compared to this employee's normal monthly cost - please confirm the hours.",
 }
 
 
@@ -626,7 +626,7 @@ def run_rule_engine(
     invoice: dict, contract: Contract | None, session: Session, ctx: dict | None = None
 ) -> list[RuleResult]:
     """Run all 10 rules. If no contract is bound, emit a single error so the doc
-    routes to HITL — a billable timesheet without a contract is always exception."""
+    routes to HITL - a billable timesheet without a contract is always exception."""
     ctx = ctx or {}
     if contract is None:
         return [

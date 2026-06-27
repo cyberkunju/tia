@@ -1,16 +1,16 @@
-# TIA — WhatsApp bridge (`workers/whatsapp`)
+# TIA - WhatsApp bridge (`workers/whatsapp`)
 
 A thin, stateless **Meta WhatsApp Cloud API adapter** (Bun + Hono + TypeScript). It is the bridge
 the core's `POST /intake/whatsapp` contract (CONTRACTS.md §2) was designed for: a client or
-employee sends a timesheet to the TASC WhatsApp number — as an Excel/PDF **file**, a **photo** of a
-handwritten sheet, or **typed text** — and this service:
+employee sends a timesheet to the TASC WhatsApp number - as an Excel/PDF **file**, a **photo** of a
+handwritten sheet, or **typed text** - and this service:
 
 1. verifies the webhook is genuinely from Meta (HMAC over the raw body, constant-time),
 2. acknowledges within milliseconds (Meta drops slow webhooks),
 3. de-duplicates retries (in-memory ring + the forwarded `Idempotency-Key`),
 4. downloads any attachment from the Graph API and **stages** it (served back at `/media/<hash>`),
 5. **forwards** the message to the core: `POST {UPSTREAM_API_URL}/intake/whatsapp`,
-6. replies to the user — sending the generated **invoice PDF** when the pipeline auto-approved, or a
+6. replies to the user - sending the generated **invoice PDF** when the pipeline auto-approved, or a
    status message when it routed to human review.
 
 It owns **no database**: the core is the single source of truth. That keeps the bridge a pure
@@ -43,13 +43,13 @@ bun run dev              # http://localhost:8088 ; forwards to UPSTREAM_API_URL/
 | GET | `/media/:name` | serves staged inbound media for the core to download |
 | GET | `/healthz` | liveness + configured upstream |
 | POST | `/internal/notify` | optional outbound push (secret-guarded) |
-| POST | `/internal/simulator/whatsapp` | **dev only** — sign + inject a payload (hidden in production) |
+| POST | `/internal/simulator/whatsapp` | **dev only** - sign + inject a payload (hidden in production) |
 
 ## Test without a live Meta number
 
 ```bash
 bun run dev                 # one shell
-bun run src/simulate.ts     # another — fires text / document / image samples through the bridge
+bun run src/simulate.ts     # another - fires text / document / image samples through the bridge
 ```
 
 ## Connect a real number

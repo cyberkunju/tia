@@ -1,5 +1,5 @@
 /**
- * TouchlessRationale — "Why touchless?" modal.
+ * TouchlessRationale - "Why touchless?" modal.
  *
  * Reads the audit timeline (events) for this invoice and finds the
  * `auto_dispatched_within_tolerance` event. Renders the rationale as PROSE
@@ -41,7 +41,7 @@ export function TouchlessRationale({ invoice, onClose }: { invoice: Invoice; onC
           <div className="text-xs text-ink-500">Loading audit trail…</div>
         ) : !auto ? (
           <div className="rounded-md border border-ink-200 bg-ink-50 px-3 py-2 text-sm text-ink-700">
-            This invoice wasn't auto-dispatched — it went through manual review.
+            This invoice wasn't auto-dispatched - it went through manual review.
           </div>
         ) : (
           <AutoCard event={auto} invoice={invoice} />
@@ -104,7 +104,7 @@ function AutoCard({ event, invoice }: { event: EventRow; invoice: Invoice }) {
         </div>
         <div className="rounded-md bg-ink-50 px-2.5 py-1.5">
           <div className="text-2xs text-ink-500 uppercase tracking-wide">Decision time</div>
-          <div className="font-mono">{event.at ? event.at.slice(11, 19) : "—"}</div>
+          <div className="font-mono">{event.at ? event.at.slice(11, 19) : "-"}</div>
         </div>
       </div>
 

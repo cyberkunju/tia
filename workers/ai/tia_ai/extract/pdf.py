@@ -1,4 +1,4 @@
-"""Native-PDF extractor — pdfplumber text/tables; scanned PDFs route to GLM-OCR via vision."""
+"""Native-PDF extractor - pdfplumber text/tables; scanned PDFs route to GLM-OCR via vision."""
 
 from __future__ import annotations
 

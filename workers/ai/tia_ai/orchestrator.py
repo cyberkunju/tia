@@ -1,4 +1,4 @@
-"""Pipeline orchestrator — drives a document through the state machine.
+"""Pipeline orchestrator - drives a document through the state machine.
 
 Deterministic, idempotent, in-process. NATS JetStream is the target subject pub/sub
 (see CONTRACTS §3); for the demo the orchestrator calls phases directly and the
@@ -82,8 +82,8 @@ def log_event(
 
     Each event records:
       - payload  (the action's parameters)
-      - before / after  (state diff for mutations — optional but recommended)
-      - prev_hash + hash  (chain — a break in the chain is detectable
+      - before / after  (state diff for mutations - optional but recommended)
+      - prev_hash + hash  (chain - a break in the chain is detectable
         by re-walking `verify_audit_chain()` in tia_ai/audit.py)
 
     Idempotent on `idempotency_key`: replays return the original row.
@@ -353,8 +353,8 @@ def _generate_invoice(
     period_for_seq = (inv.get("period") or "0000-00").replace(" ", "").upper()
     sequence_no = f"TIA-{inv['client_code'] or 'NA'}-{period_for_seq}-{seq_count:04d}"
 
-    # Smart Bot + SAP step ① — consolidated SAP-ready Excel
-    # Smart Bot + SAP step ② — process payroll (visible event)
+    # Smart Bot + SAP step ① - consolidated SAP-ready Excel
+    # Smart Bot + SAP step ② - process payroll (visible event)
     # (step ③ "generate invoices" is what this very function does)
     smart_bot_artifacts: dict = {}
     if inv.get("client_code") and inv.get("period"):
@@ -382,7 +382,7 @@ def _generate_invoice(
                 {"reason": str(e)[:200]},
             )
 
-    # inv payload for Typst — extend with tax fields
+    # inv payload for Typst - extend with tax fields
     inv_for_pdf = {
         **inv,
         "supplier_trn": "100123456700003",
@@ -453,7 +453,7 @@ def _maybe_auto_dispatch(session, invoice, client, rule_results: list) -> None:
     """Tolerance-based touchless dispatch.
 
     Lives here (not in the dispatch endpoint) because every channel funnels
-    through `_generate_invoice` — upload, email, mailbox-webhook, online form,
+    through `_generate_invoice` - upload, email, mailbox-webhook, online form,
     Zoho IMAP poller. One hook → universal touchless behaviour.
     """
     if invoice.status != "generated":
@@ -631,7 +631,7 @@ def reject_timesheet(
 def dispatch_invoice(
     session: Session, invoice: Invoice, by_user: str, idempotency_key: str
 ) -> dict:
-    """Idempotent dispatch — keyed by client+invoice; refuses to re-fire."""
+    """Idempotent dispatch - keyed by client+invoice; refuses to re-fire."""
     if invoice.dispatch_idempotency_key:
         return {"status": "already_dispatched", "idempotency_key": invoice.dispatch_idempotency_key}
     invoice.dispatch_idempotency_key = idempotency_key

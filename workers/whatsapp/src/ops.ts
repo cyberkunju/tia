@@ -134,7 +134,7 @@ async function send(to: string, text: string): Promise<void> {
   });
   if (!r.ok) {
     console.error("✗ FAILURE:", JSON.stringify(r.data, null, 2));
-    console.error("\nIf the error code is 131047/131026/470, the 24h window is closed — the recipient");
+    console.error("\nIf the error code is 131047/131026/470, the 24h window is closed - the recipient");
     console.error("must message you first, or you must send an approved template.");
     process.exit(1);
   }

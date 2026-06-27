@@ -14,7 +14,7 @@ export function fmtPct(n: number): string {
 }
 
 export function fmtDate(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "-";
   try { return new Date(s).toLocaleString(); } catch { return s; }
 }
 
@@ -56,9 +56,9 @@ export function fmtAED(n: number): string {
 
 /** Compact "3m", "2h", "4d" relative age from an ISO timestamp. */
 export function fmtAge(s: string | null | undefined): string {
-  if (!s) return "—";
+  if (!s) return "-";
   const t = new Date(s).getTime();
-  if (Number.isNaN(t)) return "—";
+  if (Number.isNaN(t)) return "-";
   const sec = Math.max(0, (Date.now() - t) / 1000);
   if (sec < 60) return "just now";
   if (sec < 3600) return `${Math.floor(sec / 60)}m`;
@@ -67,7 +67,7 @@ export function fmtAge(s: string | null | undefined): string {
 }
 
 export function humanize(s?: string | null): string {
-  if (!s) return "—";
+  if (!s) return "-";
   return s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
@@ -75,7 +75,7 @@ export function humanize(s?: string | null): string {
 export const TASC_ENTITY = { name: "TASC Outsourcing LLC", trn: "100312345600003" } as const;
 
 /**
- * Visual heuristic for the ⚡ AUTO chip — matches the auto-dispatch concept
+ * Visual heuristic for the ⚡ AUTO chip - matches the auto-dispatch concept
  * (an invoice that went straight from validation to dispatched with no human
  * click). The authoritative signal lives in the audit chain
  * (event `auto_dispatched_within_tolerance`); the chip is only a hint, the
@@ -88,7 +88,7 @@ export function isAutoDispatched(status: string | null | undefined): boolean {
 }
 
 /**
- * Strip the common markdown tokens an LLM tends to emit even when told not to —
+ * Strip the common markdown tokens an LLM tends to emit even when told not to -
  * `**bold**`, `*italics*`, leading `#` headers, `- ` bullets, inline `\`code\``,
  * fenced code blocks. The AIDA panel renders text verbatim, so raw asterisks
  * look broken. Belt-and-suspenders with the system prompt.

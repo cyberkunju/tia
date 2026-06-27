@@ -25,26 +25,26 @@ export function FinanceDashboard() {
 
   return (
     <div>
-      <PageHeader icon={LayoutDashboard} title="Finance — month close" description="Straight-through processing, cycle time, accuracy, and billed value (AED)." />
+      <PageHeader icon={LayoutDashboard} title="Finance - month close" description="Straight-through processing, cycle time, accuracy, and billed value (AED)." />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <Metric label="Touchless (STP)" value={stp ? fmtPct(stp.touchless_rate) : "—"} hint={stp ? `${stp.auto} auto · target ${fmtPct(stp.target)}` : ""} accent={touchlessOk} />
-        <Metric label="Time to invoice" value={time ? `${time.mean_minutes.toFixed(1)}m` : "—"} hint={time ? `${time.samples} samples · target <${time.target_max_minutes}m` : ""} />
-        <Metric label="Accuracy (F1)" value={acc?.overall_macro_f1 != null ? acc.overall_macro_f1.toFixed(2) : (acc ? `${acc.passed}/${acc.runnable}` : "—")} hint={acc ? `target ${acc.target} · ECE ${acc.ece ?? "—"}` : ""} />
+        <Metric label="Touchless (STP)" value={stp ? fmtPct(stp.touchless_rate) : "-"} hint={stp ? `${stp.auto} auto · target ${fmtPct(stp.target)}` : ""} accent={touchlessOk} />
+        <Metric label="Time to invoice" value={time ? `${time.mean_minutes.toFixed(1)}m` : "-"} hint={time ? `${time.samples} samples · target <${time.target_max_minutes}m` : ""} />
+        <Metric label="Accuracy (F1)" value={acc?.overall_macro_f1 != null ? acc.overall_macro_f1.toFixed(2) : (acc ? `${acc.passed}/${acc.runnable}` : "-")} hint={acc ? `target ${acc.target} · ECE ${acc.ece ?? "-"}` : ""} />
         <Metric label="Billed (incl. VAT)" value={fmtAED(total)} hint={`${(invoices ?? []).length} invoices · ${head?.total_unique_emps ?? 0} associates`} />
       </div>
 
-      {/* Tamper-evident audit chain — green dot when intact, red banner if broken. */}
+      {/* Tamper-evident audit chain - green dot when intact, red banner if broken. */}
       <div className="mb-4">
         <AuditChainCard />
       </div>
 
-      {/* 3-pillar dispatch breakdown — auto / hitl / finance touchless story. */}
+      {/* 3-pillar dispatch breakdown - auto / hitl / finance touchless story. */}
       <div className="mb-4">
         <DispatchPillars stp={stp as StpMetricFull | undefined} />
       </div>
 
-      {/* Live event stream — SSE from /events/stream. */}
+      {/* Live event stream - SSE from /events/stream. */}
       <div className="mb-4">
         <LiveActivityRail max={25} />
       </div>

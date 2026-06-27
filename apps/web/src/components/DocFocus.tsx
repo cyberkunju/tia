@@ -310,7 +310,7 @@ function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: 
     enabled: !!invoiceId,
   });
 
-  // LLM-generated plain-English rationale — caching by invoice id so the user
+  // LLM-generated plain-English rationale - caching by invoice id so the user
   // doesn't pay the latency on every drawer open. The prompt forbids rule
   // codes/jargon and forces a 4–6 sentence prose summary.
   const explain = useQuery({
@@ -341,9 +341,9 @@ function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: 
           <button className="btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
         </div>
         <div className="p-5 space-y-5">
-          {!invoiceId && <div className="text-ink-500 text-sm">No invoice yet — approve to generate.</div>}
+          {!invoiceId && <div className="text-ink-500 text-sm">No invoice yet - approve to generate.</div>}
 
-          {/* Plain-English LLM rationale — TOP-LEVEL answer judges/clients want. */}
+          {/* Plain-English LLM rationale - TOP-LEVEL answer judges/clients want. */}
           {invoiceId && (
             <section className="rounded-lg ring-1 ring-brand-200 bg-brand-50/50 p-4">
               <div className="flex items-center gap-1.5 mb-1.5">
@@ -384,7 +384,7 @@ function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: 
             <p className="text-2xs text-ink-400 mt-1">Computed by the matcher and validator. Never taken from the model.</p>
           </div>
 
-          {/* Entity resolution — only when there's a non-trivial assignment to show. */}
+          {/* Entity resolution - only when there's a non-trivial assignment to show. */}
           {data?.match_result && data.match_result.cost_matrix.length > 0 && (
             <div>
               <h4 className="text-2xs font-semibold uppercase tracking-wide text-ink-500 mb-2">How associates were matched</h4>
@@ -451,10 +451,10 @@ function buildDeterministicExplanation(why: { confidence_calibrated?: number | n
   const conf = why.confidence_calibrated ?? 0;
   const fails = (why.validations ?? []).filter((v) => !v.passed && v.severity !== "warning").length;
   if (fails === 0 && conf >= 0.9) {
-    return `Confidence ${(conf * 100).toFixed(0)}% — TIA matched every associate cleanly and every contract check passed, so the tax invoice was generated and sent out without a human in the loop.`;
+    return `Confidence ${(conf * 100).toFixed(0)}% - TIA matched every associate cleanly and every contract check passed, so the tax invoice was generated and sent out without a human in the loop.`;
   }
   if (fails === 0) {
-    return `Confidence ${(conf * 100).toFixed(0)}% — the contract checks all passed; a FinOps reviewer confirmed the matches before generating the invoice.`;
+    return `Confidence ${(conf * 100).toFixed(0)}% - the contract checks all passed; a FinOps reviewer confirmed the matches before generating the invoice.`;
   }
-  return `Confidence ${(conf * 100).toFixed(0)}% — TIA found ${fails} item${fails === 1 ? "" : "s"} that didn't match the contract, so a FinOps reviewer was asked to resolve them before the invoice could be generated.`;
+  return `Confidence ${(conf * 100).toFixed(0)}% - TIA found ${fails} item${fails === 1 ? "" : "s"} that didn't match the contract, so a FinOps reviewer was asked to resolve them before the invoice could be generated.`;
 }

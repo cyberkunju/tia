@@ -35,7 +35,7 @@ export function ClientSubmit() {
   const [result, setResult] = useState<Result | null>(null);
 
   // When Reset Demo fires the header button, every component-local bit of
-  // post-upload state needs to go too — otherwise the UploadReceipt keeps
+  // post-upload state needs to go too - otherwise the UploadReceipt keeps
   // polling a doc the backend just deleted.
   const resetTick = usePersona((s) => s.resetTick);
   useEffect(() => {
@@ -56,13 +56,13 @@ export function ClientSubmit() {
         title={clientName ? `Submit timesheet · ${clientName}` : "Submit timesheet"}
         description={
           currentClientCode
-            ? <span>Submitting on behalf of <span className="font-mono">{currentClientCode}</span> — upload a file or paste an email body. Any of the 7 shapes. The agent does the rest.</span>
-            : "Upload a file or paste an email body — any of the 7 shapes. The agent does the rest."
+            ? <span>Submitting on behalf of <span className="font-mono">{currentClientCode}</span> - upload a file or paste an email body. Any of the 7 shapes. The agent does the rest.</span>
+            : "Upload a file or paste an email body - any of the 7 shapes. The agent does the rest."
         }
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        {/* Form — fills two thirds */}
+        {/* Form - fills two thirds */}
         <div className="lg:col-span-2 space-y-4">
           <div className="inline-flex p-1 rounded-lg bg-ink-100 border border-ink-200">
             {([["upload", "File upload", Upload], ["email", "Email body", FileText]] as const).map(([id, label, Icon]) => (
@@ -108,7 +108,7 @@ export function ClientSubmit() {
           )}
         </div>
 
-        {/* Context column — fills the last third */}
+        {/* Context column - fills the last third */}
         <div className="space-y-4">
           {result && <UploadReceipt docId={result.doc_id} />}
 

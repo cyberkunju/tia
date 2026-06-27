@@ -98,7 +98,7 @@ export function loadConfig(env: EnvSource = Bun.env): AppConfig {
 
   if (missing.length > 0) {
     throw new ConfigError(
-      `Configuration error — missing required keys: ${missing.join(", ")}.`,
+      `Configuration error - missing required keys: ${missing.join(", ")}.`,
       missing,
     );
   }

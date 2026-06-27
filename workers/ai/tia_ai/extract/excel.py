@@ -1,4 +1,4 @@
-"""Excel extractor (cases 5 and 7) — openpyxl, no LLM.
+"""Excel extractor (cases 5 and 7) - openpyxl, no LLM.
 
 Two shapes, auto-detected from the header row:
   * clean (case 7): one row per employee with Emp ID / Name / Working Days / OT / Leave

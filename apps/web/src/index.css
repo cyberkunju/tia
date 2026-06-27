@@ -9,7 +9,7 @@
   100% { background-position: 0% 50%; }
 }
 
-/* AIDA "thinking" — a brand-tinted shimmer sweeping across the word. No dots. */
+/* AIDA "thinking" - a brand-tinted shimmer sweeping across the word. No dots. */
 @keyframes aidaShimmer {
   0%   { background-position: 200% 50%; }
   100% { background-position: 0% 50%; }
@@ -71,7 +71,7 @@
   .card-flush { @apply bg-white rounded-lg border border-ink-200 shadow-sm overflow-hidden; }
   .eyebrow { @apply text-2xs font-semibold uppercase tracking-[0.09em] text-ink-400; }
 
-  /* Brand command band — subtle drifting orange gradient. */
+  /* Brand command band - subtle drifting orange gradient. */
   .brand-band {
     background: linear-gradient(100deg,
       theme("colors.brand.700") 0%,
@@ -102,7 +102,7 @@
            focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
   }
 
-  /* Status tags — flat, tonal, no dots, no borders. */
+  /* Status tags - flat, tonal, no dots, no borders. */
   .badge { @apply inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium leading-5; }
   .badge-green { @apply badge bg-emerald-50 text-emerald-700; }
   .badge-amber { @apply badge bg-amber-50 text-amber-700; }

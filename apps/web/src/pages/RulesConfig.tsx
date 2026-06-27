@@ -6,7 +6,7 @@ import { cn } from "../lib";
 import { PageHeader, Panel, Badge, Spinner } from "../ui";
 
 /**
- * Live rule catalogue — sourced from the backend `/rules` endpoint so chips on
+ * Live rule catalogue - sourced from the backend `/rules` endpoint so chips on
  * Review screens, judges' demos, and this config page never drift apart.
  * Toggles are local for the demo; per-client persistence wires to the rule
  * engine next.
@@ -17,7 +17,7 @@ export function RulesConfig() {
     () => (data?.rules ?? []).map((r) => ({
       id: r.rule_id,
       name: r.function_name.replace(/^r\d+_/, "").replace(/_/g, " "),
-      desc: r.friendly_message || "—",
+      desc: r.friendly_message || "-",
     })),
     [data],
   );

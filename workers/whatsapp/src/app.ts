@@ -1,5 +1,5 @@
 /**
- * Application wiring — composes transport, dedup, and the intake adapter into one Hono app.
+ * Application wiring - composes transport, dedup, and the intake adapter into one Hono app.
  *
  * The bridge is stateless: dedup is an in-memory ring (Meta retries arrive within minutes, and the
  * core's events table is the durable idempotency layer via the Idempotency-Key we forward). Each

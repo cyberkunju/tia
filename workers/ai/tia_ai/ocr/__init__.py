@@ -68,7 +68,7 @@ def _completions_url() -> str:
 
 
 def _dedupe_looped(text: str) -> str:
-    """Small OCR models loop — they transcribe the page once, then repeat it in
+    """Small OCR models loop - they transcribe the page once, then repeat it in
     code fences until they hit the token cap. Keep one clean copy: the text before
     the first fence, or (if it opens with a fence) the longest fenced block."""
     if not text:

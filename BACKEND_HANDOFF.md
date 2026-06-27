@@ -1,9 +1,9 @@
-# BACKEND HANDOFF — Phases 0–6
+# BACKEND HANDOFF - Phases 0–6
 
 Navaneeth: this is the API surface I've shipped through 6 phases. Use it for the
 UI. All endpoints are live in `tia_ai/api/app.py`. JSON unless noted otherwise.
 
-## Phase 0–1 — contracts + rules (already wired through orchestrator)
+## Phase 0–1 - contracts + rules (already wired through orchestrator)
 
 Existing endpoints (you have these):
 - `POST /intake/upload` · `POST /intake/email` · `POST /intake/whatsapp`
@@ -20,13 +20,13 @@ New types on existing endpoints:
 - `Timesheet.validations` now includes the rule results too (alongside math validators)
 - `Timesheet.hitl_reason` includes failing rule IDs, e.g. `"contract rule(s) failed: R4, R8"`
 
-## Phase 2 — SAP + WPS SIF
+## Phase 2 - SAP + WPS SIF
 
 - `GET /consolidate/{client_code}/{period}.xlsx` → Ramco SRP-shaped consolidated workbook (download)
 - `GET /payroll/sif/{client_code}/{period}.sif` → WPS SIF file (download)
 - New event in audit timeline: `payroll_processed_by_sap` with `consolidated_excel` + `wps_sif` paths in payload
 
-## Phase 3 — chat
+## Phase 3 - chat
 
 ```ts
 // POST /qa
@@ -42,13 +42,13 @@ type QAResp = {
 Render `citations` as inline `[kind:id]` chips that scroll to / open the cited entity.
 Pass `entity_context` when the user is looking at a doc/invoice/client.
 
-## Phase 4 — email modes + Phase 4b online form
+## Phase 4 - email modes + Phase 4b online form
 
 - `POST /intake/email` now accepts `to_addrs: string[]`, `cc_addrs: string[]`, `intake_mode?: string`. Response includes `intake_mode` ∈ `{ direct_forward, cc_silent, watched_mailbox, unknown }` and `reply_drafted: boolean`.
-- `POST /intake/mailbox-webhook` (Postmark/SES shape: `From`, `To`, `Cc`, `Subject`, `TextBody`, `HtmlBody`) — auto-binds to `Client.settings.watched_mailboxes`.
-- `POST /submit/{client_code}` body `{ period, rows[], submitted_by?, notes? }` — online form, 4th channel.
+- `POST /intake/mailbox-webhook` (Postmark/SES shape: `From`, `To`, `Cc`, `Subject`, `TextBody`, `HtmlBody`) - auto-binds to `Client.settings.watched_mailboxes`.
+- `POST /submit/{client_code}` body `{ period, rows[], submitted_by?, notes? }` - online form, 4th channel.
 
-## Phase 5 — onboarding, approvals, KPIs, status, dispatch
+## Phase 5 - onboarding, approvals, KPIs, status, dispatch
 
 ```ts
 // POST /clients
@@ -63,9 +63,9 @@ type NewClient = {
 };
 ```
 
-- `PUT /clients/{code}/settings` — patches `Client.settings` JSONB (all `NewClient` fields are optional)
+- `PUT /clients/{code}/settings` - patches `Client.settings` JSONB (all `NewClient` fields are optional)
 - `POST /invoices/{id}/client-approve` body `{ by_user?, reason? }`
-- `POST /invoices/{id}/client-reject` — auto-opens a query thread
+- `POST /invoices/{id}/client-reject` - auto-opens a query thread
 - `GET /finance/queue` → invoices over per-client `validation_threshold_aed`
 - `POST /invoices/{id}/finance-approve` · `POST /invoices/{id}/finance-reject`
 - `POST /clients/{code}/queries` body `{ subject, body?, invoice_id?, raised_by? }`
@@ -117,22 +117,22 @@ export interface STPMetric { total: number; auto: number; hitl: number; escalate
 
 ## What you still own (frontend + WhatsApp)
 
-- Client config screen — bind to `POST /clients` + `PUT /clients/{c}/settings`
+- Client config screen - bind to `POST /clients` + `PUT /clients/{c}/settings`
 - Rate-card editor on the contract detail page (no API yet; let me know if you want one)
-- Review-screen **rule-violation chips** — read `timesheet.validations[]` where `rule_id` starts with `R`
-- Finance queue UI — `GET /finance/queue` + approve/reject
-- Raise-query thread UI — `POST /clients/{c}/queries` + `POST /queries/{id}/reply`
-- Chat panel — slide-out on every persona screen, calls `POST /qa` with `entity_context`
-- Online form page — `POST /submit/{client_code}` with mobile camera capture
-- Dispatch tracking dashboard — `GET /dispatch/tracking` + `GET /dispatch/{c}/queue`
-- 3 brief-success KPI tiles on Finance dashboard — `/metrics/stp` + `/metrics/time-to-invoice` + `/metrics/accuracy`
+- Review-screen **rule-violation chips** - read `timesheet.validations[]` where `rule_id` starts with `R`
+- Finance queue UI - `GET /finance/queue` + approve/reject
+- Raise-query thread UI - `POST /clients/{c}/queries` + `POST /queries/{id}/reply`
+- Chat panel - slide-out on every persona screen, calls `POST /qa` with `entity_context`
+- Online form page - `POST /submit/{client_code}` with mobile camera capture
+- Dispatch tracking dashboard - `GET /dispatch/tracking` + `GET /dispatch/{c}/queue`
+- 3 brief-success KPI tiles on Finance dashboard - `/metrics/stp` + `/metrics/time-to-invoice` + `/metrics/accuracy`
 - All WhatsApp wiring (you own this end-to-end; backend has nothing to expose beyond `/qa`)
 
-Ping me if anything in the shape isn't what you wanted — the backend's flexible.
+Ping me if anything in the shape isn't what you wanted - the backend's flexible.
 
 ## Known frontend gap (your call to fix)
 
-`/client/invoices` and `/client/queries` are **not scoped to a single client** — they
+`/client/invoices` and `/client/queries` are **not scoped to a single client** - they
 fetch all invoices/queries across all 10 clients because TIA has no auth in scope.
 
 Proposal (didn't ship since you took over the frontend): extend the `usePersona`
@@ -144,7 +144,7 @@ in the Client persona's header, and pass `currentClientCode` to `api.listInvoice
 Backend already supports `?client_code=CL001` on `/invoices` and `/clients/{code}/queries`
 takes a code; no API changes needed.
 
-## Phase α — Backend hardening (shipped 0cc3c3d)
+## Phase α - Backend hardening (shipped 0cc3c3d)
 
 These all have backend + types.ts + api.ts client. UI wiring is your call.
 
@@ -154,13 +154,13 @@ These all have backend + types.ts + api.ts client. UI wiring is your call.
 - Use case for UI: "Verify audit chain" button on Finance dashboard with a green ✓ if `ok=true`, errors listed otherwise. `api.verifyAuditChain()`.
 
 ### Invoice state machine
-- `workers/ai/tia_ai/invoice/fsm.py` — explicit `ALLOWED` transition table.
+- `workers/ai/tia_ai/invoice/fsm.py` - explicit `ALLOWED` transition table.
 - All approve/reject endpoints already FSM-guarded; illegal transitions return `409`.
 - For UI: no work needed; the 409s will be visible to the user. Future: a "next legal actions" hint endpoint if you want a polished UX.
 
 ### Period close lock
 - `POST /clients/{code}/periods/{period}/close` and `…/reopen`
-- `Client.settings.closed_periods: string[]` — list of closed periods
+- `Client.settings.closed_periods: string[]` - list of closed periods
 - New rule R14 fires when a doc's period is in this list.
 - For UI: an "Close period" button on each client config screen + a 🔒 lock icon when a period is in `closed_periods`.
 
@@ -168,7 +168,7 @@ These all have backend + types.ts + api.ts client. UI wiring is your call.
 - `POST /invoices/{id}/payments` body `{amount, method, reference?, notes?, paid_by?}`
 - Methods: `bank_transfer | wire | card | cheque | ach`
 - Auto-generates receipt number `RCPT-{client}-{ts}`, returns it
-- `GET /invoices/{id}/payments` — payment ledger
+- `GET /invoices/{id}/payments` - payment ledger
 - For UI: "Pay invoice" modal on ClientInvoices. `api.payInvoice(id, ...)`.
 
 ### Statement of account
@@ -176,7 +176,7 @@ These all have backend + types.ts + api.ts client. UI wiring is your call.
 - For UI: new `/client/statement` page. Use `api.clientStatement(code)`.
 
 ### Audit bundle ZIP (compliance gold)
-- `GET /client/{code}/audit/{quarter}.zip` — manifest + invoices.jsonl + payments.jsonl + events.jsonl + invoice PDFs
+- `GET /client/{code}/audit/{quarter}.zip` - manifest + invoices.jsonl + payments.jsonl + events.jsonl + invoice PDFs
 - `api.clientAuditBundleUrl(code, quarter)` → click-to-download link
 
 ### Notifications feed
@@ -185,12 +185,12 @@ These all have backend + types.ts + api.ts client. UI wiring is your call.
 - For UI: bell icon in header with badge + dropdown. `api.notifications("client", currentClientCode)`.
 
 ### Multi-user roles per client
-- `GET/PUT /clients/{code}/users` — `[{email, name, role: viewer|approver|admin}]`
+- `GET/PUT /clients/{code}/users` - `[{email, name, role: viewer|approver|admin}]`
 - Stored on `Client.settings.users[]`
 - For UI: user-table editor on client config screen + "Acting as [user]" switcher in client header.
 
 ### SLA aging
-- `GET /metrics/sla` — by-status mean/max age + over-SLA invoices
+- `GET /metrics/sla` - by-status mean/max age + over-SLA invoices
 - For UI: a tile on Finance dashboard. `api.metricsSla()`.
 
 ### Safety hardening (already enforced at API edge)
@@ -202,4 +202,4 @@ These all have backend + types.ts + api.ts client. UI wiring is your call.
 - Default endpoint now points at our self-hosted vLLM at `ocr.cyberkunju.com/v1`
 - Same OpenAI-compatible chat-completions API shape
 - Configurable via `GLM_OCR_BASE_URL`, `GLM_OCR_API_KEY`, `GLM_OCR_MODEL`
-- This proves the "no-vendor-lock" architecture claim — swap to any compatible endpoint via one env var.
+- This proves the "no-vendor-lock" architecture claim - swap to any compatible endpoint via one env var.

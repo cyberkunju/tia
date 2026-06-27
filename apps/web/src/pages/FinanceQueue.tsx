@@ -29,10 +29,10 @@ export function FinanceQueue() {
                   <tr key={r.id}>
                     <td className="font-mono text-xs text-ink-600">{r.invoice_sequence_no ?? r.id.slice(0, 8)}</td>
                     <td><div className="font-medium text-ink-800">{r.client_code}</div><div className="text-2xs text-ink-400">{r.client_name}</div></td>
-                    <td className="text-ink-600">{r.period ?? "—"}</td>
+                    <td className="text-ink-600">{r.period ?? "-"}</td>
                     <td className="text-right tnum font-semibold text-ink-900">{fmtAED(r.total_incl_vat ?? r.amount)}</td>
                     <td className="text-right tnum text-ink-500">{fmtAED(r.threshold)}</td>
-                    <td>{r.rule_failures?.length ? <Badge tone="red">{r.rule_failures.length} failed</Badge> : <span className="text-ink-300 text-xs">—</span>}</td>
+                    <td>{r.rule_failures?.length ? <Badge tone="red">{r.rule_failures.length} failed</Badge> : <span className="text-ink-300 text-xs">-</span>}</td>
                     <td>
                       <div className="flex items-center justify-end gap-1.5">
                         <button className="btn-outline btn-sm" disabled={reject.isPending} onClick={() => { const x = prompt("Reason for rejection?"); if (x) reject.mutate({ id: r.id, reason: x }); }}><X size={13} /> Reject</button>

@@ -25,7 +25,7 @@ const ACTIONS: Item[] = [
   { id: "p-submit", label: "Submit timesheet", icon: Upload, to: "/portal", group: "Portal" },
   { id: "p-inv", label: "Client invoices", icon: ReceiptText, to: "/portal/invoices", group: "Portal" },
   { id: "p-q", label: "Client queries", icon: MessageSquare, to: "/portal/queries", group: "Portal" },
-  { id: "f-close", label: "Finance — month close", icon: LayoutDashboard, to: "/finance", group: "Finance" },
+  { id: "f-close", label: "Finance - month close", icon: LayoutDashboard, to: "/finance", group: "Finance" },
   { id: "f-queue", label: "Finance approvals", icon: ShieldCheck, to: "/finance/queue", group: "Finance" },
   { id: "x-reset", label: "Reset demo data", sub: "Wipe transient state", icon: RotateCcw, group: "Admin", run: async () => { await api.demoReset(); location.reload(); } },
 ];
@@ -48,7 +48,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     const fromDocs: Item[] = (docs ?? [])
       .filter((d) => `${d.client_code ?? ""} ${d.period ?? ""} ${d.channel} ${d.status}`.toLowerCase().includes(needle))
       .slice(0, 6)
-      .map((d) => ({ id: `d-${d.doc_id}`, label: `${d.client_code ?? "Unknown"} · ${d.period ?? "—"}`, sub: `${d.channel} · ${d.status}`, icon: Inbox, to: `/console?doc=${d.doc_id}`, group: "Documents" }));
+      .map((d) => ({ id: `d-${d.doc_id}`, label: `${d.client_code ?? "Unknown"} · ${d.period ?? "-"}`, sub: `${d.channel} · ${d.status}`, icon: Inbox, to: `/console?doc=${d.doc_id}`, group: "Documents" }));
     const fromClients: Item[] = (clients ?? [])
       .filter((c) => `${c.code} ${c.name} ${c.industry}`.toLowerCase().includes(needle))
       .slice(0, 6)

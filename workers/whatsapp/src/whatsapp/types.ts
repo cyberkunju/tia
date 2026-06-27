@@ -26,7 +26,7 @@ export interface MetaInboundMessage {
   [key: string]: unknown;
 }
 
-/** A delivery status callback (sent/delivered/read) — never turned into intake. */
+/** A delivery status callback (sent/delivered/read) - never turned into intake. */
 export interface MetaStatusCallback {
   id?: string;
   status?: string;

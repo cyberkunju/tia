@@ -1,7 +1,7 @@
-"""Validator tests — math reconciler, bounds, attendance, threshold approval.
+"""Validator tests - math reconciler, bounds, attendance, threshold approval.
 
 These deterministic checks are the safety net that catches errors in ANY
-extraction path — Excel, email, GLM-OCR — so they're the no-wrapper spine.
+extraction path - Excel, email, GLM-OCR - so they're the no-wrapper spine.
 """
 
 from __future__ import annotations
@@ -76,7 +76,7 @@ def test_attendance_bounds():
     assert check_attendance(24, p).passed
     assert check_attendance(25, p).passed  # +1 grace
     assert not check_attendance(40, p).passed
-    # None means "not reported" — treated as soft warning, passes
+    # None means "not reported" - treated as soft warning, passes
     assert check_attendance(None, p).passed
 
 
@@ -104,7 +104,7 @@ def test_check_ot_catches_wrong_amount():
 
 
 def test_full_validator_catches_compound_failure():
-    """One payload that violates 3 rules at once — every rule must surface its
+    """One payload that violates 3 rules at once - every rule must surface its
     own error independently so the operator sees the full list, not just the first."""
     bad = _payroll(gross=9000, currency="USD", working_days=30)
     results = validate_payroll(bad)

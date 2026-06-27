@@ -2,8 +2,8 @@
  * Two-layer inbound deduplication with idempotency.
  *
  * Meta delivers webhooks at-least-once and retries for up to ~7 days, so one inbound timesheet can
- * arrive many times. We must process each Message_Id at most once — never creating a duplicate
- * intake — and survive restarts. Two layers:
+ * arrive many times. We must process each Message_Id at most once - never creating a duplicate
+ * intake - and survive restarts. Two layers:
  *
  *  1. A bounded in-memory ring (fast first-line cache for the "seen it moments ago" case).
  *  2. An injectable durable port (in-memory for this transport bridge; the core's `events` table

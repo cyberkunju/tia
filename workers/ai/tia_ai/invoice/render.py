@@ -17,7 +17,7 @@ from ..config import STAGING_DIR
 
 BRAND_HEX = "#d9531e"  # TASC orange-red
 
-# ponytail: emitting Typst source by string templating — safer than ad-hoc DSL,
+# ponytail: emitting Typst source by string templating - safer than ad-hoc DSL,
 # upgrade path is a sidecar .typ template file if the layout grows.
 
 _MARKUP_SPECIALS = ("\\", "#", "*", "_", "`", "$", "<", ">", "[", "]", "~", "@")
@@ -97,7 +97,7 @@ _TEMPLATE = r"""
   stroke: 0.4pt + rgb("#cccccc"),
   fill: row_fill,
   table.header(
-    [*Emp ID*], [*Employee — Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Line Total*],
+    [*Emp ID*], [*Employee - Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Line Total*],
   ),
   {rows}
 )
@@ -149,7 +149,7 @@ def _warning_block(invoice: dict) -> str:
         "#v(8pt)\n"
         '#block(fill: rgb("#fff4ec"), stroke: 0.6pt + rgb("{brand}"), '
         "inset: 10pt, radius: 2pt, width: 100%)[\n"
-        '  #text(fill: rgb("{brand}"), weight: "bold")[⚠ Above client threshold] — '
+        '  #text(fill: rgb("{brand}"), weight: "bold")[⚠ Above client threshold] - '
         "requires Finance approval before dispatch.\n"
         "]\n"
     ).replace("{brand}", BRAND_HEX)
@@ -176,14 +176,14 @@ def _sac_block(invoice: dict) -> str:
     return (
         "\n#v(4pt)\n"
         f'#text(size: 9pt, fill: rgb("#444"))[Service Accounting Code (SAC): *{_esc(sac)}* '
-        "— Contract Staffing Services]\n"
+        "- Contract Staffing Services]\n"
     )
 
 
 def _service_code_for(invoice: dict) -> tuple[str, str]:
     """Return (code, description) shown on every Tax Invoice.
 
-    India uses HSN/SAC under GST — for staffing services that's SAC 998513
+    India uses HSN/SAC under GST - for staffing services that's SAC 998513
     ("Contract Staffing Services") or 998514 ("Temporary Staffing Services").
     UAE has no equivalent mandated taxonomy, so we surface the SAC code anyway
     as an informational service classification (TASC's actual practice on
@@ -193,8 +193,8 @@ def _service_code_for(invoice: dict) -> tuple[str, str]:
     sac = invoice.get("sac_code")
     if sac:
         return sac, "Contract Staffing Services"
-    # UAE default — surface SAC as informational classification, not as a tax code
-    return "SAC 998513 (informational)", "Manpower supply services — UAE FTA service category"
+    # UAE default - surface SAC as informational classification, not as a tax code
+    return "SAC 998513 (informational)", "Manpower supply services - UAE FTA service category"
 
 
 def render_invoice(invoice: dict, invoice_id: str) -> str:
@@ -208,7 +208,7 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
     total_incl = float(invoice.get("total_incl_vat") or round(amount + vat_amount, 2))
     seq_no = invoice.get("invoice_sequence_no") or f"TIA-{invoice_id}"
     supplier_trn = invoice.get("supplier_trn") or "100123456700003"
-    customer_trn = invoice.get("customer_trn") or "—"
+    customer_trn = invoice.get("customer_trn") or "-"
     place_of_supply = invoice.get("place_of_supply") or "UAE"
     today = dt.date.today().isoformat()
     due_date = invoice.get("due_date") or (dt.date.today() + dt.timedelta(days=30)).isoformat()
@@ -217,8 +217,8 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
     source = _TEMPLATE.format(
         seq_no=_esc(seq_no),
         brand=BRAND_HEX,
-        client=_esc(invoice.get("client_name") or invoice.get("client_code") or "—"),
-        period=_esc(invoice.get("period") or "—"),
+        client=_esc(invoice.get("client_name") or invoice.get("client_code") or "-"),
+        period=_esc(invoice.get("period") or "-"),
         amount=_num(amount),
         vat_pct=_num(vat_rate * 100),
         vat_amount=_num(vat_amount),
@@ -230,7 +230,7 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
         due_date=_esc(due_date),
         service_code=_esc(service_code),
         service_desc=_esc(service_desc),
-        rows=rows or "[—], [no line items], [], [], [], [], [],",
+        rows=rows or "[-], [no line items], [], [], [], [], [],",
         warning=_warning_block(invoice),
         exceptions=_exceptions_block(invoice),
         hash=audit,
@@ -278,17 +278,17 @@ def _demo() -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Credit-note rendering — Page 2 appended to the original Tax Invoice.
+#  Credit-note rendering - Page 2 appended to the original Tax Invoice.
 #
 #  UAE FTA Decision No. 7 of 2019 permits a single physical document that
-#  shows "Tax Invoice / Tax Credit Note" — that's the legal basis for combining
+#  shows "Tax Invoice / Tax Credit Note" - that's the legal basis for combining
 #  the two on one PDF. We keep them on separate pages (page 1 unchanged,
 #  page 2 = credit note) so a buyer's AP system can reconcile cleanly.
 # ─────────────────────────────────────────────────────────────────────────────
 
 
 _CREDIT_NOTE_REASON_FRIENDLY: dict[str, str] = {
-    "PRICING_ERROR": "Pricing error — the billing rate on the original invoice was incorrect",
+    "PRICING_ERROR": "Pricing error - the billing rate on the original invoice was incorrect",
     "GOODS_RETURNED": "Services returned or cancelled by the customer",
     "DISCOUNT": "A post-sale discount was granted to the customer",
     "DUPLICATE": "The original invoice was a duplicate of an earlier issuance",
@@ -315,7 +315,7 @@ _CREDIT_NOTE_TEMPLATE = r"""
 
 #block(fill: rgb("#fff4ec"), inset: 8pt, radius: 2pt)[
   *Reference:* This Tax Credit Note adjusts Tax Invoice *{orig_seq}* dated *{orig_date}*.
-  Combined Tax Invoice / Tax Credit Note document — issued under FTA Decision No. 7 of 2019.
+  Combined Tax Invoice / Tax Credit Note document - issued under FTA Decision No. 7 of 2019.
 ]
 
 #v(8pt)
@@ -361,7 +361,7 @@ _CREDIT_NOTE_TEMPLATE = r"""
   stroke: 0.4pt + rgb("#cccccc"),
   fill: row_fill,
   table.header(
-    [*Emp ID*], [*Employee — Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Reversed*],
+    [*Emp ID*], [*Employee - Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Reversed*],
   ),
   {rows}
 )
@@ -420,24 +420,24 @@ def _credit_note_source(invoice_dict: dict, audit_hash: str) -> str:
 
     return _CREDIT_NOTE_TEMPLATE.format(
         brand=BRAND_HEX,
-        orig_seq=_esc(invoice_dict.get("invoice_sequence_no") or "—"),
+        orig_seq=_esc(invoice_dict.get("invoice_sequence_no") or "-"),
         orig_date=_esc(
             (invoice_dict.get("created_at") or "")[:10]
             if isinstance(invoice_dict.get("created_at"), str)
             else dt.date.today().isoformat()
         ),
         supplier_trn=_esc(invoice_dict.get("supplier_trn") or "100123456700003"),
-        customer_trn=_esc(invoice_dict.get("customer_trn") or "—"),
+        customer_trn=_esc(invoice_dict.get("customer_trn") or "-"),
         place_of_supply=_esc(invoice_dict.get("place_of_supply") or "UAE"),
-        client=_esc(invoice_dict.get("client_name") or invoice_dict.get("client_code") or "—"),
-        cn_seq=_esc(invoice_dict.get("credit_note_sequence_no") or "—"),
+        client=_esc(invoice_dict.get("client_name") or invoice_dict.get("client_code") or "-"),
+        cn_seq=_esc(invoice_dict.get("credit_note_sequence_no") or "-"),
         cn_date=_esc(cn_date),
-        period=_esc(invoice_dict.get("period") or "—"),
+        period=_esc(invoice_dict.get("period") or "-"),
         currency=_esc(invoice_dict.get("currency") or "AED"),
         reason_code=_esc(reason_code),
         reason_friendly=_esc(reason_friendly),
         reason_text_block=reason_text_block,
-        rows=rows or "[—], [no line items], [], [], [], [], [],",
+        rows=rows or "[-], [no line items], [], [], [], [], [],",
         amount=_num(amount),
         vat_pct=_num(vat_rate * 100),
         vat_amount=_num(vat_amount),
@@ -481,7 +481,7 @@ def render_invoice_with_credit_note(invoice_obj) -> str:
         "created_at": str(invoice_obj.created_at) if invoice_obj.created_at else None,
     }
     audit = _audit_hash(inv)
-    # 1) build page 1 (the original Tax Invoice) — same as render_invoice does
+    # 1) build page 1 (the original Tax Invoice) - same as render_invoice does
     rows = "\n  ".join(_row_line(li) for li in inv.get("line_items", []))
     amount = float(inv.get("amount") or 0)
     vat_rate = float(inv.get("vat_rate") or 0.05)
@@ -498,20 +498,20 @@ def render_invoice_with_credit_note(invoice_obj) -> str:
     page1 = _TEMPLATE.format(
         seq_no=_esc(seq_no),
         brand=BRAND_HEX,
-        client=_esc(inv.get("client_name") or inv.get("client_code") or "—"),
-        period=_esc(inv.get("period") or "—"),
+        client=_esc(inv.get("client_name") or inv.get("client_code") or "-"),
+        period=_esc(inv.get("period") or "-"),
         amount=_num(amount),
         vat_pct=_num(vat_rate * 100),
         vat_amount=_num(vat_amount),
         total_incl=_num(total_incl),
         supplier_trn=_esc(inv.get("supplier_trn") or "100123456700003"),
-        customer_trn=_esc(inv.get("customer_trn") or "—"),
+        customer_trn=_esc(inv.get("customer_trn") or "-"),
         place_of_supply=_esc(inv.get("place_of_supply") or "UAE"),
         issue_date=today,
         due_date=_esc(due_date),
         service_code=_esc(service_code),
         service_desc=_esc(service_desc),
-        rows=rows or "[—], [no line items], [], [], [], [], [],",
+        rows=rows or "[-], [no line items], [], [], [], [], [],",
         warning="",  # the credit note supersedes any approval warning
         exceptions="",
         hash=audit,

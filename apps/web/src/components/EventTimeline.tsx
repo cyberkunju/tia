@@ -78,7 +78,7 @@ function summarisePayload(p: Record<string, unknown>): string {
   }
   if (p.is_partial && p.credit_note_amount) {
     out.push(
-      `partial — AED ${Number(p.credit_note_amount).toFixed(2)} of AED ${
+      `partial - AED ${Number(p.credit_note_amount).toFixed(2)} of AED ${
         p.invoice_amount ? Number(p.invoice_amount).toFixed(2) : "?"
       }`,
     );

@@ -2,7 +2,7 @@ import { Zap, UserCheck, ShieldCheck } from "lucide-react";
 import type { StpMetricFull } from "../types";
 
 /**
- * 3-pillar dispatch breakdown — auto / hitl / finance — segmented bar + three
+ * 3-pillar dispatch breakdown - auto / hitl / finance - segmented bar + three
  * pillar tiles. Tells the touchless story at a glance for judges. Icons are
  * lucide glyphs (no emoji) so the band stays professional.
  */
@@ -16,7 +16,7 @@ export function DispatchPillars({ stp }: { stp: StpMetricFull | undefined }) {
   return (
     <section className="card p-4">
       <div className="flex items-center justify-between gap-3 mb-3">
-        <h2 className="text-sm font-semibold text-ink-900">Dispatched invoices — by path</h2>
+        <h2 className="text-sm font-semibold text-ink-900">Dispatched invoices - by path</h2>
         <span className="text-2xs text-ink-500">{total} dispatched · brief target 80%+ auto</span>
       </div>
       {total === 0 ? (

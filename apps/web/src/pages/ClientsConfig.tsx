@@ -67,13 +67,13 @@ export function ClientsConfig() {
 
         {client ? (
           <div className="space-y-4">
-            <Panel title={client.name} subtitle={`${client.code} · ${client.city ?? "—"} · ${client.industry ?? "—"}`}
-              actions={<Badge tone="blue" dot={false}>{client.industry ?? "—"}</Badge>}>
+            <Panel title={client.name} subtitle={`${client.code} · ${client.city ?? "-"} · ${client.industry ?? "-"}`}
+              actions={<Badge tone="blue" dot={false}>{client.industry ?? "-"}</Badge>}>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <Field label="Billing entity" value={TASC_ENTITY.name} />
                 <Field label="TRN" value={TASC_ENTITY.trn} />
                 <Field label="Currency" value="AED" />
-                <Field label="City" value={client.city ?? "—"} />
+                <Field label="City" value={client.city ?? "-"} />
               </div>
             </Panel>
 

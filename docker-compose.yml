@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# TIA — production stack: Postgres 18 + FastAPI worker + nginx-served SPA.
+# TIA - production stack: Postgres 18 + FastAPI worker + nginx-served SPA.
 # Continuous deploy verified: pushes to the default branch roll out via deploy/.
 #
 #   cp .env.docker.example .env   # then edit secrets
@@ -68,7 +68,7 @@ services:
         condition: service_healthy
     networks: [tia]
 
-  # WhatsApp Cloud API bridge — forwards inbound timesheets to the core and returns the invoice.
+  # WhatsApp Cloud API bridge - forwards inbound timesheets to the core and returns the invoice.
   # Opt-in (needs Meta credentials): `docker compose --profile whatsapp up -d --build`.
   # Not started by the default deploy, so it never crash-loops when creds are absent.
   whatsapp:

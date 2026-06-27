@@ -119,7 +119,7 @@ def test_dispatch_requires_idempotency_key(client):
 def test_dispatch_then_idempotent_replay(client):
     # Replay the same idempotency key twice; second call should be a no-op.
     # The invoice may already be auto-dispatched, in which case the first call
-    # returns 'already_dispatched' too — either way the response shape is stable.
+    # returns 'already_dispatched' too - either way the response shape is stable.
     invs = client.get("/invoices").json()
     assert invs, "no invoices to test against"
     inv_id = invs[0]["id"]
@@ -153,7 +153,7 @@ def test_unknown_doc_404(client):
 
 def test_duplicate_upload_dedupe_by_content_hash(client):
     """Same bytes uploaded twice (different filenames, different idempotency keys)
-    must be content-hash deduped to a single doc — not double-process."""
+    must be content-hash deduped to a single doc - not double-process."""
     p = DATA_DIR / "synthetic" / "case_07_clean.xlsx"
     raw = p.read_bytes()
     r1 = client.post(

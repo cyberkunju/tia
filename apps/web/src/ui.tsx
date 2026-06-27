@@ -24,7 +24,7 @@ const STATUS_TONE: Record<string, Tone> = {
 const ROUTING_TONE: Record<string, Tone> = { auto: "green", hitl: "amber", escalate: "red" };
 
 function humanize(s?: string | null): string {
-  if (!s) return "—";
+  if (!s) return "-";
   return s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
@@ -45,13 +45,13 @@ export function StatusBadge({ status }: { status?: string | null }) {
 }
 
 export function RoutingBadge({ routing }: { routing?: string | null }) {
-  if (!routing) return <span className="text-ink-400">—</span>;
+  if (!routing) return <span className="text-ink-400">-</span>;
   const label = routing === "hitl" ? "Needs review" : humanize(routing);
   return <Badge tone={ROUTING_TONE[routing] ?? "slate"}>{label}</Badge>;
 }
 
 export function ConfidenceBadge({ value }: { value?: number | null }) {
-  if (value == null) return <span className="text-ink-400">—</span>;
+  if (value == null) return <span className="text-ink-400">-</span>;
   return <Badge tone={confidenceTone(value)} dot={false}><span className="tnum">{(value * 100).toFixed(1)}%</span></Badge>;
 }
 

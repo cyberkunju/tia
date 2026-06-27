@@ -1,4 +1,4 @@
-"""Deterministic validation rules — pure functions, decimal money math, no LLM.
+"""Deterministic validation rules - pure functions, decimal money math, no LLM.
 
 These are the layer that catches errors in *any* extraction path (the no-wrapper point):
 the math reconciler doesn't care whether the value came from Excel, email, or GLM-OCR.
@@ -36,7 +36,7 @@ def expected_ot_amount(basic, ot_hours) -> Decimal:
 
 
 def check_ot(p) -> ValidationResult:
-    """Independently verify the OT amount against the formula — catches an OT mis-extraction
+    """Independently verify the OT amount against the formula - catches an OT mis-extraction
     that a Net check alone would miss when Net was (mis-)derived from the same bad OT figure."""
     expected = expected_ot_amount(p.basic, p.ot_hours)
     ok = abs(expected - _d(p.ot_amount)) < CENT
@@ -120,7 +120,7 @@ def check_threshold(amount_aed: float, threshold_aed: float | None) -> Validatio
         passed=ok,
         message=f"Amount {amount_aed} under threshold {threshold_aed}"
         if ok
-        else f"Amount {amount_aed} >= threshold {threshold_aed} — requires Finance approval",
+        else f"Amount {amount_aed} >= threshold {threshold_aed} - requires Finance approval",
         severity="warning" if not ok else "error",
     )
 

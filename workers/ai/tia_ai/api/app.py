@@ -1,4 +1,4 @@
-"""FastAPI app — public surface for the React frontend and the WhatsApp bridge.
+"""FastAPI app - public surface for the React frontend and the WhatsApp bridge.
 
 Endpoints follow CONTRACTS.md. Idempotency-Key is honored on mutations.
 """
@@ -37,7 +37,7 @@ from ..orchestrator import (
     reject_timesheet,
 )
 
-app = FastAPI(title="TIA — Touchless Invoice Agent", version="0.1.0")
+app = FastAPI(title="TIA - Touchless Invoice Agent", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -97,9 +97,9 @@ def health() -> dict:
 # ---------------------------------------------------------------- intake
 
 
-# Brief §9: "Don't hide the AI — surface accuracy scores and HITL moments."
+# Brief §9: "Don't hide the AI - surface accuracy scores and HITL moments."
 # Brief §4.8 cross-cutting: file safety / size limits / MIME sniffing.
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB hard cap on uploads — generous for handwritten scans
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB hard cap on uploads - generous for handwritten scans
 ALLOWED_MIME_PREFIXES = (
     "image/",
     "application/pdf",
@@ -137,7 +137,7 @@ async def intake_upload(
     )
     ts = process_doc(s, doc)
 
-    # E3 — if this is an .eml message, extract attachments and run them through
+    # E3 - if this is an .eml message, extract attachments and run them through
     # the pipeline as sibling docs (parent_doc_id linking back to the email).
     attachments_processed: list[dict] = []
     is_eml = (file.content_type == "message/rfc822") or (
@@ -224,7 +224,7 @@ class EmailIntake(BaseModel):
     intake_mode: str | None = None  # if not provided we infer below
 
 
-# TIA's own email address — anything to/cc'd here is treated as an intake.
+# TIA's own email address - anything to/cc'd here is treated as an intake.
 TIA_EMAIL_ADDRESSES = {
     "tia@cyberkunju.com",
     "tia@tasc.test",
@@ -283,7 +283,7 @@ def intake_email(
     # log the email-mode decision on the doc so the Review screen can show it
     from ..orchestrator import log_event
 
-    # E10 — preserve the watched_address (set by the webhook adapter) into the event
+    # E10 - preserve the watched_address (set by the webhook adapter) into the event
     mode_payload = {
         "intake_mode": mode,
         "to": payload.to_addrs,
@@ -296,7 +296,7 @@ def intake_email(
 
     log_event(s, payload.from_addr or "email", "doc", doc.id, "email.mode_detected", mode_payload)
 
-    # E9 — orphan email: no TIA address found AND no watched-mailbox match.
+    # E9 - orphan email: no TIA address found AND no watched-mailbox match.
     # Don't try to process; route straight to escalate so FinOps can triage.
     if mode == "unknown":
         from ..models import Timesheet
@@ -308,7 +308,7 @@ def intake_email(
             period=None,
             status="awaiting_review",
             routing="escalate",
-            hitl_reason="orphan email — no client identified (TIA not in To/Cc, no watched mailbox match)",
+            hitl_reason="orphan email - no client identified (TIA not in To/Cc, no watched mailbox match)",
             confidence_calibrated=0.0,
             extraction={},
             match_result={},
@@ -397,7 +397,7 @@ def intake_email(
 
 
 def _draft_cc_silent_reply(payload: "EmailIntake", ts, s: Session | None = None) -> Path:
-    """Write a .eml reply draft to staging/outbox/ — TIA's polite 'we paused this' note.
+    """Write a .eml reply draft to staging/outbox/ - TIA's polite 'we paused this' note.
 
     Reads:
       - Client.settings.tia_reply_from   → reply From: address (defaults to tia@tasc.test)
@@ -461,7 +461,7 @@ Subject: {rich_subject}
 
 Hi,
 
-Thanks for the timesheet — we've received it and paused it for human review.
+Thanks for the timesheet - we've received it and paused it for human review.
 
 What happened: {reason_line}
 
@@ -469,9 +469,9 @@ Reference: timesheet {ts.id[:8]} · routing {ts.routing} · confidence {ts.confi
 Period: {period or "(not provided)"}
 
 A FinOps reviewer at TASC Outsourcing will follow up shortly. No action required from
-you in the meantime — if you'd like to clarify anything, just reply to this thread.
+you in the meantime - if you'd like to clarify anything, just reply to this thread.
 
-— TIA · Touchless Invoice Agent
+- TIA · Touchless Invoice Agent
    TASC Outsourcing FZ-LLC
 """,
         encoding="utf-8",
@@ -506,7 +506,7 @@ def intake_mailbox_webhook(
     """Watched-mailbox simulator. We adapt the Postmark shape to our internal
     EmailIntake and force intake_mode='watched_mailbox'.
 
-    E5 — HMAC-SHA256 webhook signature verification.
+    E5 - HMAC-SHA256 webhook signature verification.
     When `MAILBOX_WEBHOOK_SECRET` env var is set, requests must carry an
     `X-Webhook-Signature` header containing the hex digest of
     sha256(secret || raw_body). Postmark, SES, and Mandrill all use a variant
@@ -544,7 +544,7 @@ def intake_mailbox_webhook(
         intake_mode="watched_mailbox",
         uploaded_by=payload.From or "mailbox-watcher",
     )
-    # E10 — annotate which watched address actually triggered the webhook
+    # E10 - annotate which watched address actually triggered the webhook
     inner._watched_address = to_list[0] if to_list else (cc_list[0] if cc_list else None)  # type: ignore[attr-defined]
     return intake_email(inner, idempotency_key=idempotency_key, s=s)
 
@@ -566,7 +566,7 @@ def submit_online_form(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """4th channel — Online Timesheet App. Client pre-bound by URL path.
+    """4th channel - Online Timesheet App. Client pre-bound by URL path.
 
     Renders the form payload as a parseable email-style document so the existing
     extractor pipeline handles it without a new format-specific path."""
@@ -806,12 +806,12 @@ def _inv_dict(i: Invoice) -> dict:
         "client_approval_status": i.client_approval_status,
         "client_approval_reason": i.client_approval_reason,
         "rule_results": i.rule_results or [],
-        # clawback — void path
+        # clawback - void path
         "voided_at": i.voided_at.isoformat() if i.voided_at else None,
         "voided_by": i.voided_by,
         "voided_reason_code": i.voided_reason_code,
         "voided_reason": i.voided_reason,
-        # clawback — credit-note path
+        # clawback - credit-note path
         "credit_note_sequence_no": i.credit_note_sequence_no,
         "credit_note_issued_at": (
             i.credit_note_issued_at.isoformat() if i.credit_note_issued_at else None
@@ -892,7 +892,7 @@ def get_consolidated_excel(client_code: str, period: str, s: Session = Depends(d
     """
     from ..erp.smart_bot_sap import build_consolidated_excel
 
-    # period may be "June%202026" or "June-2026" or "2026-06" — accept both
+    # period may be "June%202026" or "June-2026" or "2026-06" - accept both
     period_clean = period.replace("-", " ").replace("%20", " ")
     try:
         path = build_consolidated_excel(s, client_code, period_clean)
@@ -990,7 +990,7 @@ def get_invoice_audit(inv_id: str, s: Session = Depends(db_session)) -> dict:
 
 @app.get("/invoices/{inv_id}/why")
 def get_invoice_why(inv_id: str, s: Session = Depends(db_session)) -> dict:
-    """Structured 'Why this invoice?' payload — rules, audit, confidence, matches."""
+    """Structured 'Why this invoice?' payload - rules, audit, confidence, matches."""
     audit = get_invoice_audit(inv_id, s)
     ts = audit["timesheet"]
     why: dict[str, Any] = {
@@ -1085,7 +1085,7 @@ def create_client(
     by_user: str = Header(default="finops", alias="X-User"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """Onboard a new client — brief §4.1 'setup screen to onboard a client'."""
+    """Onboard a new client - brief §4.1 'setup screen to onboard a client'."""
     if s.get(Client, payload.code):
         raise HTTPException(409, f"client {payload.code} already exists")
     settings = {
@@ -1256,7 +1256,7 @@ def client_reject_invoice(
 
 @app.get("/finance/queue")
 def finance_queue(s: Session = Depends(db_session)) -> list[dict]:
-    """Invoices over per-client validation_threshold_aed — Finance must sign off."""
+    """Invoices over per-client validation_threshold_aed - Finance must sign off."""
     out = []
     for inv in s.query(Invoice).order_by(Invoice.created_at.desc()).limit(200).all():
         c = s.get(Client, inv.client_code)
@@ -1350,7 +1350,7 @@ def finance_reject(
     return {"status": "rejected", "invoice_id": inv_id, "reason": payload.reason}
 
 
-# ---------- payment flow (brief §4.7 — client pays the invoice) ----------
+# ---------- payment flow (brief §4.7 - client pays the invoice) ----------
 
 
 class NewPayment(BaseModel):
@@ -1368,7 +1368,7 @@ def record_payment(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """Mock payment flow — same shape as a real Stripe/Tap/bank-gateway adapter
+    """Mock payment flow - same shape as a real Stripe/Tap/bank-gateway adapter
     would consume. For demo: collect method + reference + amount, log a Payment
     row, fire an audit event, surface receipt number."""
     from ..models import Payment
@@ -1619,12 +1619,12 @@ def reply_to_query(
 
 @app.get("/metrics/stp")
 def metric_stp(s: Session = Depends(db_session)) -> dict:
-    """Straight-through processing rate — the brief's '80%+ touchless' headline.
+    """Straight-through processing rate - the brief's '80%+ touchless' headline.
 
     Three-pillar breakdown for the dashboard:
-      auto_dispatched   — invoice shipped under threshold without human click
-      hitl_dispatched   — FinOps reviewed, then dispatched
-      finance_dispatched — Finance signed off (over threshold), then dispatched
+      auto_dispatched   - invoice shipped under threshold without human click
+      hitl_dispatched   - FinOps reviewed, then dispatched
+      finance_dispatched - Finance signed off (over threshold), then dispatched
     """
     rows = s.query(Timesheet).all()
     total = len(rows)
@@ -1635,7 +1635,7 @@ def metric_stp(s: Session = Depends(db_session)) -> dict:
 
     # Count invoices by dispatch path (derived from the audit chain).
     # `dispatched` (regular path) and `auto_dispatched_within_tolerance` (touchless
-    # path) are both "an invoice left the building" — we sum both.
+    # path) are both "an invoice left the building" - we sum both.
     manually_dispatched_ids = {
         e.entity_id for e in s.query(Event).filter(Event.action == "dispatched").all()
     }
@@ -1693,7 +1693,7 @@ def metric_time_to_invoice(s: Session = Depends(db_session)) -> dict:
 
 @app.get("/metrics/accuracy")
 def metric_accuracy() -> dict:
-    """Extraction accuracy from the eval harness — the brief's '99%+' target."""
+    """Extraction accuracy from the eval harness - the brief's '99%+' target."""
     last_run = DATA_DIR / "gold" / "_last_run.json"
     if not last_run.exists():
         return {"target": 0.99, "passed": None, "macro_f1": None, "note": "no eval yet"}
@@ -1714,7 +1714,7 @@ def metric_accuracy() -> dict:
 
 @app.get("/metrics/headcount")
 def metric_headcount(s: Session = Depends(db_session)) -> dict:
-    """TASC's HC reporting KPI — count of unique billed employees per period."""
+    """TASC's HC reporting KPI - count of unique billed employees per period."""
     from .. import models as m
 
     rows = (
@@ -1726,7 +1726,7 @@ def metric_headcount(s: Session = Depends(db_session)) -> dict:
     for inv in rows:
         for li in inv.line_items or []:
             if li.get("emp_id"):
-                by_period.setdefault(inv.period or "—", set()).add(li["emp_id"])
+                by_period.setdefault(inv.period or "-", set()).add(li["emp_id"])
     return {
         "by_period": {p: len(emps) for p, emps in sorted(by_period.items())},
         "total_unique_emps": len({eid for emps in by_period.values() for eid in emps}),
@@ -1735,7 +1735,7 @@ def metric_headcount(s: Session = Depends(db_session)) -> dict:
 
 @app.get("/metrics/sla")
 def metric_sla(s: Session = Depends(db_session)) -> dict:
-    """SLA aging — how long is each invoice spending in each status?
+    """SLA aging - how long is each invoice spending in each status?
 
     Drives the brief §4.6 'track progress' requirement + the §4.8 'within
     minutes' KPI. We compute time-in-current-status from the most recent
@@ -1933,7 +1933,7 @@ def client_dispatch_queue(client_code: str, s: Session = Depends(db_session)) ->
     if grouping == "by_client_period":
         grouped: dict[str, list[dict]] = {}
         for inv in invoices:
-            grouped.setdefault(inv.period or "—", []).append(
+            grouped.setdefault(inv.period or "-", []).append(
                 {
                     "id": inv.id,
                     "amount": inv.amount,
@@ -2015,7 +2015,7 @@ def eval_run() -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  CLAWBACK — state-aware void / credit-note (UAE VAT Art. 60 + Decision 7/2019)
+#  CLAWBACK - state-aware void / credit-note (UAE VAT Art. 60 + Decision 7/2019)
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -2050,7 +2050,7 @@ _FRIENDLY_ADJUSTMENT: dict[str, str] = {
     "CREDIT_TO_CLIENT": "Credit memo issued against your AR balance",
     "DEDUCT_FROM_NEXT_INVOICE": "Will be netted against your next invoice",
     "DEDUCT_FROM_PAYROLL": "Recovered from the associate's next pay run",
-    "INTERNAL_WRITE_OFF": "Absorbed internally — no further recovery",
+    "INTERNAL_WRITE_OFF": "Absorbed internally - no further recovery",
     "MANUAL_REVIEW": "Escalated to Finance for manual reconciliation",
 }
 
@@ -2087,7 +2087,7 @@ def clawback_eligibility(inv_id: str, s: Session = Depends(db_session)) -> dict:
         return {
             "current_state": i.status,
             "action_when_clawed_back": None,
-            "reason": "terminal state — already settled",
+            "reason": "terminal state - already settled",
         }
     if i.credit_note_sequence_no:
         return {
@@ -2099,7 +2099,7 @@ def clawback_eligibility(inv_id: str, s: Session = Depends(db_session)) -> dict:
     out: dict = {"current_state": i.status, "amount_aed": i.amount, "currency": i.currency}
     if i.status in PRE_DISPATCH_STATES:
         out["action_when_clawed_back"] = "void"
-        out["explanation"] = "Pre-dispatch — invoice will be voided as if never issued."
+        out["explanation"] = "Pre-dispatch - invoice will be voided as if never issued."
         return out
 
     if i.status == "dispatched":
@@ -2108,7 +2108,7 @@ def clawback_eligibility(inv_id: str, s: Session = Depends(db_session)) -> dict:
         dispatched_at = i.dispatch_attempted_at or i.created_at
         if dispatched_at:
             now = dt.datetime.now(dt.timezone.utc)
-            # normalise — naive datetimes get utc tz attached
+            # normalise - naive datetimes get utc tz attached
             if dispatched_at.tzinfo is None:
                 dispatched_at = dispatched_at.replace(tzinfo=dt.timezone.utc)
             days_since = (now - dispatched_at).days
@@ -2151,7 +2151,7 @@ def clawback_invoice(
        dispatched, unpaid → CREDIT NOTE (UAE Art. 60), source timesheet → needs_review
        dispatched, paid   → CREDIT NOTE + payment_refund_required event
 
-    Always immediate (no settling period; research-backed — NetSuite/Pelcro pattern).
+    Always immediate (no settling period; research-backed - NetSuite/Pelcro pattern).
     Idempotent on Idempotency-Key.
     """
     import datetime as dt
@@ -2315,7 +2315,7 @@ def clawback_invoice(
         ts.status = "needs_review"
         ts.routing = "hitl"
         ts.needs_review_reason = (
-            f"Credit Note {cn_seq} issued — {friendly_reason}. Please upload a corrected timesheet."
+            f"Credit Note {cn_seq} issued - {friendly_reason}. Please upload a corrected timesheet."
         )
         ts.needs_review_since = now
         log_event(
@@ -2329,7 +2329,7 @@ def clawback_invoice(
 
     # Auto-open a client query thread (Q-final = a)
     cn_amount_text = f"{cn_amount:.2f} {i.currency or 'AED'}" + (
-        f" (partial — {payload.disputed_hours:g} disputed hour"
+        f" (partial - {payload.disputed_hours:g} disputed hour"
         + ("s" if payload.disputed_hours and payload.disputed_hours != 1 else "")
         + ")"
         if is_partial and payload.disputed_hours
@@ -2525,7 +2525,7 @@ def list_events(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Real-product polish — Statement / Audit bundle / Notifications / Multi-user
+#  Real-product polish - Statement / Audit bundle / Notifications / Multi-user
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -2535,7 +2535,7 @@ def client_statement(
     months: int = 12,
     s: Session = Depends(db_session),
 ) -> dict:
-    """Month-by-month statement of account — what every B2B AR portal shows.
+    """Month-by-month statement of account - what every B2B AR portal shows.
 
     Aggregates invoices + payments + outstanding balance by period for the
     last `months` months.
@@ -2552,7 +2552,7 @@ def client_statement(
 
     by_period: dict[str, dict] = {}
     for inv in invoices:
-        p = inv.period or "—"
+        p = inv.period or "-"
         b = by_period.setdefault(
             p,
             {
@@ -2574,7 +2574,7 @@ def client_statement(
         inv = next((i for i in invoices if i.id == pay.invoice_id), None)
         if not inv:
             continue
-        p = inv.period or "—"
+        p = inv.period or "-"
         if p in by_period:
             by_period[p]["paid"] += float(pay.amount or 0)
     for b in by_period.values():
@@ -2739,7 +2739,7 @@ def list_notifications(
     s: Session = Depends(db_session),
 ) -> list[dict]:
     """In-app notification feed. Filters the audit stream to things the user
-    actually cares about — generated, dispatched, approval requests, query
+    actually cares about - generated, dispatched, approval requests, query
     replies. Frontend renders these in the bell dropdown."""
     actions = {
         "client": {
@@ -2798,11 +2798,11 @@ def _notif_summary(e: Event) -> str:
     a = e.action
     p = e.payload or {}
     if a == "generated":
-        return f"Invoice {p.get('sequence_no', e.entity_id[:8])} generated for {p.get('client', '?')} — AED {p.get('total_incl_vat', p.get('amount', 0))}"
+        return f"Invoice {p.get('sequence_no', e.entity_id[:8])} generated for {p.get('client', '?')} - AED {p.get('total_incl_vat', p.get('amount', 0))}"
     if a == "client_approved":
         return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} approved by client"
     if a == "client_rejected":
-        return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} rejected — reason: {p.get('reason', 'n/a')}"
+        return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} rejected - reason: {p.get('reason', 'n/a')}"
     if a == "finance_approved":
         return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} approved by Finance"
     if a == "dispatched":

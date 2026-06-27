@@ -19,7 +19,7 @@ const PERSONAS: { id: Persona; label: string }[] = [
 ];
 
 /**
- * Acting-as Client picker — only visible when the active persona is "client".
+ * Acting-as Client picker - only visible when the active persona is "client".
  * Picks the client identity the Portal pages scope to. Defaults to CL001 the
  * first time someone switches into the Client persona (handled in store.ts).
  */
@@ -41,9 +41,9 @@ function ActingAsPicker() {
 }
 
 /**
- * Stage helper — wipes demo data via /admin/demo-reset so the same browser can
+ * Stage helper - wipes demo data via /admin/demo-reset so the same browser can
  * replay the click-through without leaving the page. Always visible (no URL
- * gate) so it works mid-recording. Single-click — no confirm dialog — because
+ * gate) so it works mid-recording. Single-click - no confirm dialog - because
  * "fast" is the whole point during a demo.
  */
 function DemoResetButton() {
@@ -63,7 +63,7 @@ function DemoResetButton() {
       onClick={() => reset.mutate()}
       disabled={reset.isPending}
       className="inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60 shrink-0"
-      title="Wipe all documents, timesheets, invoices, and events — for demo replay."
+      title="Wipe all documents, timesheets, invoices, and events - for demo replay."
     >
       <RotateCw size={11} className={reset.isPending ? "animate-spin" : ""} />
       {reset.isPending ? "Resetting…" : "Reset demo"}
@@ -113,10 +113,10 @@ export function AppShell() {
             </span>
           </button>
 
-          {/* Acting-as Client identity — only relevant for the Client persona. */}
+          {/* Acting-as Client identity - only relevant for the Client persona. */}
           {persona === "client" && <ActingAsPicker />}
 
-          {/* Six-dot system heartbeat — judges spot misconfig on stage at a glance. */}
+          {/* Six-dot system heartbeat - judges spot misconfig on stage at a glance. */}
           <div className="hidden lg:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-white/20 bg-white/10 shrink-0" title="External services (api · db · openai · ocr · mail · dispatch)">
             <SystemStatusFooter compact />
           </div>
@@ -144,7 +144,7 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      {/* Floating AIDA launcher — vertical tab in the reserved right rail */}
+      {/* Floating AIDA launcher - vertical tab in the reserved right rail */}
       {!aidaOpen && (
         <button
           onClick={() => setAidaOpen(true)}

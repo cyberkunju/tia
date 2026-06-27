@@ -16,7 +16,7 @@ export function FinOpsEval() {
       <PageHeader
         icon={Gauge}
         title="Evaluation"
-        description="Field-level F1 across every case. The CI gate blocks a >2% regression — this is the wrapper-killer."
+        description="Field-level F1 across every case. The CI gate blocks a >2% regression - this is the wrapper-killer."
         actions={
           <button className="btn-primary btn-sm" disabled={run.isPending} onClick={() => run.mutate()}>
             {run.isPending ? <><Spinner /> Running…</> : <><Play size={14} /> Run eval</>}
@@ -33,9 +33,9 @@ export function FinOpsEval() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
             <Metric label="Cases passed" value={<>{data.passed}<span className="text-ink-300">/{data.runnable}</span></>}
               hint={allPass ? "all green" : "attention needed"} accent={allPass} />
-            <Metric label="Calibration error" value={data.ece.toFixed(3)} hint="ECE — lower is better" />
-            <Metric label="F1 · days worked" value={data.macro_f1.days_worked?.toFixed(2) ?? "—"} />
-            <Metric label="F1 · resolved" value={data.macro_f1.resolved?.toFixed(2) ?? "—"} />
+            <Metric label="Calibration error" value={data.ece.toFixed(3)} hint="ECE - lower is better" />
+            <Metric label="F1 · days worked" value={data.macro_f1.days_worked?.toFixed(2) ?? "-"} />
+            <Metric label="F1 · resolved" value={data.macro_f1.resolved?.toFixed(2) ?? "-"} />
           </div>
 
           <Panel title="Macro F1 per field" className="mb-4">

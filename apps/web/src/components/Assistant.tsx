@@ -17,15 +17,15 @@ type Msg = {
 
 const QUICK = ["How many need review?", "What's the touchless rate?", "Largest invoices", "What's pending dispatch?"];
 
-/** Deterministic fallback when the LLM agent is unavailable (no key) — never fabricates. */
+/** Deterministic fallback when the LLM agent is unavailable (no key) - never fabricates. */
 function localAnswer(q: string, docs: any[], invoices: any[]): string {
   const n = q.toLowerCase();
   const review = docs.filter((d) => d.status === "awaiting_review");
-  if (n.includes("review")) return review.length ? `${review.length} document${review.length === 1 ? "" : "s"} awaiting review: ${review.map((d) => `${d.client_code ?? "Unknown"} (${d.period ?? "—"})`).slice(0, 5).join(", ")}.` : "Nothing is awaiting review — every document auto-routed.";
-  if (n.includes("touchless") || n.includes("rate")) { const routed = docs.filter((d) => d.routing != null); const auto = routed.filter((d) => d.routing === "auto").length; return `Touchless rate is ${fmtPct(routed.length ? auto / routed.length : 0)} — ${auto} of ${routed.length} routed documents needed zero human touch.`; }
+  if (n.includes("review")) return review.length ? `${review.length} document${review.length === 1 ? "" : "s"} awaiting review: ${review.map((d) => `${d.client_code ?? "Unknown"} (${d.period ?? "-"})`).slice(0, 5).join(", ")}.` : "Nothing is awaiting review - every document auto-routed.";
+  if (n.includes("touchless") || n.includes("rate")) { const routed = docs.filter((d) => d.routing != null); const auto = routed.filter((d) => d.routing === "auto").length; return `Touchless rate is ${fmtPct(routed.length ? auto / routed.length : 0)} - ${auto} of ${routed.length} routed documents needed zero human touch.`; }
   if (n.includes("largest") || n.includes("biggest") || n.includes("value")) { const top = [...invoices].sort((a, b) => b.amount - a.amount).slice(0, 3); return top.length ? "Largest invoices: " + top.map((i) => `${i.client_code} ${fmtAED(i.amount)}`).join(", ") + "." : "No invoices generated yet."; }
   if (n.includes("dispatch")) { const p = invoices.filter((i) => i.status === "generated"); return p.length ? `${p.length} invoice${p.length === 1 ? "" : "s"} generated and pending dispatch.` : "Nothing pending dispatch."; }
-  return "I answer from live pipeline data — try a suggestion above.";
+  return "I answer from live pipeline data - try a suggestion above.";
 }
 
 function entityContext(): { kind: string; id: string } | undefined {
@@ -33,7 +33,7 @@ function entityContext(): { kind: string; id: string } | undefined {
   return doc ? { kind: "document", id: doc } : undefined;
 }
 
-/** The TIA mark — the full wordmark in the brand orange (#d9531e), no background. */
+/** The TIA mark - the full wordmark in the brand orange (#d9531e), no background. */
 function AidaMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
   const glyph = size === "lg" ? "h-10" : size === "sm" ? "h-4" : "h-5";
   return <Logo className={`${glyph} text-brand-500 shrink-0`} accent="fill-brand-500" />;
@@ -141,7 +141,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
             {clientScoped && (
               <div className="flex items-center gap-1.5 px-4 py-1.5 bg-brand-50/70 border-b border-brand-100 text-2xs text-brand-800">
                 <Lock size={11} className="text-brand-500 shrink-0" />
-                Data isolation active — TIA only reads <span className="font-mono">{currentClientCode}</span>'s records.
+                Data isolation active - TIA only reads <span className="font-mono">{currentClientCode}</span>'s records.
               </div>
             )}
 
@@ -153,7 +153,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                     <AidaMark size="lg" />
                     <h3 className="mt-4 text-base font-semibold text-ink-900">Ask TIA anything</h3>
                     <p className="mt-1.5 text-sm text-ink-500 max-w-[19rem] leading-relaxed">
-                      Grounded answers from the live pipeline — review queue, touchless rate, invoices, dispatch, and the tamper-evident audit chain.
+                      Grounded answers from the live pipeline - review queue, touchless rate, invoices, dispatch, and the tamper-evident audit chain.
                     </p>
                   </div>
                   <div className="w-full max-w-[20rem] mx-auto mt-6 space-y-2">
@@ -228,7 +228,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                   <ArrowUp size={16} />
                 </button>
               </div>
-              <p className="mt-2 text-center text-2xs text-ink-400">Answers are grounded in TIA's data — never fabricated.</p>
+              <p className="mt-2 text-center text-2xs text-ink-400">Answers are grounded in TIA's data - never fabricated.</p>
             </div>
           </motion.aside>
         </>

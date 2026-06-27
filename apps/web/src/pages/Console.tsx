@@ -31,7 +31,7 @@ export function Console() {
     return m;
   }, [invoices]);
 
-  // Optional stage filter — the command palette and external links can deep-link
+  // Optional stage filter - the command palette and external links can deep-link
   // via ?stage=review; without the param, we show every doc newest-first.
   const stage = params.get("stage") as StageId | null;
   const queue = useMemo(() => {
@@ -48,7 +48,7 @@ export function Console() {
 
   return (
     <div className="h-[calc(100vh-3rem)] flex flex-col">
-      {/* Queue + focus — master/detail on small, split on large */}
+      {/* Queue + focus - master/detail on small, split on large */}
       <div className="flex-1 lg:grid lg:grid-cols-[minmax(300px,360px)_1fr] min-h-0 overflow-hidden">
         {/* Queue */}
         <div className={cn("border-r border-ink-200 bg-white overflow-y-auto p-2 h-full", docParam ? "hidden lg:block" : "block")}>
@@ -65,7 +65,7 @@ export function Console() {
                 </div>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   <Badge tone="slate" dot={false}>{d.channel}</Badge>
-                  <span className="text-2xs text-ink-500">{d.period ?? "—"}</span>
+                  <span className="text-2xs text-ink-500">{d.period ?? "-"}</span>
                   {d.confidence != null && <ConfidenceBadge value={d.confidence} />}
                 </div>
               </button>

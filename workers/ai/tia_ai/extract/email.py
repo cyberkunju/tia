@@ -1,4 +1,4 @@
-"""Email-body extractor (cases 1, 2, 3, 6) — pure regex/heuristics, no LLM.
+"""Email-body extractor (cases 1, 2, 3, 6) - pure regex/heuristics, no LLM.
 
 Handles the four email shapes from the brief:
   1. payout request: name + client + period + total, no Emp ID

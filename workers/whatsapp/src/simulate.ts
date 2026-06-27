@@ -20,7 +20,7 @@ interface Sample {
 
 const samples: Sample[] = [
   {
-    label: "text payout request (case 1 shape — name + client + period + total)",
+    label: "text payout request (case 1 shape - name + client + period + total)",
     body: {
       senderName: "Aldar FinOps",
       messages: [
@@ -36,7 +36,7 @@ const samples: Sample[] = [
     },
   },
   {
-    label: "employee text (case 2 shape — emp id + days, no client)",
+    label: "employee text (case 2 shape - emp id + days, no client)",
     body: {
       messages: [
         {

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Mail, Loader2, FileWarning } from "lucide-react";
 
-/** Inline .eml renderer — fetches the raw doc source, parses headers, renders email card. */
+/** Inline .eml renderer - fetches the raw doc source, parses headers, renders email card. */
 export function EmlCard({ sourceUrl }: { sourceUrl: string }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["eml", sourceUrl],
@@ -65,7 +65,7 @@ function KV({ label, value, mono }: { label: string; value: string | undefined; 
 }
 
 function parseEml(raw: string): { from?: string; to?: string; cc?: string; subject?: string; date?: string; body: string } {
-  // Split on first blank line — RFC 2822 style. Our .eml files are simple text.
+  // Split on first blank line - RFC 2822 style. Our .eml files are simple text.
   const idx = raw.search(/\r?\n\r?\n/);
   const headerBlock = idx > -1 ? raw.slice(0, idx) : raw;
   const body = idx > -1 ? raw.slice(idx).replace(/^\r?\n\r?\n/, "") : "";

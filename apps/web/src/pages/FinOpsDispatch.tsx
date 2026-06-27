@@ -113,7 +113,7 @@ export function FinOpsDispatch() {
             );
           })}
         </div>
-        {rule !== initialRule && <p className="text-xs text-amber-700 mt-2.5">Unsaved — “Save as default” to persist this client’s rule.</p>}
+        {rule !== initialRule && <p className="text-xs text-amber-700 mt-2.5">Unsaved - “Save as default” to persist this client’s rule.</p>}
       </Panel>
 
       <Panel title={`Queue · ${ordered.length} invoice${ordered.length === 1 ? "" : "s"}`}>
@@ -132,7 +132,7 @@ export function FinOpsDispatch() {
                   <span className="tnum text-xs text-ink-400 w-5 text-right">{i + 1}</span>
                   <div className="min-w-0">
                     <div className="font-medium text-sm text-ink-800 truncate">{inv.line_items[0]?.employee_name ?? inv.client_code}</div>
-                    <div className="text-2xs text-ink-400 font-mono">{inv.id.slice(0, 8)} · {inv.line_items[0]?.job_title ?? "—"}</div>
+                    <div className="text-2xs text-ink-400 font-mono">{inv.id.slice(0, 8)} · {inv.line_items[0]?.job_title ?? "-"}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">

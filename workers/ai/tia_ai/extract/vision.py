@@ -1,4 +1,4 @@
-"""Image extractor (case 4: handwritten/photographed) — GLM-OCR only.
+"""Image extractor (case 4: handwritten/photographed) - GLM-OCR only.
 
 Strategy:
   1. Markdown pass (robust): page → markdown, parse with our text parser.
@@ -6,7 +6,7 @@ Strategy:
   2. KIE fallback: if no rows surfaced, ask for schema-constrained JSON.
   3. Layout pass: ask for [{bbox, category, text}] blocks; match each extracted
      row's employee name to the smallest layout block whose text contains it.
-     This anchors every billable number to a rectangle on the source — the
+     This anchors every billable number to a rectangle on the source - the
      "no-wrapper" provenance trail judges will look for.
 """
 
@@ -187,7 +187,7 @@ def extract_image(path: str | Path, mime: str = "image/png") -> TimesheetExtract
         except Exception:  # noqa: BLE001
             pass
 
-    # Provenance anchoring — best-effort, never block the extraction
+    # Provenance anchoring - best-effort, never block the extraction
     if result.rows:
         try:
             blocks = glm_layout(data, mime=mime)
@@ -210,7 +210,7 @@ def _demo() -> None:
         ]
     )
     blocks = [
-        {"bbox": [10, 10, 200, 50], "category": "Text", "text": "Header — June 2026"},
+        {"bbox": [10, 10, 200, 50], "category": "Text", "text": "Header - June 2026"},
         {"bbox": [10, 60, 300, 90], "category": "Text", "text": "Carlos Smith 22 days"},
         {"bbox": [10, 100, 320, 130], "category": "Text", "text": "Aisha Al Zaabi 21 days"},
         {

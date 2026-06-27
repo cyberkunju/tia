@@ -4,7 +4,7 @@ export default {
   theme: {
     extend: {
       colors: {
-        // TASC accent (orange-red) — used deliberately, never as a wash.
+        // TASC accent (orange-red) - used deliberately, never as a wash.
         brand: {
           50: "#fef4ef",
           100: "#fde4d7",
@@ -17,7 +17,7 @@ export default {
           800: "#7c2c15",
           900: "#662614",
         },
-        // Neutral spine — a single, consistent slate ramp for every surface/line/text.
+        // Neutral spine - a single, consistent slate ramp for every surface/line/text.
         ink: {
           50: "#f8fafc",
           100: "#f1f5f9",

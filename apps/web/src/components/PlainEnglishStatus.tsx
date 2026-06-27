@@ -4,8 +4,8 @@ import { api } from "../api";
 import type { ValidationResult } from "../types";
 
 /**
- * PlainEnglishStatus — a plain-language summary of the BTP rule outcomes for
- * the active timesheet. No rule IDs (R0/R1/R5…), no internal jargon —
+ * PlainEnglishStatus - a plain-language summary of the BTP rule outcomes for
+ * the active timesheet. No rule IDs (R0/R1/R5…), no internal jargon -
  * judges and clients see the human-readable friendly_message for each
  * failure, or a single "all checks passed" line.
  *
@@ -24,12 +24,12 @@ export function PlainEnglishStatus({ results }: { results: ValidationResult[] })
     return friendly[fid] || r.message || r.rule_name || "An issue was found.";
   };
 
-  // Happy path — everything green.
+  // Happy path - everything green.
   if (fails.length === 0 && warns.length === 0) {
     return (
       <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900 inline-flex items-center gap-2">
         <CheckCircle2 size={15} className="shrink-0" />
-        All checks passed — this timesheet matches the contract.
+        All checks passed - this timesheet matches the contract.
       </div>
     );
   }

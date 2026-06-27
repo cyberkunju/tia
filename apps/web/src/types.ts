@@ -148,12 +148,12 @@ export interface Invoice {
   client_approval_status?: "pending" | "approved" | "rejected" | null;
   client_approval_reason?: string | null;
   rule_results?: ValidationResult[];
-  // Clawback — void path
+  // Clawback - void path
   voided_at?: string | null;
   voided_by?: string | null;
   voided_reason_code?: string | null;
   voided_reason?: string | null;
-  // Clawback — credit-note path
+  // Clawback - credit-note path
   credit_note_sequence_no?: string | null;
   credit_note_issued_at?: string | null;
   credit_note_issued_by?: string | null;
@@ -260,7 +260,7 @@ export interface StpBreakdown {
   total_dispatched: number;
 }
 
-/** Backend response from /metrics/stp — includes optional dispatched_breakdown. */
+/** Backend response from /metrics/stp - includes optional dispatched_breakdown. */
 export interface StpMetricFull extends StpMetric {
   dispatched_breakdown?: StpBreakdown;
 }
@@ -459,7 +459,7 @@ export interface SlaMetric {
   checked_at: string;
 }
 
-/* ── Clawback (UAE FTA Art. 60 — void / credit-note / partial) ────────── */
+/* ── Clawback (UAE FTA Art. 60 - void / credit-note / partial) ────────── */
 
 export type ClawbackReasonCode =
   | "PRICING_ERROR" | "GOODS_RETURNED" | "DISCOUNT" | "DUPLICATE" | "OTHER";

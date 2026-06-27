@@ -1,4 +1,4 @@
-"""TIA Mailbox — Zoho IMAP/SMTP integration for `tia@cyberkunju.com`.
+"""TIA Mailbox - Zoho IMAP/SMTP integration for `tia@cyberkunju.com`.
 
 What this gives us on stage:
   - Real email sent to `tia@cyberkunju.com` (Zoho Mail) gets pulled into TIA

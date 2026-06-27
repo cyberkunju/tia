@@ -40,7 +40,7 @@ export const usePersona = create<PersonaState>()(
     }),
     {
       name: "tia.persona",
-      // resetTick is in-memory only — no point persisting demo-replay state.
+      // resetTick is in-memory only - no point persisting demo-replay state.
       partialize: (s) => ({ persona: s.persona, currentClientCode: s.currentClientCode }),
     },
   ),

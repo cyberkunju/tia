@@ -7,11 +7,11 @@ import { cn, fmtAED } from "../lib";
 import { usePersona } from "../store";
 
 /**
- * UploadReceipt — what the client sees the moment a file goes in.
+ * UploadReceipt - what the client sees the moment a file goes in.
  *
  * The orchestrator on the backend is synchronous, so by the time this card
  * mounts the doc is already at its final stage. That's not useful for a demo
- * audience — the eye can't follow a 50ms snap to Invoiced. So we animate the
+ * audience - the eye can't follow a 50ms snap to Invoiced. So we animate the
  * visible cursor through the five stages at ~600ms each, capped by the real
  * backend state from the poll. The numbers below the strip stay real; only
  * the visual cursor is paced.
@@ -32,7 +32,7 @@ export function UploadReceipt({ docId }: { docId: string }) {
   const routing = ts?.routing;
   const fails = (ts?.validations ?? []).filter((v) => !v.passed && v.severity !== "warning").length;
 
-  // Target stage — derived from the real backend state. 1..5.
+  // Target stage - derived from the real backend state. 1..5.
   // 1 received → 2 read → 3 matched → 4 checked → 5 invoiced.
   let backendStage = 1;
   if (ts?.extraction?.rows && ts.extraction.rows.length > 0) backendStage = 2;
@@ -42,7 +42,7 @@ export function UploadReceipt({ docId }: { docId: string }) {
   const dispatched = inv?.status === "dispatched";
   const awaitingReview = ts?.status === "awaiting_review";
 
-  // Visible cursor — animates toward backendStage at ~600ms per step. New
+  // Visible cursor - animates toward backendStage at ~600ms per step. New
   // demos start at stage 1; if the backend jumps ahead the cursor catches up
   // at the next tick, so we never overshoot.
   const [visibleStage, setVisibleStage] = useState(1);
@@ -77,7 +77,7 @@ export function UploadReceipt({ docId }: { docId: string }) {
 
   return (
     <div className="card overflow-hidden">
-      {/* Headline — what's happening right now, in plain English. */}
+      {/* Headline - what's happening right now, in plain English. */}
       <div className={cn(
         "px-4 py-3 border-b",
         showFinal && dispatched ? "bg-emerald-50 border-emerald-200" :
@@ -92,14 +92,14 @@ export function UploadReceipt({ docId }: { docId: string }) {
             : <><Loader2 size={15} className="text-ink-500 animate-spin" /> Working on it…</>}
         </div>
         <p className="text-xs text-ink-600 mt-0.5">
-          {showFinal && dispatched ? `Confidence ${(conf * 100).toFixed(0)}% — every contract check passed, so no human was needed.`
-            : showFinal && inv ? "Ready for your approval — open the PDF below."
+          {showFinal && dispatched ? `Confidence ${(conf * 100).toFixed(0)}% - every contract check passed, so no human was needed.`
+            : showFinal && inv ? "Ready for your approval - open the PDF below."
             : showFinal && awaitingReview ? `Confidence ${(conf * 100).toFixed(0)}% · ${fails} item${fails === 1 ? "" : "s"} need${fails === 1 ? "s" : ""} a quick look.`
             : STAGE_PROSE[visibleStage] ?? "Reading the timesheet and matching associates."}
         </p>
       </div>
 
-      {/* Live 5-step strip — paced cursor, see comment at the top of the file. */}
+      {/* Live 5-step strip - paced cursor, see comment at the top of the file. */}
       <div className="px-4 py-3 flex items-center justify-between gap-1 overflow-x-auto">
         {STAGES.map((s, i) => {
           const reached = s.id <= visibleStage;
@@ -125,7 +125,7 @@ export function UploadReceipt({ docId }: { docId: string }) {
         })}
       </div>
 
-      {/* Summary chips + actions — gated on showFinal so they appear when the strip lands. */}
+      {/* Summary chips + actions - gated on showFinal so they appear when the strip lands. */}
       <div className="px-4 pb-4 space-y-3">
         <div className="flex flex-wrap items-center gap-2 text-xs min-h-[24px]">
           {showFinal && ts?.client_code && <span className="badge-slate">{ts.client_code}</span>}

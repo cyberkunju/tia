@@ -3,7 +3,7 @@
 Excel / native-PDF / email run with zero LLM. Only true images/handwriting go to the
 vision path (ocr_client). This is the "70% works without an LLM" backbone.
 
-Empty or unparseable inputs return an empty `TimesheetExtraction` — the orchestrator
+Empty or unparseable inputs return an empty `TimesheetExtraction` - the orchestrator
 then routes the document to `escalate` rather than crashing the API.
 """
 
@@ -44,5 +44,5 @@ def extract(
             return pdf_ex.extract_pdf(p)
         # last resort: treat as email/plain text
         return email_ex.extract_email(p.read_text(encoding="utf-8", errors="ignore"))
-    except Exception:  # noqa: BLE001 — corrupt input → escalate, never crash the API
+    except Exception:  # noqa: BLE001 - corrupt input → escalate, never crash the API
         return TimesheetExtraction()

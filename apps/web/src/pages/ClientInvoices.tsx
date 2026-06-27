@@ -34,7 +34,7 @@ export function ClientInvoices() {
 
   const [actionFor, setActionFor] = useState<{ inv: Invoice; mode: "approve" | "reject" | "query" } | null>(null);
 
-  // The first pending invoice gets a hero card — judges and clients see the
+  // The first pending invoice gets a hero card - judges and clients see the
   // most actionable invoice at the top of the page.
   const pendingHero = useMemo(
     () => (data ?? []).find((inv) => inv.client_approval_status !== "approved" && inv.client_approval_status !== "rejected" && inv.status !== "voided"),
@@ -48,8 +48,8 @@ export function ClientInvoices() {
         title={clientName ? `Invoices · ${clientName}` : "Invoices"}
         description={
           currentClientCode
-            ? <span>Tax invoices issued by TASC for <span className="font-mono">{currentClientCode}</span> — review, approve, or raise a query. Amounts in AED incl. 5% VAT.</span>
-            : "Tax invoices issued by TASC — review, approve, or raise a query. Amounts in AED incl. 5% VAT."
+            ? <span>Tax invoices issued by TASC for <span className="font-mono">{currentClientCode}</span> - review, approve, or raise a query. Amounts in AED incl. 5% VAT.</span>
+            : "Tax invoices issued by TASC - review, approve, or raise a query. Amounts in AED incl. 5% VAT."
         }
       />
 
@@ -82,7 +82,7 @@ export function ClientInvoices() {
                   return (
                     <tr key={inv.id}>
                       <td className="font-mono text-xs text-ink-600">{inv.invoice_sequence_no ?? inv.id.slice(0, 8)}</td>
-                      <td className="text-ink-600">{inv.period ?? "—"}</td>
+                      <td className="text-ink-600">{inv.period ?? "-"}</td>
                       <td className="text-right tnum text-ink-600">{fmtAED(t.subtotal)}</td>
                       <td className="text-right tnum text-ink-500">{fmtAED(t.vat)}</td>
                       <td className="text-right tnum font-semibold text-ink-900">{fmtAED(t.total)}</td>
@@ -91,7 +91,7 @@ export function ClientInvoices() {
                           ? <Badge tone="brand"><Zap size={9} /> AUTO</Badge>
                           : inv.status === "dispatched"
                             ? <Badge tone="green" dot={false}>dispatched</Badge>
-                            : <span className="text-ink-300 text-xs">—</span>}
+                            : <span className="text-ink-300 text-xs">-</span>}
                       </td>
                       <td><Badge tone={approvalTone(inv.client_approval_status)} dot={false}>{inv.client_approval_status ?? "pending"}</Badge></td>
                       <td>
@@ -135,7 +135,7 @@ export function ClientInvoices() {
 }
 
 /**
- * Hero card for the first pending invoice — surfaces approve/reject/raise-query
+ * Hero card for the first pending invoice - surfaces approve/reject/raise-query
  * actions above the full table so the most-important invoice is one click away.
  */
 function PendingCard({ inv, onApprove, onReject, onQuery }: {
@@ -156,7 +156,7 @@ function PendingCard({ inv, onApprove, onReject, onQuery }: {
             <FileText size={14} className="text-ink-500" />
             <span className="font-mono text-xs text-ink-500">{inv.invoice_sequence_no ?? inv.id.slice(0, 8)}</span>
             <span className="text-2xs text-ink-400">·</span>
-            <span className="text-2xs text-ink-500">{inv.period ?? "—"}</span>
+            <span className="text-2xs text-ink-500">{inv.period ?? "-"}</span>
           </div>
           <p className="text-xl font-semibold text-ink-900 tnum">{fmtAED(total)} <span className="text-sm font-normal text-ink-500">incl. {fmtAED(vat)} VAT</span></p>
           <p className="text-2xs text-ink-500 mt-1">Net: <span className="tnum">{fmtAED(subtotal)}</span></p>
@@ -172,7 +172,7 @@ function PendingCard({ inv, onApprove, onReject, onQuery }: {
   );
 }
 
-/** Polished approve/reject/raise-query modal — replaces the inline prompt(). */
+/** Polished approve/reject/raise-query modal - replaces the inline prompt(). */
 function InvoiceActionModal({ invoice, mode, clientCode, onClose, onDone }: {
   invoice: Invoice;
   mode: "approve" | "reject" | "query";

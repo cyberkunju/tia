@@ -1,18 +1,18 @@
-"""Invoice state machine — enforces legal status transitions.
+"""Invoice state machine - enforces legal status transitions.
 
 Without this, status is a free-form string and nothing prevents an invoice from
 going `dispatched → generated` or `rejected → dispatched`. Real-product AP
-systems all run on FSMs — this keeps our flow honest.
+systems all run on FSMs - this keeps our flow honest.
 
 States:
-  generated          — invoice rendered, awaiting next gate
-  finance_approved   — passed Finance threshold check (only when amount > threshold)
-  client_approved    — client signed off via /client-approve (or auto-dispatch fast path)
-  client_rejected    — client raised a query / refused; awaiting correction
-  dispatched         — Rust service wrote outbox + audit event
-  rejected           — terminal "never going out" (FinOps decision or void)
-  voided             — terminal: invoice was created in error (pre-dispatch clawback)
-  superseded         — terminal: replaced by a reissued invoice (replaces_invoice_id chain)
+  generated          - invoice rendered, awaiting next gate
+  finance_approved   - passed Finance threshold check (only when amount > threshold)
+  client_approved    - client signed off via /client-approve (or auto-dispatch fast path)
+  client_rejected    - client raised a query / refused; awaiting correction
+  dispatched         - Rust service wrote outbox + audit event
+  rejected           - terminal "never going out" (FinOps decision or void)
+  voided             - terminal: invoice was created in error (pre-dispatch clawback)
+  superseded         - terminal: replaced by a reissued invoice (replaces_invoice_id chain)
 
 Clawback (real-product AR semantics):
   - Pre-dispatch (generated / pending_client_review / client_approved / finance_approved)
@@ -53,7 +53,7 @@ LABELS: dict[str, str] = {
     "superseded": "Superseded (reissued)",
 }
 
-# Pre-dispatch states — clawback in any of these is a VOID, not a credit note.
+# Pre-dispatch states - clawback in any of these is a VOID, not a credit note.
 PRE_DISPATCH_STATES: set[str] = {
     "generated",
     "pending_client_review",
@@ -79,14 +79,14 @@ def assert_transition(current: str, target: str) -> None:
       - same-state writes are silently allowed (idempotent)
       - 'pending_client_review' is a sub-state of 'generated' / 'finance_approved';
         we use it on the client UI side but the underlying invoice.status sits in
-        the legal set — so we don't enforce it here.
+        the legal set - so we don't enforce it here.
     """
     if current == target:
-        return  # idempotent — allowed
+        return  # idempotent - allowed
     current_norm = "generated" if current == "pending_client_review" else current
     target_norm = "generated" if target == "pending_client_review" else target
     if current_norm not in ALLOWED:
-        return  # unknown current state — don't block (back-compat)
+        return  # unknown current state - don't block (back-compat)
     if target_norm not in ALLOWED[current_norm]:
         raise InvalidTransition(current, target)
 
@@ -104,7 +104,7 @@ def set_status(session: Session, invoice: Invoice, target: str) -> str:
 
 
 def _demo() -> None:
-    """Self-check the transition table — runs offline (no DB)."""
+    """Self-check the transition table - runs offline (no DB)."""
     # legal
     assert_transition("generated", "finance_approved")
     assert_transition("generated", "client_approved")

@@ -1,4 +1,4 @@
-"""Eval harness — runs all 7 cases, computes per-field F1, per-case pass/fail, latency.
+"""Eval harness - runs all 7 cases, computes per-field F1, per-case pass/fail, latency.
 
 This is the wrapper-killer: judges (and CI) see whether extraction + resolution + billing
 holds against the gold ground truth. ECE is computed from per-row confidence vs correct.
@@ -70,7 +70,7 @@ def _row_metrics(expected: list[dict], got_rows: list, got_matches: list) -> dic
         }
         ok = True
         for k in fields:
-            if k not in exp:  # gold silent — skip (don't penalize)
+            if k not in exp:  # gold silent - skip (don't penalize)
                 continue
             ev = exp.get(k)
             av = actual.get(k)
@@ -143,7 +143,7 @@ def run_case(case_id: str) -> dict:
     from ..config import GLM_OCR_API_KEY
 
     if inp.suffix.lower() in _VISION_EXT and not GLM_OCR_API_KEY:
-        return {"case": case_id, "skipped": True, "reason": "vision case — no GLM_OCR_API_KEY set"}
+        return {"case": case_id, "skipped": True, "reason": "vision case - no GLM_OCR_API_KEY set"}
     t0 = time.time()
     ex = extract(inp)
     elapsed = round(time.time() - t0, 3)

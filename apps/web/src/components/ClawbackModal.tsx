@@ -1,5 +1,5 @@
 /**
- * ClawbackModal — state-aware modal.
+ * ClawbackModal - state-aware modal.
  *
  * Render path is driven entirely by the eligibility endpoint:
  *   void                              → "Void this invoice"
@@ -204,7 +204,7 @@ export function ClawbackModal({
                 {action === "credit_note_with_refund_pending" && (
                   <div className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 inline-flex items-center gap-2">
                     <AlertOctagon size={13} className="shrink-0" />
-                    A refund will be required — flagged for manual bank processing.
+                    A refund will be required - flagged for manual bank processing.
                   </div>
                 )}
               </>
@@ -256,7 +256,7 @@ function UAEArt60Banner({ elig }: { elig: ClawbackEligibility }) {
     <div className={`mb-3 rounded-md border px-3 py-2 text-xs ${tone}`}>
       <div className="flex items-center gap-1.5 font-semibold">
         {elig.urgency === "urgent" ? <AlertOctagon size={13} /> : <AlertTriangle size={13} />}
-        UAE FTA — Tax Credit Note must be issued within 14 days · {days} day{days === 1 ? "" : "s"} remaining
+        UAE FTA - Tax Credit Note must be issued within 14 days · {days} day{days === 1 ? "" : "s"} remaining
       </div>
       <p className="mt-1 opacity-90">
         Issued under UAE VAT Law Articles 60 + 62 · Decision No. 7 of 2019 (combined Tax Invoice / Tax Credit Note document).

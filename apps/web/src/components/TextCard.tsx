@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Loader2, FileWarning, FileEdit } from "lucide-react";
 
-/** Plain-text source renderer — for online-form submissions, case_02, case_06,
+/** Plain-text source renderer - for online-form submissions, case_02, case_06,
  * any other text/plain document we ingest. */
 export function TextCard({ sourceUrl, filename }: { sourceUrl: string; filename?: string }) {
   const { data, isLoading, isError } = useQuery({
