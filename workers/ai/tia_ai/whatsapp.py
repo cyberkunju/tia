@@ -25,7 +25,7 @@ import re
 from sqlalchemy.orm import Session
 
 from .config import INTERNAL_SECRET, TIA_SELF_URL, WHATSAPP_BRIDGE_URL
-from .models import Client, DocAsset, Invoice, Timesheet
+from .models import ChatMessage, Client, DocAsset, Invoice, Timesheet
 
 WHATSAPP_CHANNEL = "whatsapp"
 
@@ -98,6 +98,30 @@ def classify_inbound_text(text: str | None) -> str:
     return "timesheet"
 
 
+def route_message(text: str | None) -> str:
+    """Decide what an inbound WhatsApp text is: "timesheet", "greeting", or "chat".
+
+    Uses the LLM intent router (robust to any natural-language phrasing — no keyword
+    matching), and degrades to the regex classifier only when the model is
+    unavailable (no API key / error). So live traffic gets true language
+    understanding; offline/tests still work deterministically.
+    """
+    t = (text or "").strip()
+    if not t:
+        return "greeting"
+    try:
+        from .qa.agent import route_intent
+
+        routed = route_intent(t)
+        if routed in ("timesheet", "greeting", "chat"):
+            return routed
+    except Exception:  # noqa: BLE001
+        pass
+    # fallback: regex classifier ("question" maps to the conversational "chat")
+    c = classify_inbound_text(t)
+    return "chat" if c == "question" else c
+
+
 # ---------------------------------------------------------------- sender → client
 
 
@@ -166,8 +190,28 @@ def resolve_sender(session: Session, phone: str | None) -> dict | None:
     }
 
 
+def _load_history(session: Session, phone: str, limit: int = 8) -> list[dict]:
+    """Most recent chat turns for this sender, oldest-first, for multi-turn context."""
+    rows = (
+        session.query(ChatMessage)
+        .filter(ChatMessage.sender == phone)
+        .order_by(ChatMessage.at.desc())
+        .limit(limit)
+        .all()
+    )
+    return [{"role": r.role, "content": r.content} for r in reversed(rows)]
+
+
+def _save_turn(session: Session, phone: str, client_code: str | None, role: str, content: str) -> None:
+    session.add(
+        ChatMessage(sender=phone, client_code=client_code, role=role, content=(content or "")[:4000])
+    )
+    session.flush()
+
+
 def answer_for_sender(session: Session, phone: str | None, question: str) -> dict:
-    """Run the grounded chat agent scoped to this WhatsApp sender's client.
+    """Run the grounded chat agent scoped to this WhatsApp sender's client, with
+    per-sender conversation memory for natural multi-turn follow-ups.
 
     Strictly client-scoped: the sender can only get answers about their own data.
     When the sender has no history we return a friendly prompt instead of an
@@ -178,7 +222,8 @@ def answer_for_sender(session: Session, phone: str | None, question: str) -> dic
         return {
             "answer": (
                 "I don't have a timesheet or invoice from this number yet. Send a "
-                "timesheet first (file, photo, or text) and then you can ask me about it."
+                "timesheet first (file, photo, or text) and then I can answer anything "
+                "about it — totals, VAT, status, or why a line is what it is."
             ),
             "citations": [],
             "tool_calls": [],
@@ -191,6 +236,8 @@ def answer_for_sender(session: Session, phone: str | None, question: str) -> dic
     elif ctx.get("timesheet_id"):
         entity_context = {"kind": "timesheet", "id": ctx["timesheet_id"]}
 
+    history = _load_history(session, phone) if phone else []
+
     from .qa import answer
 
     result = answer(
@@ -198,9 +245,15 @@ def answer_for_sender(session: Session, phone: str | None, question: str) -> dic
         question,
         entity_context=entity_context,
         client_scope=ctx["client_code"],
+        history=history,
     )
     result["scoped"] = True
     result["client_code"] = ctx["client_code"]
+
+    # persist this turn so the next message has context
+    if phone:
+        _save_turn(session, phone, ctx["client_code"], "user", question)
+        _save_turn(session, phone, ctx["client_code"], "assistant", result.get("answer", ""))
     return result
 
 

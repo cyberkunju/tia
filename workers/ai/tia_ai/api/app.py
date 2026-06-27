@@ -627,15 +627,15 @@ def intake_whatsapp(
     from ..whatsapp import (
         HELP_TEXT,
         answer_for_sender,
-        classify_inbound_text,
         client_for_sender,
         resolve_sender,
+        route_message,
     )
 
-    # ---- typed text: greeting/help, or a question from a known sender ----
+    # ---- typed text: LLM-routed into greeting / chat / timesheet ----
     text = (payload.message_text or "").strip()
     if not payload.attachment_url and text:
-        intent = classify_inbound_text(text)
+        intent = route_message(text)  # "timesheet" | "greeting" | "chat"
         if intent == "greeting":
             log_event(
                 s,
@@ -646,29 +646,31 @@ def intake_whatsapp(
                 {"text": text[:120]},
             )
             return {"mode": "answer", "answer": HELP_TEXT, "citations": [], "tool_calls": []}
-        if intent == "question":
+        if intent == "chat":
+            # a question / doubt / anything conversational — never goes into the
+            # pipeline. answer_for_sender is client-scoped and safe for unknown senders.
             ctx = resolve_sender(s, payload.from_)
-            if ctx is not None:
-                result = answer_for_sender(s, payload.from_, text)
-                log_event(
-                    s,
-                    payload.from_ or "whatsapp",
-                    "client",
-                    ctx.get("client_code") or "unknown",
-                    "whatsapp.question_answered",
-                    {
-                        "question": text[:300],
-                        "tool_calls": [t.get("name") for t in result.get("tool_calls", [])],
-                        "invoice_id": ctx.get("invoice_id"),
-                    },
-                )
-                return {
-                    "mode": "answer",
-                    "answer": result.get("answer", ""),
-                    "citations": result.get("citations", []),
-                    "tool_calls": result.get("tool_calls", []),
-                    "model": result.get("model"),
-                }
+            result = answer_for_sender(s, payload.from_, text)
+            log_event(
+                s,
+                payload.from_ or "whatsapp",
+                "client",
+                (ctx or {}).get("client_code") or "unknown",
+                "whatsapp.chat",
+                {
+                    "message": text[:300],
+                    "scoped": result.get("scoped", False),
+                    "tool_calls": [t.get("name") for t in result.get("tool_calls", [])],
+                },
+            )
+            return {
+                "mode": "answer",
+                "answer": result.get("answer", ""),
+                "citations": result.get("citations", []),
+                "tool_calls": result.get("tool_calls", []),
+                "model": result.get("model"),
+            }
+        # intent == "timesheet" → fall through to the pipeline below
 
     # bind the sender to a registered client (Client.settings.whatsapp_number) so the
     # submission is correctly attributed even when the document is silent/ambiguous.

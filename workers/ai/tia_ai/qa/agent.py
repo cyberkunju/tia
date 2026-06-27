@@ -33,23 +33,47 @@ from ..models import (
     Timesheet,
 )
 
-SYSTEM_PROMPT = """You are TIA's grounded answer agent. TIA = Touchless Invoice Agent
-for TASC Outsourcing UAE. You answer questions about timesheets, invoices,
-contracts, and rules by calling the read-only database tools provided.
+SYSTEM_PROMPT = """You are AIDA, TASC Outsourcing's WhatsApp invoicing assistant. You talk with a
+client in natural conversation and help them understand their timesheets, invoices,
+contracts, VAT, totals, dispatch status, and billing rules.
 
-STRICT RULES:
-1. Every factual claim MUST come from a tool result. Never invent IDs, amounts,
-   names, or rules.
-2. If no tool returns relevant data, answer EXACTLY: "I have no evidence in TIA's
-   database for this question."
-3. Cite your sources as [kind:id] inline, e.g. "Invoice [invoice:9c2d...] failed
-   rule R4 with OT 50h vs cap 20%."
-4. Prefer the smallest tool call set. Don't dump everything.
-5. Be concise: short paragraphs, no marketing tone.
-6. If you call get_invoice / get_contract / get_events / get_client_settings,
-   you may use their `rule_results` / `payload` / `settings` JSON to cite specific
-   rule IDs (R1..R10) or events.
+GROUNDING (non-negotiable):
+- For ANY factual claim about data — amounts, VAT, totals, status, dates, names,
+  emp IDs, rule outcomes — you MUST call the read-only tools and base your answer on
+  what they return. Cite sources inline as [kind:id], e.g. "your total is AED 11,367.26
+  [invoice:9c2d...]". Never invent or guess a number, ID, name, or rule.
+- If the tools return nothing relevant to a factual question, say you don't have that
+  information for their account yet — do not fabricate.
+
+CONVERSATION (be genuinely helpful, not robotic):
+- Handle anything a real person might send: greetings, thanks, "what can you do?",
+  vague asks ("is it ready?", "any update?"), follow-ups that depend on earlier turns
+  ("and the VAT?", "why?"), and confusion. Use the conversation so far for context.
+- For a vague status question, look up their latest invoice/timesheet with the tools
+  and tell them where it stands.
+- If they dispute a figure, explain how it was derived from the tool data, then offer
+  that our team can review it — don't argue.
+- If asked something outside TASC invoicing, briefly say it's outside what you help
+  with and steer back. Don't refuse the on-topic parts of a mixed message.
+
+STYLE:
+- Short, warm, WhatsApp-friendly. Plain sentences, no markdown headers or tables.
+- You are scoped to ONE client and can only see/discuss that client's data.
 """
+
+ROUTER_PROMPT = """You route a single inbound WhatsApp message sent to TASC's invoicing
+assistant. Decide what the sender is doing and reply with EXACTLY one word:
+
+TIMESHEET  — they are submitting attendance/timesheet data to be turned into an invoice
+             (e.g. "EMP10001 worked 22 days, 5 OT", "Carlos 22 days Ahmed 23 days",
+             a roster of names with days/leave). Pasted tabular/payroll data.
+GREETING   — a bare greeting, thanks, or acknowledgement with no request
+             (hi, hello, hey, good morning, thanks, ok, 👍).
+CHAT       — ANYTHING else: any question, doubt, complaint, clarification, or request
+             about invoices/VAT/totals/status/contract/employees, "what can you do",
+             a follow-up to a previous answer, or anything unexpected.
+
+Reply with ONLY the single word: TIMESHEET, GREETING, or CHAT."""
 
 
 def _client() -> Any:
@@ -59,6 +83,35 @@ def _client() -> Any:
         api_key=OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "sk-noop"),
         base_url=OPENAI_BASE_URL or "https://api.openai.com/v1",
     )
+
+
+def route_intent(text: str) -> str | None:
+    """LLM intent router for an inbound WhatsApp text — robust to any phrasing
+    (no regex/keyword matching). Returns "timesheet" | "greeting" | "chat", or None
+    if the model is unavailable so the caller can fall back."""
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        client = _client()
+        resp = client.chat.completions.create(
+            model=OPENAI_MODEL or "gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": ROUTER_PROMPT},
+                {"role": "user", "content": (text or "")[:1500]},
+            ],
+            temperature=0.0,
+            max_tokens=4,
+        )
+        word = (resp.choices[0].message.content or "").strip().upper()
+        if "TIMESHEET" in word:
+            return "timesheet"
+        if "GREETING" in word:
+            return "greeting"
+        if "CHAT" in word:
+            return "chat"
+    except Exception:  # noqa: BLE001 — degrade to the caller's fallback
+        return None
+    return None
 
 
 # ---------- Tool implementations (DB-grounded, no LLM in here) ----------
@@ -397,6 +450,7 @@ def answer(
     entity_context: dict | None = None,
     max_steps: int = 5,
     client_scope: str | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     """Run a tool-calling loop until the model returns a final answer.
 
@@ -407,6 +461,9 @@ def answer(
     client_scope (optional): a client_code. When set (Client persona), every tool is
     constrained to that client — the model cannot read another client's data. The
     server injects this into each tool call; the LLM never controls it.
+
+    history (optional): prior conversation turns [{"role": "user"|"assistant",
+    "content": str}] so natural multi-turn follow-ups resolve in context.
     """
     if not OPENAI_API_KEY:
         return {
@@ -437,6 +494,12 @@ def answer(
                 ),
             }
         )
+    # prior conversation turns (bounded by the caller) for natural follow-ups
+    for turn in history or []:
+        role = turn.get("role")
+        content = turn.get("content")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": str(content)})
     messages.append({"role": "user", "content": question})
 
     tool_calls_log: list[dict] = []

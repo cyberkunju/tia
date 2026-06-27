@@ -322,6 +322,24 @@ class Correction(Base):
     at: Mapped[dt.datetime] = mapped_column(default=_now)
 
 
+class ChatMessage(Base):
+    """Per-sender conversation memory for the WhatsApp "talk to the invoice" chat.
+
+    Stores user + assistant turns keyed by sender (phone) so the grounded agent can
+    handle natural multi-turn follow-ups ("and the VAT?", "why?"). Scoped by sender,
+    which maps to a single client — so history never crosses a client boundary.
+    """
+
+    __tablename__ = "chat_messages"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    channel: Mapped[str] = mapped_column(String, default="whatsapp")
+    sender: Mapped[str] = mapped_column(String, index=True)
+    client_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    role: Mapped[str] = mapped_column(String)  # "user" | "assistant"
+    content: Mapped[str] = mapped_column(Text)
+    at: Mapped[dt.datetime] = mapped_column(default=_now, index=True)
+
+
 class Event(Base):
     """Append-only audit spine — tamper-evident via hash chain.
 

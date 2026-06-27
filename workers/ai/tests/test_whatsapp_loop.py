@@ -325,12 +325,84 @@ def test_whatsapp_question_from_known_sender_routes_to_answer(client, monkeypatc
     assert body["citations"] == [{"kind": "invoice", "id": "demo"}]
 
 
-def test_whatsapp_question_from_unknown_sender_falls_through_to_intake(client):
-    # No prior history for this number → cannot scope a chat answer → treated as intake.
+def test_whatsapp_chat_from_unknown_sender_is_not_ingested(client):
+    # An unknown sender's question must NOT create a junk timesheet; it gets a
+    # helpful "send a timesheet first" reply (chat is never routed to the pipeline).
+    s = SessionLocal()
+    try:
+        before = s.query(DocAsset).filter_by(source_channel="whatsapp").count()
+    finally:
+        s.close()
     r = client.post(
         "/intake/whatsapp",
         json={"from_": "971599999999", "message_text": "why is my invoice so high?"},
         headers={"Idempotency-Key": f"wa-u-{uuid.uuid4().hex}"},
     )
-    assert r.status_code == 202, r.text
-    assert r.json()["mode"] == "intake"
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "answer"
+    assert "timesheet" in body["answer"].lower()
+    s = SessionLocal()
+    try:
+        after = s.query(DocAsset).filter_by(source_channel="whatsapp").count()
+    finally:
+        s.close()
+    assert after == before
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("hi", "greeting"),
+        ("EMP10001 worked 22 days", "timesheet"),
+        ("why is my invoice so high?", "chat"),
+        ("what's the VAT?", "chat"),
+    ],
+)
+def test_route_message_regex_fallback(text, expected):
+    # With no OPENAI key (test env) the LLM router is unavailable, so route_message
+    # degrades to the regex classifier; "question" maps to the conversational "chat".
+    assert wa.route_message(text) == expected
+
+
+def test_chat_persists_conversation_history(client, monkeypatch):
+    import tia_ai.qa as qa_pkg
+    from tia_ai.models import ChatMessage
+
+    phone = "919800012345"
+    s = SessionLocal()
+    try:
+        c = s.get(Client, "CL001")
+        c.settings = {**(c.settings or {}), "whatsapp_number": phone}
+        s.commit()
+    finally:
+        s.close()
+
+    seen = {}
+
+    def fake_answer(session, question, entity_context=None, client_scope=None, history=None, **kw):
+        seen["history_len"] = len(history or [])
+        return {"answer": f"reply to: {question}", "citations": [], "tool_calls": [], "model": "mock"}
+
+    monkeypatch.setattr(qa_pkg, "answer", fake_answer)
+
+    client.post(
+        "/intake/whatsapp",
+        json={"from_": phone, "message_text": "what is my total?"},
+        headers={"Idempotency-Key": f"wa-h1-{uuid.uuid4().hex}"},
+    )
+    client.post(
+        "/intake/whatsapp",
+        json={"from_": phone, "message_text": "and the VAT?"},
+        headers={"Idempotency-Key": f"wa-h2-{uuid.uuid4().hex}"},
+    )
+    assert seen.get("history_len", 0) >= 2  # prior user + assistant turns present
+    s = SessionLocal()
+    try:
+        turns = s.query(ChatMessage).filter_by(sender=phone).count()
+        assert turns >= 4  # 2 turns × (user + assistant)
+    finally:
+        c = s.get(Client, "CL001")
+        c.settings = {k: v for k, v in (c.settings or {}).items() if k != "whatsapp_number"}
+        s.commit()
+        s.close()
