@@ -143,6 +143,12 @@ jobs:
       - name: uvicorn log (on failure)
         if: failure()
         run: cat /tmp/uvicorn.log || true
+      - name: stop uvicorn (release uv cache for post-run prune)
+        if: always()
+        run: |
+          pkill -f "uvicorn tia_ai" || true
+          pkill -f "uv run uvicorn" || true
+          sleep 1
 
   # 5) collector — single required check for branch protection
   ci-status:
