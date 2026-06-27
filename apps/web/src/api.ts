@@ -261,4 +261,15 @@ export const api = {
     ),
 
   metricsSla: () => req<import("./types").SlaMetric>("/metrics/sla"),
+
+  /* ── Clawback (void / credit-note / partial) ─────────────────────────── */
+
+  clawbackEligibility: (id: string) =>
+    req<import("./types").ClawbackEligibility>(`/invoices/${id}/clawback-eligibility`),
+
+  clawback: (id: string, payload: import("./types").ClawbackRequest, key?: string) =>
+    req<import("./types").ClawbackResponse>(
+      `/invoices/${id}/clawback`,
+      jsonInit("POST", payload, key),
+    ),
 };

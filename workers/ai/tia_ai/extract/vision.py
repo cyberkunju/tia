@@ -13,11 +13,13 @@ Strategy:
 from __future__ import annotations
 
 import io
+import re
 from pathlib import Path
 
 from PIL import Image
 
-from ..schema import TimesheetExtraction
+from ..canonicalize import canon_period
+from ..schema import TimesheetExtraction, TimesheetRow
 from . import email as email_ex
 
 
@@ -102,6 +104,68 @@ def _attach_provenance(
         )
 
 
+def _num(text: str | None) -> float | None:
+    if not text:
+        return None
+    text = text.strip().replace(",", "")
+    if not text or text in {"-", "–", "—"}:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _field(text: str, label: str) -> str | None:
+    m = re.search(rf"(?im)^\s*{re.escape(label)}\s*:\s*(.+?)\s*$", text)
+    return m.group(1).strip() if m else None
+
+
+def _sum_overtime_from_markdown_table(text: str) -> float | None:
+    total = 0.0
+    seen = False
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("|") or "Date" in line or ":---" in line:
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        for idx in (3, 8):
+            if idx >= len(cells):
+                continue
+            val = _num(cells[idx])
+            if val is not None:
+                total += val
+                seen = True
+    return total if seen else None
+
+
+def _extract_monthly_timesheet_markdown(text: str) -> TimesheetExtraction:
+    employee_name = _field(text, "Employee Name")
+    client_code = _field(text, "Client Code")
+    month = _field(text, "Month")
+    days_worked = _num(_field(text, "Total Working Days"))
+    hours = _num(_field(text, "Total Hours"))
+    signed_by = _field(text, "Approved By") or _field(text, "Signed")
+    ot_hours = _sum_overtime_from_markdown_table(text)
+
+    if not employee_name or not (days_worked is not None or hours is not None):
+        return TimesheetExtraction()
+
+    return TimesheetExtraction(
+        client_code=client_code.upper() if client_code else None,
+        period=canon_period(month) if month else None,
+        signed_by=signed_by,
+        rows=[
+            TimesheetRow(
+                employee_name=employee_name,
+                days_worked=days_worked,
+                hours=hours,
+                ot_hours=ot_hours,
+            )
+        ],
+    )
+
+
 def extract_image(path: str | Path, mime: str = "image/png") -> TimesheetExtraction:
     data = Path(path).read_bytes()
     from ..ocr import glm_kie, glm_layout, glm_markdown
@@ -111,6 +175,8 @@ def extract_image(path: str | Path, mime: str = "image/png") -> TimesheetExtract
     try:
         md = glm_markdown(data, mime=mime)
         result = email_ex.extract_email(md)
+        if not result.rows:
+            result = _extract_monthly_timesheet_markdown(md)
     except Exception:  # noqa: BLE001
         pass
 

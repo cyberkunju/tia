@@ -23,6 +23,8 @@ if not os.environ.get("TIA_KEEP_DB"):
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_db_initialised():
     from tia_ai.db import init_db
+    from tia_ai.seed import seed
 
     init_db()
+    seed()  # seed master data + contracts so end-to-end tests have a substrate
     yield
