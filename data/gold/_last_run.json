@@ -295,7 +295,7 @@
       "invoice_amount": 6710.67,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.005,
+      "latency_s": 0.006,
       "calibration": [
         [
           0.99,
@@ -711,7 +711,7 @@
       "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.004,
+      "latency_s": 0.003,
       "calibration": [
         [
           0.99,
@@ -927,7 +927,7 @@
       "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.05,
+      "latency_s": 0.046,
       "calibration": [
         [
           0.99,
