@@ -6,22 +6,47 @@ the math reconciler doesn't care whether the value came from Excel, email, or GL
 Seed math relationships (from the brief):
     Gross = Basic + Housing + Transport + Food + Phone
     Net   = Gross + OT_Amount - Deductions
+    OT_Amount = round(Basic / 208 * OT_Hours * 1.25, 2)   # 208 = 26 std days * 8h, 1.25x
     Working_Days in [20, 26]
     Currency == AED
 """
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from ..schema import ValidationResult
 
 CENT = Decimal("0.01")
 WD_MIN, WD_MAX = 20, 26
+# Overtime hourly rate basis: a standard month is 26 working days * 8 hours, OT paid at 1.25x.
+# Verified exact against all 200 seed payroll rows.
+OT_MONTHLY_HOURS = Decimal("208")
+OT_MULTIPLIER = Decimal("1.25")
 
 
 def _d(x) -> Decimal:
     return Decimal(str(x or 0))
+
+
+def expected_ot_amount(basic, ot_hours) -> Decimal:
+    return (_d(basic) / OT_MONTHLY_HOURS * _d(ot_hours) * OT_MULTIPLIER).quantize(
+        CENT, rounding=ROUND_HALF_UP
+    )
+
+
+def check_ot(p) -> ValidationResult:
+    """Independently verify the OT amount against the formula — catches an OT mis-extraction
+    that a Net check alone would miss when Net was (mis-)derived from the same bad OT figure."""
+    expected = expected_ot_amount(p.basic, p.ot_hours)
+    ok = abs(expected - _d(p.ot_amount)) < CENT
+    return ValidationResult(
+        rule="math_ot",
+        passed=ok,
+        message="OT == round(Basic/208 * OT_Hours * 1.25, 2)"
+        if ok
+        else f"OT {p.ot_amount} != expected {expected} for {p.ot_hours}h",
+    )
 
 
 def check_gross(p) -> ValidationResult:
@@ -101,4 +126,4 @@ def check_threshold(amount_aed: float, threshold_aed: float | None) -> Validatio
 
 
 def validate_payroll(p) -> list[ValidationResult]:
-    return [check_gross(p), check_net(p), check_working_days(p), check_currency(p)]
+    return [check_gross(p), check_ot(p), check_net(p), check_working_days(p), check_currency(p)]

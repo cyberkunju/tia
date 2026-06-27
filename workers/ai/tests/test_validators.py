@@ -13,6 +13,7 @@ from tia_ai.validate.rules import (
     check_currency,
     check_gross,
     check_net,
+    check_ot,
     check_threshold,
     check_working_days,
     validate_payroll,
@@ -91,7 +92,15 @@ def test_threshold_approval():
 def test_validate_payroll_full():
     rs = validate_payroll(_payroll())
     assert all(r.passed for r in rs)
-    assert len(rs) == 4  # gross, net, working_days, currency
+    assert len(rs) == 5  # gross, ot, net, working_days, currency
+    assert "math_ot" in {r.rule for r in rs}
+
+
+def test_check_ot_catches_wrong_amount():
+    # the naive working_days*8*1.5 value (109.38) must be flagged; the correct 84.13 passes
+    assert check_ot(_payroll()).passed
+    assert not check_ot(_payroll(ot_amount=109.38)).passed
+    assert check_ot(_payroll(ot_hours=0, ot_amount=0)).passed
 
 
 def test_full_validator_catches_compound_failure():
