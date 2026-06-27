@@ -336,6 +336,7 @@ def _ts_dict(t: Timesheet | None) -> dict | None:
 def list_invoices(
     client_code: str | None = None,
     status: str | None = None,
+    timesheet_id: str | None = None,
     s: Session = Depends(db_session),
 ) -> list[dict]:
     q = s.query(Invoice)
@@ -343,6 +344,8 @@ def list_invoices(
         q = q.filter(Invoice.client_code == client_code)
     if status:
         q = q.filter(Invoice.status == status)
+    if timesheet_id:
+        q = q.filter(Invoice.timesheet_id == timesheet_id)
     return [_inv_dict(i) for i in q.order_by(Invoice.created_at.desc()).all()]
 
 
