@@ -55,6 +55,12 @@ Headers: Idempotency-Key: <uuid>
 Idempotency-Key dedupes retries. The API downloads `attachment_url` into NVMe staging,
 content-hashes it, and enqueues the pipeline.
 
+**Status: implemented.** The bridge lives in `workers/whatsapp` (Bun + Hono, Meta Cloud API).
+It verifies the Meta signature, de-duplicates retries, downloads inbound media and serves it at
+its own `/media/<hash>` (so this endpoint can fetch `attachment_url`), forwards here, and replies
+to the user with the generated invoice PDF (or a review notice). It owns no DB — the core is the
+single source of truth.
+
 ---
 
 ## 3. Internal event bus (NATS JetStream)

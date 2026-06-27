@@ -45,33 +45,35 @@ calls; NATS / SeaweedFS / Qdrant / full observability layer in additively.
 ## Monorepo layout
 
 ```
-apps/web            React + Vite frontend (bun)
-apps/api            Rust Axum public backend
-services/           Rust: validation, invoice, dispatch, orchestrator
-workers/ai          Python 3.12 (uv): extract, match, validate-helpers, OCR clients
-db/                 PostgreSQL 18 schema + migrations
-data/seed           TASC sample DB (xlsx)
-data/synthetic      generators for the 7 test cases
-data/gold           eval ground truth
-infra/              otel / prometheus / grafana configs
-docs/               brief + 8-slide deck
+apps/web              React + Vite + TS frontend (bun) — 3 personas, review/Hungarian/Why, eval, dispatch, finance
+workers/ai            Python 3.12 (uv): extract (excel/email/pdf/vision) · resolve+Hungarian · validate ·
+                      mock ERP · Typst invoice · orchestrator · eval harness · FastAPI surface · tia_ai/ai (LLM+guard)
+workers/whatsapp      WhatsApp Cloud API bridge (Bun + Hono) — forwards inbound timesheets to the core,
+                      sends the invoice PDF back; the implementation of the CONTRACTS §2 /intake/whatsapp bridge
+data/seed             TASC sample DB (xlsx)
+data/synthetic        generators for the sample test cases
+data/gold             eval ground truth + last run
+infra/                otel / prometheus / grafana configs
+docs/                 brief + 8-slide deck
 ```
 
 ## Quickstart
 
 ```bash
 # one-time
-make install         # uv sync (python 3.12) + bun install
+make install         # uv sync (python 3.12) + bun install (web + whatsapp bridge)
 cp .env.example .env # add your GLM_OCR_API_KEY for the handwritten case
 make seed            # 10 clients, 200 employees, 200 payroll rows
-make synth           # generates all 7 sample inputs + gold ground truth
+make synth           # generates the sample inputs + gold ground truth
 
 # verify
-make eval            # 7/7 PASS, F1 + ECE printed
+make eval            # cases PASS, F1 + ECE printed
+make test            # python pytest + bun test (bridge)
 
 # run
-make api             # FastAPI on http://127.0.0.1:8000
+make api             # core FastAPI on http://127.0.0.1:8000
 make web             # Vite on http://127.0.0.1:5173
+make whatsapp        # WhatsApp bridge on :8088 (needs Meta creds in workers/whatsapp/.env)
 ```
 
 The eval workflow at `.github/workflows/eval.yml` enforces a CI gate: PRs fail if any of the
