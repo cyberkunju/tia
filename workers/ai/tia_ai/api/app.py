@@ -635,6 +635,27 @@ def intake_whatsapp(
     # ---- typed text: LLM-routed into greeting / chat / timesheet ----
     text = (payload.message_text or "").strip()
     if not payload.attachment_url and text:
+        # Deterministic safety gate FIRST — a hijacked/unlucky model never decides
+        # whether a message is safe, and injection never reaches it as instructions.
+        from ..ai.guard import assess_safety, safe_response_for
+
+        verdict = assess_safety(text)
+        if verdict.category != "safe":
+            log_event(
+                s,
+                payload.from_ or "whatsapp",
+                "client",
+                client_for_sender(s, payload.from_) or "unknown",
+                "whatsapp.safety_blocked",
+                {"category": verdict.category, "reason": verdict.reason},
+            )
+            return {
+                "mode": "answer",
+                "answer": safe_response_for(verdict.category),
+                "citations": [],
+                "tool_calls": [],
+            }
+
         intent = route_message(text)  # "timesheet" | "greeting" | "chat"
         if intent == "greeting":
             log_event(

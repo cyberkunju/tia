@@ -209,6 +209,20 @@ def _save_turn(session: Session, phone: str, client_code: str | None, role: str,
     session.flush()
 
 
+def _chat_rate_limited(session: Session, phone: str, max_per_min: int = 20) -> bool:
+    """True if this sender has exceeded the chat rate (cost/abuse guard). DB-based so
+    it holds across worker processes."""
+    import datetime as _dt
+
+    cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(seconds=60)
+    recent = (
+        session.query(ChatMessage)
+        .filter(ChatMessage.sender == phone, ChatMessage.role == "user", ChatMessage.at >= cutoff)
+        .count()
+    )
+    return recent >= max_per_min
+
+
 def answer_for_sender(session: Session, phone: str | None, question: str) -> dict:
     """Run the grounded chat agent scoped to this WhatsApp sender's client, with
     per-sender conversation memory for natural multi-turn follow-ups.
@@ -228,6 +242,15 @@ def answer_for_sender(session: Session, phone: str | None, question: str) -> dic
             "citations": [],
             "tool_calls": [],
             "scoped": False,
+        }
+
+    if phone and _chat_rate_limited(session, phone):
+        return {
+            "answer": "You're sending messages very quickly — give me a few seconds and try again 🙏",
+            "citations": [],
+            "tool_calls": [],
+            "scoped": True,
+            "rate_limited": True,
         }
 
     entity_context = None
