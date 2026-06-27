@@ -300,7 +300,10 @@ def process_doc(session: Session, doc: DocAsset, client_hint: str | None = None)
     elif ambiguous:
         ts.routing = "hitl"
         ts.status = "awaiting_review"
-        ts.hitl_reason = "ambiguous entity resolution"
+        # surface the specific reason(s) — e.g. an Emp ID↔name identity mismatch —
+        # so FinOps and the chat agent see exactly why, not a generic label.
+        amb_reasons = [m.reason for m in match.matches if m.ambiguous and m.reason]
+        ts.hitl_reason = "; ".join(dict.fromkeys(amb_reasons)) or "ambiguous entity resolution"
         ts.confidence_calibrated = round(
             min((m.confidence for m in match.matches if m.ambiguous), default=0.0), 4
         )

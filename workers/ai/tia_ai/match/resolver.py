@@ -24,6 +24,7 @@ from .hungarian import assign
 
 NAME_THRESHOLD = 0.82  # candidate must score at least this on name
 AMBIGUITY_MARGIN = 0.06  # if top-2 within this, it's ambiguous
+ID_NAME_MISMATCH = 0.55  # an Emp ID whose name disagrees this much with the doc → review
 TOP_K = 4
 
 
@@ -88,6 +89,14 @@ def resolve(extraction: TimesheetExtraction, session: Session) -> MatchResult:
         # Tier 1: emp id exact
         if row.emp_id and row.emp_id in by_id:
             e = by_id[row.emp_id]
+            sig: dict = {"tier": 1}
+            # Cross-verify: when the document carries a real person-name, it MUST
+            # agree with the employee the Emp ID points to. A misread/wrong/forged
+            # Emp ID otherwise silently bills the wrong person. We only check when the
+            # name looks like a real "First Last" (not blank, not the Emp ID itself).
+            nm = (row.employee_name or "").strip()
+            if " " in nm and not re.fullmatch(r"EMP\d+", nm, re.IGNORECASE):
+                sig["name_sim"] = round(_name_sim(nm, e.full_name), 4)
             row_candidates.append(
                 [
                     Candidate(
@@ -95,7 +104,7 @@ def resolve(extraction: TimesheetExtraction, session: Session) -> MatchResult:
                         full_name=e.full_name,
                         client_code=e.client_code,
                         score=1.0,
-                        signals={"tier": 1},
+                        signals=sig,
                     )
                 ]
             )
@@ -125,9 +134,21 @@ def resolve(extraction: TimesheetExtraction, session: Session) -> MatchResult:
         reason = ""
 
         if tier1:
-            chosen = cands[0].emp_id
-            confidence = 0.99
-            reason = "Emp ID exact match"
+            sim = cands[0].signals.get("name_sim")
+            if sim is not None and sim < ID_NAME_MISMATCH:
+                # The Emp ID resolves to someone whose name the document contradicts —
+                # an identity mismatch. Never auto-bill this; force human review.
+                chosen = cands[0].emp_id
+                ambiguous = True
+                confidence = round(0.3 * (sim or 0.0), 4)
+                reason = (
+                    f"identity mismatch: Emp ID {cands[0].emp_id} is registered to "
+                    f"{cands[0].full_name}, but the timesheet names '{row.employee_name}'"
+                )
+            else:
+                chosen = cands[0].emp_id
+                confidence = 0.99
+                reason = "Emp ID + name match" if sim is not None else "Emp ID exact match"
         elif not cands:
             confidence = 0.0
             reason = "no candidate above threshold"

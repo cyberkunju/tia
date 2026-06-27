@@ -29,17 +29,46 @@ def test_resolve_client_fuzzy_name():
         assert resolve_client("totally unknown company", s) is None
 
 
-def test_resolve_emp_id_definitive():
+def test_resolve_emp_id_with_matching_name_definitive():
     ex = TimesheetExtraction(
         client_code="CL001",
         period="June 2026",
-        rows=[TimesheetRow(employee_name="anything goes", emp_id="EMP10001", days_worked=22)],
+        rows=[TimesheetRow(employee_name="Carlos Smith", emp_id="EMP10001", days_worked=22)],
     )
     with get_session() as s:
         mr = resolve(ex, s)
     assert mr.matches[0].chosen_emp_id == "EMP10001"
     assert mr.matches[0].confidence >= 0.99
     assert not mr.matches[0].ambiguous
+
+
+def test_resolve_emp_id_only_no_name_definitive():
+    # Emp ID with no contradicting name (e.g. "EMP10001 worked 22 days") stays definitive.
+    ex = TimesheetExtraction(
+        client_code="CL001",
+        period="June 2026",
+        rows=[TimesheetRow(employee_name="EMP10001", emp_id="EMP10001", days_worked=22)],
+    )
+    with get_session() as s:
+        mr = resolve(ex, s)
+    assert mr.matches[0].chosen_emp_id == "EMP10001"
+    assert not mr.matches[0].ambiguous
+
+
+def test_resolve_emp_id_name_mismatch_flagged():
+    """The real bug: an Emp ID whose name the document contradicts must NOT be
+    auto-billed. EMP10055 is Kumar Reddy (CL003); a sheet naming 'Michael D'Souza'
+    is an identity mismatch → human review."""
+    ex = TimesheetExtraction(
+        period="June 2026",
+        rows=[TimesheetRow(employee_name="Michael D'Souza", emp_id="EMP10055", days_worked=22)],
+    )
+    with get_session() as s:
+        mr = resolve(ex, s)
+    m = mr.matches[0]
+    assert m.ambiguous, "name contradicting the Emp ID must be flagged"
+    assert "identity mismatch" in m.reason.lower()
+    assert "Kumar Reddy" in m.reason and "Michael D'Souza" in m.reason
 
 
 def test_resolve_unique_name_within_client():
