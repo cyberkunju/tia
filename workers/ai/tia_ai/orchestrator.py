@@ -124,15 +124,24 @@ def ingest_file(
     uploaded_by: str | None = None,
     idempotency_key: str | None = None,
     parent_doc_id: str | None = None,
+    meta: dict | None = None,
 ) -> DocAsset:
     """Stage the file (NVMe staging dir) + content-hash dedupe + audit-log.
 
     `parent_doc_id` links an attachment back to its parent email DocAsset
-    (used by the E3 .eml attachment extractor)."""
+    (used by the E3 .eml attachment extractor). `meta` is opaque per-channel
+    metadata (for email: from_addr, message_id, subject, etc.) stored on the
+    DocAsset so the email reply path can thread back without re-parsing."""
     src_path = Path(src_path)
     content_hash = _hash_file(src_path)
     existing = session.query(DocAsset).filter_by(content_hash=content_hash).first()
     if existing:
+        # If this is a re-ingest with fresh meta (e.g. same .eml re-delivered via
+        # IMAP after a transient), merge so the latest from_addr / message_id wins.
+        if meta:
+            merged = dict(existing.meta or {})
+            merged.update(meta)
+            existing.meta = merged
         log_event(
             session,
             uploaded_by,
@@ -156,6 +165,7 @@ def ingest_file(
         filename=src_path.name,
         uploaded_by=uploaded_by,
         parent_doc_id=parent_doc_id,
+        meta=meta or {},
     )
     session.add(doc)
     session.flush()
@@ -565,6 +575,24 @@ def _maybe_auto_dispatch(session, invoice, client, rule_results: list) -> None:
         },
     )
 
+    # Close the email loop: if the source timesheet came via email, ship the
+    # rendered invoice PDF back to the original sender. send_invoice_email is
+    # a no-op (with audit reason) for non-email sources / missing from_addr /
+    # SMTP not configured — so this is safe on every channel.
+    try:
+        from .mailbox.sender import send_invoice_email
+
+        send_invoice_email(session, invoice, by_user="system")
+    except Exception as e:  # noqa: BLE001
+        log_event(
+            session,
+            "system",
+            "invoice",
+            invoice.id,
+            "email.invoice_send_failed",
+            {"reason": str(e)[:200]},
+        )
+
 
 def approve_timesheet(
     session: Session,
@@ -648,4 +676,18 @@ def dispatch_invoice(
         {"channel": "mock_webhook"},
         idempotency_key=idempotency_key,
     )
+    # Close the email loop on the in-process dispatch fallback too.
+    try:
+        from .mailbox.sender import send_invoice_email
+
+        send_invoice_email(session, invoice, by_user=by_user)
+    except Exception as e:  # noqa: BLE001
+        log_event(
+            session,
+            by_user,
+            "invoice",
+            invoice.id,
+            "email.invoice_send_failed",
+            {"reason": str(e)[:200]},
+        )
     return {"status": "dispatched", "idempotency_key": idempotency_key}

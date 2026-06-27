@@ -108,6 +108,11 @@ export const api = {
       `/invoices/${id}/dispatch`,
       jsonInit("POST", { by_user: byUser }),
     ),
+  resendInvoiceEmail: (id: string, byUser = "finops") =>
+    req<{ sent: boolean; to?: string; message_id?: string; idempotency_key?: string; reason?: string }>(
+      `/invoices/${id}/resend-email`,
+      jsonInit("POST", { by_user: byUser }),
+    ),
   clientApprove: (id: string, byUser = "client", reason?: string) =>
     req<{ status: string; invoice_id: string }>(
       `/invoices/${id}/client-approve`,

@@ -171,6 +171,7 @@ class ZohoPoller:
             "to_addrs": to_addrs,
             "cc_addrs": cc_addrs,
             "uploaded_by": from_addr_list[0] if from_addr_list else "zoho-poller",
+            "message_id": message_id,
         }
         headers = {}
         if message_id:
@@ -190,13 +191,21 @@ class ZohoPoller:
         )
 
         # 2) for each attachment, push it through /intake/upload as a separate
-        #    DocAsset. (We don't link parent_doc_id from here - the .eml route
-        #    handles that natively when the user uploads .eml; from IMAP we keep
-        #    them as siblings tagged with the same Message-ID idempotency key.)
+        #    DocAsset. We pass from_addr/message_id/subject so the eventual
+        #    invoice email or hold reply can thread back to the original sender
+        #    (the attachment DocAsset is the timesheet's parent doc).
         att_results: list[dict] = []
         for i, (name, mime, payload_bytes) in enumerate(attachments):
             files = {"file": (name, payload_bytes, mime)}
-            data = {"uploaded_by": payload["from_addr"] or "zoho-poller"}
+            data = {
+                "uploaded_by": payload["from_addr"] or "zoho-poller",
+            }
+            if payload["from_addr"]:
+                data["from_addr"] = payload["from_addr"]
+            if message_id:
+                data["message_id"] = message_id
+            if subject:
+                data["subject"] = subject
             ahdr = {}
             if message_id:
                 ahdr["Idempotency-Key"] = f"zoho:{message_id}:att:{i}"

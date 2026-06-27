@@ -114,6 +114,11 @@ class DocAsset(Base):
     parent_doc_id: Mapped[str | None] = mapped_column(
         ForeignKey("doc_assets.id"), nullable=True, index=True
     )
+    # Channel-specific metadata. For email channel we stash
+    # {from_addr, message_id, subject, to_addrs, cc_addrs} so the closer-the-loop
+    # email reply (hold ack + invoice send) can thread back to the original sender
+    # without re-parsing anything. Other channels can stash anything they want.
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Timesheet(Base):

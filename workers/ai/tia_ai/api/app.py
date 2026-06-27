@@ -115,6 +115,12 @@ ALLOWED_MIME_PREFIXES = (
 async def intake_upload(
     file: UploadFile,
     uploaded_by: str = Form("client"),
+    # Optional email-source linkage so an attachment-as-timesheet keeps the
+    # original sender's reply address. Used by the Zoho poller when fanning out
+    # email attachments through this endpoint as sibling docs.
+    from_addr: str | None = Form(None),
+    message_id: str | None = Form(None),
+    subject: str | None = Form(None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
@@ -127,13 +133,21 @@ async def intake_upload(
         raise HTTPException(415, f"unsupported media type: {file.content_type}")
     tmp = Path(STAGING_DIR) / f"_inbox_{uuid.uuid4().hex}_{file.filename}"
     tmp.write_bytes(raw)
+    upload_meta: dict = {}
+    if from_addr or message_id or subject:
+        upload_meta = {
+            "from_addr": from_addr,
+            "message_id": message_id,
+            "subject": subject,
+        }
     doc = ingest_file(
         s,
         tmp,
-        channel="upload",
+        channel="email" if from_addr else "upload",
         mime=file.content_type,
         uploaded_by=uploaded_by,
         idempotency_key=idempotency_key,
+        meta=upload_meta or None,
     )
     ts = process_doc(s, doc)
 
@@ -222,6 +236,7 @@ class EmailIntake(BaseModel):
     client_hint: str | None = None
     uploaded_by: str = "client"
     intake_mode: str | None = None  # if not provided we infer below
+    message_id: str | None = None  # original RFC 5322 Message-ID, for reply threading
 
 
 # TIA's own email address - anything to/cc'd here is treated as an intake.
@@ -279,6 +294,13 @@ def intake_email(
         mime="text/plain",
         uploaded_by=payload.uploaded_by,
         idempotency_key=idempotency_key,
+        meta={
+            "from_addr": payload.from_addr,
+            "message_id": payload.message_id,
+            "subject": payload.subject,
+            "to_addrs": payload.to_addrs,
+            "cc_addrs": payload.cc_addrs,
+        },
     )
     # log the email-mode decision on the doc so the Review screen can show it
     from ..orchestrator import log_event
@@ -336,52 +358,76 @@ def intake_email(
         }
 
     ts = process_doc(s, doc)
-    # cc_silent: if processed cleanly, no reply; if any exception, draft a reply
+    # Universal hold reply: on any HITL/escalate routing OR an over-threshold
+    # invoice, email the original sender back with "got it, on hold because X."
+    # Fires on all 3 modes (direct_forward, cc_silent, watched_mailbox) — the
+    # client always gets an acknowledgment that the timesheet was received.
     reply_drafted = False
     reply_sent = False
-    if mode == "cc_silent" and ts.routing in ("hitl", "escalate"):
-        reply_path = _draft_cc_silent_reply(payload, ts, s)
-        log_event(
-            s,
-            "smart_bot_sap",
-            "doc",
-            doc.id,
-            "email.cc_silent_reply_drafted",
-            {"path": str(reply_path), "routing": ts.routing, "reason": ts.hitl_reason},
-        )
-        reply_drafted = True
-        # Close the loop: send via Zoho SMTP when configured.
-        try:
-            from ..mailbox.sender import send_reply_via_zoho, smtp_configured
+    threshold_exceeded = False
+    if ts.client_code:
+        _c = s.get(Client, ts.client_code)
+        if _c:
+            thr = float((_c.settings or {}).get("validation_threshold_aed", 50000))
+            _inv = (
+                s.query(Invoice)
+                .filter_by(timesheet_id=ts.id)
+                .order_by(Invoice.created_at.desc())
+                .first()
+            )
+            if _inv and (_inv.amount or 0) > thr:
+                threshold_exceeded = True
 
-            if smtp_configured():
-                res = send_reply_via_zoho(reply_path)
-                if res.get("sent"):
-                    reply_sent = True
-                    log_event(
-                        s,
-                        "zoho-smtp",
-                        "doc",
-                        doc.id,
-                        "email.cc_silent_reply_sent",
-                        {"path": str(reply_path), "to": res.get("to"), "from": res.get("from")},
-                    )
-                else:
-                    log_event(
-                        s,
-                        "zoho-smtp",
-                        "doc",
-                        doc.id,
-                        "email.cc_silent_reply_send_failed",
-                        {"reason": res.get("reason")},
-                    )
+    if ts.routing in ("hitl", "escalate") or threshold_exceeded:
+        # 1) keep the cc_silent .eml draft on disk so the existing outbox view shows it
+        if mode == "cc_silent":
+            try:
+                reply_path = _draft_cc_silent_reply(payload, ts, s)
+                log_event(
+                    s,
+                    "smart_bot_sap",
+                    "doc",
+                    doc.id,
+                    "email.cc_silent_reply_drafted",
+                    {"path": str(reply_path), "routing": ts.routing, "reason": ts.hitl_reason},
+                )
+                reply_drafted = True
+            except Exception as e:  # noqa: BLE001
+                log_event(
+                    s,
+                    "smart_bot_sap",
+                    "doc",
+                    doc.id,
+                    "email.cc_silent_reply_draft_failed",
+                    {"reason": str(e)[:200]},
+                )
+
+        # 2) actually send the threaded reply (any mode, any time)
+        try:
+            from ..mailbox.sender import send_hold_reply
+
+            res = send_hold_reply(
+                s,
+                ts,
+                doc,
+                payload_subject=payload.subject,
+                payload_from_addr=payload.from_addr,
+                payload_message_id=payload.message_id,
+                cc_addrs=payload.cc_addrs,
+                extra_reason=(
+                    "amount over the auto-approval threshold — Finance signoff required"
+                    if threshold_exceeded and ts.routing not in ("hitl", "escalate")
+                    else None
+                ),
+            )
+            reply_sent = bool(res.get("sent"))
         except Exception as e:  # noqa: BLE001
             log_event(
                 s,
                 "zoho-smtp",
                 "doc",
                 doc.id,
-                "email.cc_silent_reply_send_failed",
+                "email.hold_reply_send_failed",
                 {"reason": str(e)[:200]},
             )
     return {
@@ -1037,10 +1083,67 @@ def dispatch(
                 timeout=10.0,
             )
             r.raise_for_status()
-            return r.json()
+            result = r.json()
         except httpx.HTTPError as e:
             raise HTTPException(502, f"rust dispatch unreachable: {e}") from e
+        # Rust did the side-effect (outbox + DB update); we still need to email
+        # the PDF if this came from an email channel. Re-read the invoice since
+        # Rust just mutated it.
+        s.expire_all()
+        i = s.get(Invoice, inv_id)
+        if i is not None and result.get("status") == "dispatched":
+            try:
+                from ..mailbox.sender import send_invoice_email
+
+                send_invoice_email(s, i, by_user=payload.by_user)
+            except Exception as e:  # noqa: BLE001
+                log_event(
+                    s,
+                    payload.by_user,
+                    "invoice",
+                    inv_id,
+                    "email.invoice_send_failed",
+                    {"reason": str(e)[:200]},
+                )
+        return result
     return dispatch_invoice(s, i, payload.by_user, idempotency_key)
+
+
+class ResendEmailPayload(BaseModel):
+    by_user: str = "finops"
+
+
+@app.post("/invoices/{inv_id}/resend-email")
+def resend_invoice_email(
+    inv_id: str,
+    payload: ResendEmailPayload | None = None,
+    s: Session = Depends(db_session),
+) -> dict:
+    """Demo-safety net: manually re-fire the invoice email with a fresh key.
+
+    Uses a timestamped idempotency key so a prior `invoice-reply:{id}` send
+    does NOT short-circuit this. Surfaces SMTP errors directly so on-stage
+    failures show up red in the dashboard instead of disappearing.
+    """
+    import datetime as dt
+
+    from ..mailbox.sender import send_invoice_email
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    by_user = (payload.by_user if payload else None) or "finops"
+    key = f"manual-resend:{inv_id}:{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    res = send_invoice_email(s, i, idempotency_key=key, by_user=by_user)
+    if not res.get("sent"):
+        # surface the reason in the response so the UI can show it
+        return {"sent": False, "reason": res.get("reason") or res.get("skipped") or "unknown"}
+    return {
+        "sent": True,
+        "to": res.get("to"),
+        "message_id": res.get("message_id"),
+        "idempotency_key": key,
+    }
 
 
 # ---------------------------------------------------------------- clients / dispatch rules

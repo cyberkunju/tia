@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Radar, RotateCcw, Sparkles, Zap } from "lucide-react";
+import { Mail, Radar, RotateCcw, Sparkles, Zap } from "lucide-react";
 import { api } from "../api";
 import { fmtAED, fmtAge, isAutoDispatched } from "../lib";
 import { PageHeader, StatusBadge, ConfidenceBadge, Badge, EmptyState, TableSkeleton } from "../ui";
@@ -12,6 +12,25 @@ export function FinOpsDispatchTracking() {
   const { data, isLoading } = useQuery({ queryKey: ["dispatch-tracking"], queryFn: api.dispatchTracking, refetchInterval: 5_000 });
   const [whyFor, setWhyFor] = useState<Invoice | null>(null);
   const [clawbackFor, setClawbackFor] = useState<Invoice | null>(null);
+  const [resending, setResending] = useState<string | null>(null);
+  const [resendResult, setResendResult] = useState<Record<string, { ok: boolean; msg: string }>>({});
+
+  async function resend(id: string) {
+    setResending(id);
+    try {
+      const r = await api.resendInvoiceEmail(id);
+      setResendResult((m) => ({
+        ...m,
+        [id]: r.sent
+          ? { ok: true, msg: r.to ? `sent → ${r.to}` : "sent" }
+          : { ok: false, msg: r.reason || "failed" },
+      }));
+    } catch (e) {
+      setResendResult((m) => ({ ...m, [id]: { ok: false, msg: String((e as Error).message || e) } }));
+    } finally {
+      setResending(null);
+    }
+  }
 
   // Map a DispatchTrackingRow into the Invoice shape that the modals expect.
   // Only the fields actually consumed by the modals (id, status, amount,
@@ -35,7 +54,7 @@ export function FinOpsDispatchTracking() {
 
   return (
     <div>
-      <PageHeader icon={Radar} title="Dispatch tracking" description="Every invoice's dispatch state and client approval, end to end. ⚡ marks fully touchless dispatches." />
+      <PageHeader icon={Radar} title="Dispatch tracking" description="Every invoice's dispatch state and client approval, end to end. The AUTO chip marks fully touchless dispatches." />
       <div className="card-flush">
         <div className="table-wrap">
           <table className="data-table">
@@ -69,12 +88,27 @@ export function FinOpsDispatchTracking() {
                               <Sparkles size={12} /> Why?
                             </button>
                           )}
+                          {r.status === "dispatched" && (
+                            <button
+                              onClick={() => resend(r.id)}
+                              disabled={resending === r.id}
+                              className="btn-outline btn-sm"
+                              title="Re-send invoice email to original sender"
+                            >
+                              <Mail size={12} /> {resending === r.id ? "Sending…" : "Resend email"}
+                            </button>
+                          )}
                           {canClawback && (
                             <button onClick={() => setClawbackFor(asInvoice(r))} className="btn-outline btn-sm" title="Void or issue credit note">
                               <RotateCcw size={12} /> Clawback
                             </button>
                           )}
                         </div>
+                        {resendResult[r.id] && (
+                          <div className={`text-xs mt-1 text-right ${resendResult[r.id].ok ? "text-emerald-600" : "text-red-600"}`}>
+                            {resendResult[r.id].msg}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );
