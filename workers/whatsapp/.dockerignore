@@ -1,0 +1,8 @@
+node_modules
+staging
+.env
+.env.*
+!.env.example
+test
+*.md
+.git

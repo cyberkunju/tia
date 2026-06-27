@@ -64,9 +64,39 @@ services:
         condition: service_healthy
     networks: [tia]
 
+  # WhatsApp Cloud API bridge — forwards inbound timesheets to the core and returns the invoice.
+  # Opt-in (needs Meta credentials): `docker compose --profile whatsapp up -d --build`.
+  # Not started by the default deploy, so it never crash-loops when creds are absent.
+  whatsapp:
+    build:
+      context: workers/whatsapp
+    image: tia-whatsapp:latest
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    environment:
+      UPSTREAM_API_URL: http://api:8000
+      # The core downloads attachment_url over the compose network from the bridge.
+      BRIDGE_PUBLIC_URL: ${BRIDGE_PUBLIC_URL:-http://whatsapp:8088}
+      WHATSAPP_TOKEN: ${WHATSAPP_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+      WHATSAPP_APP_SECRET: ${WHATSAPP_APP_SECRET:-}
+      WHATSAPP_VERIFY_TOKEN: ${WHATSAPP_VERIFY_TOKEN:-tia-verify-dev}
+      WHATSAPP_API_VERSION: ${WHATSAPP_API_VERSION:-v23.0}
+      INTERNAL_SECRET: ${INTERNAL_SECRET:-tia-internal-dev}
+      NODE_ENV: production
+    volumes:
+      - wa-staging:/app/staging
+    ports:
+      - "${WHATSAPP_PORT:-8088}:8088"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [tia]
+
 volumes:
   db-data:
   staging:
+  wa-staging:
 
 networks:
   tia:
