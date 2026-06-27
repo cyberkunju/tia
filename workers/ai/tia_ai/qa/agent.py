@@ -21,7 +21,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from ..config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL
+from ..config import (
+    AZURE_AI_API_VERSION,
+    AZURE_AI_ENDPOINT,
+    AZURE_AI_KEY,
+    AZURE_CHAT_MODEL,
+    OPENAI_API_KEY,
+    OPENAI_BASE_URL,
+    OPENAI_MODEL,
+)
 from ..models import (
     Client,
     Contract,
@@ -81,35 +89,52 @@ CHAT       — ANYTHING else: any question, doubt, complaint, clarification, or 
 Reply with ONLY the single word: TIMESHEET, GREETING, or CHAT."""
 
 
-def _client() -> Any:
+def _chat_configured() -> bool:
+    """Chat is usable when Azure (preferred) or OpenAI is configured."""
+    return bool((AZURE_AI_ENDPOINT and AZURE_AI_KEY) or OPENAI_API_KEY)
+
+
+def _client_and_model() -> tuple[Any, str]:
+    """Return (client, model). Azure OpenAI (gpt-5.4-nano) is preferred when set;
+    OpenAI is the fallback. Bounded timeout + retries so a slow/unavailable model
+    never hangs the request."""
+    if AZURE_AI_ENDPOINT and AZURE_AI_KEY:
+        from openai import AzureOpenAI
+
+        client = AzureOpenAI(
+            azure_endpoint=AZURE_AI_ENDPOINT,
+            api_key=AZURE_AI_KEY,
+            api_version=AZURE_AI_API_VERSION or "2024-05-01-preview",
+            timeout=30.0,
+            max_retries=2,
+        )
+        return client, (AZURE_CHAT_MODEL or "gpt-5.4-nano")
     from openai import OpenAI
 
-    # Bounded timeout + retries so a slow/unavailable model never hangs the request;
-    # the caller degrades gracefully on failure.
-    return OpenAI(
+    client = OpenAI(
         api_key=OPENAI_API_KEY or os.getenv("OPENAI_API_KEY", "sk-noop"),
         base_url=OPENAI_BASE_URL or "https://api.openai.com/v1",
         timeout=30.0,
         max_retries=2,
     )
+    return client, (OPENAI_MODEL or "gpt-4o-mini")
 
 
 def route_intent(text: str) -> str | None:
     """LLM intent router for an inbound WhatsApp text — robust to any phrasing
     (no regex/keyword matching). Returns "timesheet" | "greeting" | "chat", or None
     if the model is unavailable so the caller can fall back."""
-    if not OPENAI_API_KEY:
+    if not _chat_configured():
         return None
     try:
-        client = _client()
+        client, model = _client_and_model()
         resp = client.chat.completions.create(
-            model=OPENAI_MODEL or "gpt-4o-mini",
+            model=model,
             messages=[
                 {"role": "system", "content": ROUTER_PROMPT},
                 {"role": "user", "content": (text or "")[:1500]},
             ],
-            temperature=0.0,
-            max_tokens=4,
+            max_tokens=16,
         )
         word = (resp.choices[0].message.content or "").strip().upper()
         if "TIMESHEET" in word:
@@ -526,14 +551,14 @@ def answer(
     history (optional): prior conversation turns [{"role": "user"|"assistant",
     "content": str}] so natural multi-turn follow-ups resolve in context.
     """
-    if not OPENAI_API_KEY:
+    if not _chat_configured():
         return {
-            "answer": "Chat agent is not configured (OPENAI_API_KEY missing).",
+            "answer": "Chat agent is not configured (no Azure or OpenAI credentials).",
             "citations": [],
             "tool_calls": [],
         }
 
-    client = _client()
+    client, model = _client_and_model()
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if client_scope:
         messages.append(
@@ -577,11 +602,10 @@ def answer(
     for _ in range(max_steps):
         try:
             resp = client.chat.completions.create(
-                model=OPENAI_MODEL or "gpt-4o-mini",
+                model=model,
                 messages=messages,
                 tools=TOOLS,
                 tool_choice="auto",
-                temperature=0.1,
             )
         except Exception:  # noqa: BLE001 — never surface a raw LLM/network error to the user
             return fallback
@@ -649,7 +673,7 @@ def answer(
                 "citations": [],
                 "tool_calls": tool_calls_log,
                 "grounding_blocked": True,
-                "model": OPENAI_MODEL or "gpt-4o-mini",
+                "model": model,
             }
 
         # Never dead-end the user with a bare refusal.
@@ -663,7 +687,7 @@ def answer(
             "answer": content,
             "citations": _extract_citations(content),
             "tool_calls": tool_calls_log,
-            "model": OPENAI_MODEL or "gpt-4o-mini",
+            "model": model,
         }
 
     return {

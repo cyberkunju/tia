@@ -91,11 +91,11 @@ export function createUpstreamClient(deps: UpstreamDeps): UpstreamClient {
           answer: j.answer ?? "",
         };
       }
-      if (!j.doc_id || !j.timesheet_id) return null;
+      if (!j.doc_id) return null;
       return {
         mode: "intake",
         docId: j.doc_id,
-        timesheetId: j.timesheet_id,
+        timesheetId: j.timesheet_id ?? "",
         status: j.status ?? "",
         routing: j.routing,
       };

@@ -43,6 +43,14 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+# Azure OpenAI (preferred for chat when set) — gpt-5.4-nano on Azure AI.
+# When AZURE_AI_ENDPOINT + AZURE_AI_KEY are present, the chat agent uses Azure and
+# AZURE_CHAT_MODEL as the deployment; OPENAI_* is the fallback.
+AZURE_AI_ENDPOINT = os.getenv("AZURE_AI_ENDPOINT", "")
+AZURE_AI_KEY = os.getenv("AZURE_AI_KEY", "")
+AZURE_AI_API_VERSION = os.getenv("AZURE_AI_API_VERSION", "2024-05-01-preview")
+AZURE_CHAT_MODEL = os.getenv("AZURE_CHAT_MODEL", "gpt-5.4-nano")
+
 # WhatsApp loop — the core pushes the approved invoice to the bridge's /internal/notify,
 # and the bridge fetches the invoice PDF back from the core at TIA_SELF_URL.
 # INTERNAL_SECRET must match the bridge's own INTERNAL_SECRET.

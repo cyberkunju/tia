@@ -19,6 +19,15 @@ if not os.environ.get("TIA_KEEP_DB"):
         _tmp.unlink()
     os.environ.setdefault("DATABASE_URL", f"sqlite:///{_tmp}")
 
+# Hermetic tests: never let production credentials from a local .env leak in and
+# cause real network calls (Azure chat, GLM-OCR, OpenAI). Force them empty BEFORE
+# tia_ai.config loads the .env, so the chat degrades to regex routing / "not
+# configured" and the vision eval case is skipped — fast and deterministic.
+for _k in ("GLM_OCR_API_KEY", "OPENAI_API_KEY", "AZURE_AI_ENDPOINT", "AZURE_AI_KEY"):
+    os.environ[_k] = ""
+# Background WhatsApp delivery must not reach a live bridge/Meta during tests.
+os.environ["WHATSAPP_BRIDGE_URL"] = "http://127.0.0.1:9"
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _ensure_db_initialised():

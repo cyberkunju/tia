@@ -148,7 +148,8 @@ export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
 
     // For file/photo submissions the pipeline (OCR + rules) can take many seconds —
     // send an immediate ack so the user isn't left watching a typing indicator.
-    if (attachmentUrl !== null) await sender.sendText(to, PROCESSING_TEXT);
+    const isMedia = attachmentUrl !== null;
+    if (isMedia) await sender.sendText(to, PROCESSING_TEXT);
 
     const result = await upstream.intakeWhatsapp(
       {
@@ -170,6 +171,14 @@ export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
       await sender.sendText(to, body.length > 0 ? body : "I couldn't find an answer to that.");
       return { status: "answered" };
     }
+    // Async intake: the core accepted the submission and will PUSH the invoice / review
+    // notice back when its (possibly slow, cold-starting) pipeline finishes. We only
+    // acknowledge here — never wait on OCR, so this can't time out.
+    if (result.status === "queued") {
+      if (!isMedia) await sender.sendText(to, PROCESSING_TEXT);
+      return { status: "forwarded", docId: result.docId };
+    }
+    // Legacy synchronous path (older core): deliver the outcome inline.
     return deliverOutcome(to, result);
   }
 

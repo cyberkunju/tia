@@ -348,3 +348,47 @@ def push_text_to_sender(session: Session, ts: Timesheet, text: str) -> dict | No
         return None
     ok, detail = notify_bridge(doc.uploaded_by, "text", text=text)
     return {"to": doc.uploaded_by, "ok": ok, "detail": detail}
+
+
+_REVIEW_NOTICE = (
+    "✅ Got your timesheet ({ref}). A couple of details need a quick human check — "
+    "our team at TASC will confirm and I'll send your invoice here shortly."
+)
+_UNREADABLE_NOTICE = (
+    "I couldn't read a clear timesheet in that ({ref}). Please resend a sharper photo, "
+    'or type the details (e.g. "EMP10001 worked 22 days, 5 OT hours").'
+)
+
+
+def notify_whatsapp_result(session: Session, ts: Timesheet, phone: str | None) -> dict | None:
+    """Deliver the outcome of a background-processed WhatsApp submission to the sender:
+    the finished invoice PDF (auto), a 'couldn't read it' prompt (escalate), or an
+    'under review' notice (hitl). Best-effort; returns a summary for the audit log."""
+    if not phone:
+        return None
+    ref = _ref(ts.doc_id or ts.id)
+    inv = (
+        session.query(Invoice)
+        .filter(Invoice.timesheet_id == ts.id)
+        .order_by(Invoice.created_at.desc())
+        .first()
+    )
+    if ts.routing == "auto" and inv is not None:
+        result = push_invoice_to_sender(session, inv)
+        action = "whatsapp.invoice_pushed"
+    elif ts.routing == "escalate":
+        ok, detail = notify_bridge(phone, "text", text=_UNREADABLE_NOTICE.format(ref=ref))
+        result = {"to": phone, "ok": ok, "detail": detail, "kind": "escalate"}
+        action = "whatsapp.outcome_notified"
+    else:  # hitl / awaiting_review — invoice comes later, on human approval
+        ok, detail = notify_bridge(phone, "text", text=_REVIEW_NOTICE.format(ref=ref))
+        result = {"to": phone, "ok": ok, "detail": detail, "kind": "review"}
+        action = "whatsapp.outcome_notified"
+
+    try:
+        from .orchestrator import log_event
+
+        log_event(session, "system", "timesheet", ts.id, action, result or {})
+    except Exception:  # noqa: BLE001
+        pass
+    return result

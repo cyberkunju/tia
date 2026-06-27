@@ -38,9 +38,11 @@ services:
       GLM_OCR_BASE_URL: ${GLM_OCR_BASE_URL:-https://ocr.cyberkunju.com/v1}
       GLM_OCR_API_KEY: ${GLM_OCR_API_KEY:-}
       GLM_OCR_MODEL: ${GLM_OCR_MODEL:-glm-ocr:q8_0}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # Chat agent: Azure OpenAI (gpt-5.4-nano). No direct OpenAI key in the deploy env.
+      AZURE_AI_ENDPOINT: ${AZURE_AI_ENDPOINT:-}
+      AZURE_AI_KEY: ${AZURE_AI_KEY:-}
+      AZURE_AI_API_VERSION: ${AZURE_AI_API_VERSION:-2024-05-01-preview}
+      AZURE_CHAT_MODEL: ${AZURE_CHAT_MODEL:-gpt-5.4-nano}
       # Zoho Mail — email-intake mailbox poller + outbound replies
       ZOHO_IMAP_USER: ${ZOHO_IMAP_USER:-}
       ZOHO_IMAP_PASSWORD: ${ZOHO_IMAP_PASSWORD:-}

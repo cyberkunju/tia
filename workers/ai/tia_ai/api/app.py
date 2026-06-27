@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import (
+    BackgroundTasks,
     Depends,
     FastAPI,
     Form,
@@ -606,9 +607,45 @@ def whatsapp_attachment_ext(mime: str | None, url: str | None) -> str:
     return ".bin"
 
 
+def _whatsapp_pipeline_bg(doc_id: str, phone: str | None, client_hint: str | None) -> None:
+    """Run the (possibly slow: OCR / cold-start) pipeline OUT of the request path and
+    push the outcome back to the WhatsApp sender.
+
+    This is why the bridge never times out waiting for billing: intake acks instantly,
+    and the finished invoice / review notice is delivered here when ready.
+    """
+    from ..whatsapp import notify_bridge, notify_whatsapp_result
+
+    s = SessionLocal()
+    try:
+        doc = s.get(DocAsset, doc_id)
+        if doc is None:
+            return
+        ts = process_doc(s, doc, client_hint=client_hint)
+        s.commit()
+        notify_whatsapp_result(s, ts, phone)
+        s.commit()
+    except Exception as e:  # noqa: BLE001 — background work must never crash the worker
+        s.rollback()
+        try:
+            log_event(s, "system", "doc", doc_id, "whatsapp.pipeline_error", {"error": str(e)[:300]})
+            s.commit()
+        except Exception:  # noqa: BLE001
+            s.rollback()
+        if phone:
+            notify_bridge(
+                phone,
+                "text",
+                text="Sorry — something went wrong processing that. Please resend and I'll try again.",
+            )
+    finally:
+        s.close()
+
+
 @app.post("/intake/whatsapp")
 def intake_whatsapp(
     payload: WhatsAppIntake,
+    background_tasks: BackgroundTasks,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
@@ -717,16 +754,16 @@ def intake_whatsapp(
         uploaded_by=payload.from_ or "whatsapp",
         idempotency_key=idempotency_key,
     )
-    ts = process_doc(s, doc, client_hint=sender_client)
+    # Commit the doc now so the background task (separate session) reliably sees it,
+    # independent of request-teardown ordering.
+    s.commit()
+    # Ack instantly; run the slow pipeline (OCR can cold-start) in the background and
+    # push the invoice / review notice to the sender when ready. The bridge therefore
+    # never blocks on OCR — no more "couldn't reach the billing service" on cold images.
+    background_tasks.add_task(_whatsapp_pipeline_bg, doc.id, payload.from_, sender_client)
     return JSONResponse(
         status_code=202,
-        content={
-            "mode": "intake",
-            "doc_id": doc.id,
-            "timesheet_id": ts.id,
-            "status": ts.status,
-            "routing": ts.routing,
-        },
+        content={"mode": "intake", "status": "queued", "doc_id": doc.id},
     )
 
 

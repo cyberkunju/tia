@@ -165,10 +165,13 @@ def test_registered_sender_binds_client(client):
         headers={"Idempotency-Key": f"wa-bind-{uuid.uuid4().hex}"},
     )
     assert r.status_code == 202, r.text
-    ts_id = r.json()["timesheet_id"]
+    # async intake: response is a queued ack; the pipeline runs in a background task
+    # (TestClient runs it before returning) — resolve the timesheet via the doc_id.
+    doc_id = r.json()["doc_id"]
     s = SessionLocal()
     try:
-        ts = s.get(Timesheet, ts_id)
+        ts = s.query(Timesheet).filter_by(doc_id=doc_id).order_by(Timesheet.created_at.desc()).first()
+        assert ts is not None
         assert ts.client_code == "CL001"  # bound from the registered sender number
     finally:
         c = s.get(Client, "CL001")
