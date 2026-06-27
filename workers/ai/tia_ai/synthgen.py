@@ -392,7 +392,161 @@ def generate_all() -> list[str]:
     case05_punch_excel()
     case06_email_structured()
     case07_clean_excel()
+    case08_aisha_3way()
+    case09_messy_excel()
+    case10_email_quoted_reply()
     return sorted(p.name for p in SYN.iterdir() if p.is_file() and p.name != ".gitkeep")
+
+
+# ---------------------------------------------------------------- case 8 (3-way ambiguity, cross-client)
+def case08_aisha_3way() -> None:
+    body = f"""Subject: Timesheet for Aisha
+
+Period: {PERIOD}
+
+Aisha Al Zaabi - 22 days
+
+Thanks
+"""
+    _write(SYN / "case_08_aisha_3way.eml", body)
+    _gold(
+        "08",
+        {
+            "case": "08",
+            "channel": "email",
+            "input": "case_08_aisha_3way.eml",
+            "expect": {
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "employee_name": "Aisha Al Zaabi",
+                        "days_worked": 22,
+                        "resolved": False,
+                        "ambiguous": True,
+                        "candidate_emp_ids": ["EMP10058", "EMP10072", "EMP10077"],
+                    },
+                ],
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------- case 9 (messy Excel)
+def case09_messy_excel() -> None:
+    """Real-world Excel pain: extra blank rows, an extra unrecognized column."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Timesheet"
+    ws.append(
+        [
+            "Emp ID",
+            "Full Name",
+            "Client Code",
+            "Period",
+            "Working Days",
+            "OT Hours",
+            "Leave",
+            "Notes",
+        ]
+    )
+    ws.append(("EMP10001", "Carlos Smith", "CL001", PERIOD, 22, 2, "", "primary"))
+    ws.append((None,) * 8)  # blank row
+    ws.append(("EMP10002", "Ahmed Khan", "CL001", PERIOD, 20, 4, "AL", ""))
+    ws.append(("EMP10003", "Meera Al Rashid", "CL001", PERIOD, 21, 0, "", "deputy"))
+    ws.append((None,) * 8)  # trailing blank
+    wb.save(SYN / "case_09_messy.xlsx")
+    _gold(
+        "09",
+        {
+            "case": "09",
+            "channel": "upload",
+            "input": "case_09_messy.xlsx",
+            "expect": {
+                "client_code": "CL001",
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "emp_id": "EMP10001",
+                        "employee_name": "Carlos Smith",
+                        "days_worked": 22,
+                        "ot_hours": 2,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                    {
+                        "emp_id": "EMP10002",
+                        "employee_name": "Ahmed Khan",
+                        "days_worked": 20,
+                        "ot_hours": 4,
+                        "leave_codes": ["AL"],
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                    {
+                        "emp_id": "EMP10003",
+                        "employee_name": "Meera Al Rashid",
+                        "days_worked": 21,
+                        "ot_hours": 0,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                ],
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------- case 10 (quoted-reply email)
+def case10_email_quoted_reply() -> None:
+    """Email with a quoted-reply thread underneath. The quoted history mentions
+    different day counts (25 days). The parser must ignore quoted lines and only
+    extract the rows from the latest message at the top."""
+    body = f"""Subject: Re: June timesheet submission
+
+Client: Emirates Steel Industries LLC
+Period: {PERIOD}
+
+Carlos Smith - 22 days
+Ahmed Khan - 20 days, 4 OT hours
+
+Thanks,
+Finance team
+
+> On Mon, 1 Jul 2026, Site Manager <manager@steel.test> wrote:
+> Please submit your June 2026 timesheet by Friday.
+> For reference, last month Carlos Smith logged 25 days.
+> Ahmed Khan was on AL for 10 days.
+> Best,
+> Site Manager
+"""
+    _write(SYN / "case_10_email_quoted_reply.eml", body)
+    _gold(
+        "10",
+        {
+            "case": "10",
+            "channel": "email",
+            "input": "case_10_email_quoted_reply.eml",
+            "expect": {
+                "client_code": "CL001",
+                "period": PERIOD,
+                "rows": [
+                    {
+                        "employee_name": "Carlos Smith",
+                        "days_worked": 22,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                    {
+                        "employee_name": "Ahmed Khan",
+                        "days_worked": 20,
+                        "ot_hours": 4,
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                ],
+            },
+        },
+    )
 
 
 if __name__ == "__main__":

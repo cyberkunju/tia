@@ -70,3 +70,36 @@ def test_resolve_fatima_khan_ambiguous():
     assert cand_ids == {"EMP10083", "EMP10093"}
     # cost matrix is exposed for the Why drawer / triage UI
     assert mr.cost_matrix and len(mr.cost_matrix[0]) >= 2
+
+
+def test_resolve_aisha_three_way_cross_client_ambiguous():
+    """Aisha Al Zaabi exists at EMP10058@CL003, EMP10072@CL004, EMP10077@CL004.
+    With no client hint, all three surface as candidates -> 3-way ambiguity."""
+    ex = TimesheetExtraction(
+        period="June 2026",
+        rows=[TimesheetRow(employee_name="Aisha Al Zaabi", days_worked=22)],
+    )
+    with get_session() as s:
+        mr = resolve(ex, s)
+    m = mr.matches[0]
+    assert m.ambiguous
+    assert m.chosen_emp_id is None
+    cand_ids = {c.emp_id for c in m.candidates}
+    assert cand_ids == {"EMP10058", "EMP10072", "EMP10077"}
+    # cost matrix must have 1 row x 3 cols visible in the Why drawer
+    assert mr.cost_matrix and len(mr.cost_matrix[0]) == 3
+
+
+def test_resolve_ravi_menon_cross_client_ambiguous():
+    """Ravi Menon spans CL004 / CL007 / CL008 — cross-client ambiguity that
+    can't be resolved by name+client alone, must surface for HITL."""
+    ex = TimesheetExtraction(
+        period="June 2026",
+        rows=[TimesheetRow(employee_name="Ravi Menon", days_worked=21)],
+    )
+    with get_session() as s:
+        mr = resolve(ex, s)
+    m = mr.matches[0]
+    assert m.ambiguous
+    cand_ids = {c.emp_id for c in m.candidates}
+    assert {"EMP10070", "EMP10136", "EMP10157"}.issubset(cand_ids)

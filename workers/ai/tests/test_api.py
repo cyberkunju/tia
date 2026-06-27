@@ -141,3 +141,56 @@ def test_eval_endpoint(client):
 def test_unknown_doc_404(client):
     r = client.get("/documents/nonexistent")
     assert r.status_code == 404
+
+
+def test_duplicate_upload_dedupe_by_content_hash(client):
+    """Same bytes uploaded twice (different filenames, different idempotency keys)
+    must be content-hash deduped to a single doc — not double-process."""
+    p = DATA_DIR / "synthetic" / "case_07_clean.xlsx"
+    raw = p.read_bytes()
+    r1 = client.post(
+        "/intake/upload",
+        files={
+            "file": (
+                "first.xlsx",
+                raw,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        headers={"Idempotency-Key": "dedup-1"},
+    )
+    r2 = client.post(
+        "/intake/upload",
+        files={
+            "file": (
+                "second-different-name.xlsx",
+                raw,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        headers={"Idempotency-Key": "dedup-2"},
+    )
+    assert r1.status_code == 200 and r2.status_code == 200
+    # both must reference the same doc_id (content-hash dedup)
+    assert r1.json()["doc_id"] == r2.json()["doc_id"]
+
+
+def test_empty_file_routes_to_escalate_not_crash(client):
+    """Empty / unparseable uploads must yield a 200 with a routing decision,
+    not a 500. The orchestrator escalates 'no rows extracted' to HITL."""
+    r = client.post(
+        "/intake/upload",
+        files={
+            "file": (
+                "empty.xlsx",
+                b"",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+        headers={"Idempotency-Key": "empty-1"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["routing"] in ("escalate", "hitl")
+    assert body["status"] == "awaiting_review"
+    assert body["confidence"] == 0.0

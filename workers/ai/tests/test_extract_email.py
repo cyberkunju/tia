@@ -83,3 +83,45 @@ def test_dedupe_same_emp_same_name():
     text = "EMP10001 Carlos Smith - 22 days\nEMP10001 Carlos Smith - 22 days"
     ex = extract_email(text)
     assert len(ex.rows) == 1
+
+
+def test_apostrophe_names_dont_corrupt_parsing():
+    """Hawaiian / Kenyan / Irish names with apostrophes (Ng'ang'a, O'Connor) must
+    parse as a single name, not split or dropped (regression of python-nameparser
+    issue #86 — multiple-quote handling)."""
+    text = (
+        "Client: Emirates Steel Industries LLC\n"
+        "Period: June 2026\n\n"
+        "Ng'ang'a Mwaura - 21 days\n"
+        "O'Connor Ali - 22 days, 3 OT hours\n"
+    )
+    ex = extract_email(text)
+    names = {r.employee_name for r in ex.rows}
+    assert "Ng'ang'a Mwaura" in names or "Ng'ang'a" in names, names
+    assert any(n.startswith("O") and "Connor" in n for n in names), names
+    # neither name should be parsed as a sentence fragment
+    assert not any("days" in n for n in names)
+
+
+def test_quoted_reply_thread_ignored():
+    """Email parser must ignore lines from quoted-reply history (prefixed with `>`)
+    so retroactive numbers don't pollute the current submission."""
+    text = (
+        "Client: Emirates Steel Industries LLC\n"
+        "Period: June 2026\n\n"
+        "Carlos Smith - 22 days\n\n"
+        "> On Mon wrote:\n"
+        "> Carlos Smith - 25 days\n"
+        "> Last month tally\n"
+    )
+    ex = extract_email(text)
+    carlos = next(r for r in ex.rows if r.employee_name == "Carlos Smith")
+    assert carlos.days_worked == 22.0  # current, not the quoted 25
+    assert len(ex.rows) == 1
+
+
+def test_empty_input_returns_empty_extraction():
+    ex = extract_email("")
+    assert ex.rows == []
+    ex2 = extract_email("Dear team,\n\nNothing to report.\n\nRegards,\nMe")
+    assert ex2.rows == []

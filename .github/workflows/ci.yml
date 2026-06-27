@@ -1,0 +1,161 @@
+name: ci
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  UV_VERSION: "0.5.4"
+
+jobs:
+  # 1) pytest — fast unit + integration suite (50 tests, no external calls)
+  backend-tests:
+    name: backend-tests (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults: { run: { working-directory: workers/ai } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "workers/ai/uv.lock"
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - name: sync dev deps
+        run: uv sync --extra dev
+      - name: run pytest
+        run: uv run pytest tests/ -q --tb=short
+
+  # 2) frontend — TypeScript + Vite build (tsc -b catches every TS error)
+  frontend-build:
+    name: frontend-build (tsc + vite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults: { run: { working-directory: apps/web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with: { bun-version: latest }
+      - name: install
+        run: bun install --frozen-lockfile
+      - name: lint
+        run: bun run lint
+      - name: build (tsc + vite)
+        run: bun run build
+
+  # 3) eval — 9 deterministic cases (case 4 vision is skipped — needs Modal creds)
+  eval-harness:
+    name: eval-harness (9 cases, F1+ECE gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    defaults: { run: { working-directory: workers/ai } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "workers/ai/uv.lock"
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync
+      - name: seed + synth
+        run: |
+          uv run python -m tia_ai.seed
+          uv run python -m tia_ai.synthgen
+      - name: run eval (skip case 4 — Modal-only)
+        run: |
+          uv run python - <<'PY'
+          import json, sys
+          from tia_ai.eval.run import run_case, _ece
+          cases = ["01","02","03","05","06","07","08","09","10"]
+          results = [run_case(c) for c in cases]
+          calib = [c for r in results for c in r.get("calibration", [])]
+          keys = list(results[0]["f1"].keys()) if results else []
+          macro = {k: round(sum(r["f1"][k] for r in results)/len(results), 4) for k in keys}
+          passed = sum(1 for r in results if r.get("passed"))
+          summary = {"passed": passed, "of": len(results), "ece": _ece(calib), "macro_f1": macro}
+          print(json.dumps(summary, indent=2))
+          for r in results:
+              print(f"  case {r['case']}: {'PASS' if r['passed'] else 'FAIL'}  rows={r['extracted_rows']}/{r['expected_rows']}  AED={r['invoice_amount']}  except={r['exceptions']}")
+          if passed != len(results):
+              print(f"::error::eval gate FAIL: {passed}/{len(results)} cases passed", file=sys.stderr)
+              sys.exit(1)
+          if macro.get("days_worked", 0.0) < 0.98:
+              print(f"::error::days_worked F1 {macro['days_worked']} below 0.98 threshold", file=sys.stderr)
+              sys.exit(1)
+          if macro.get("resolved", 0.0) < 0.98:
+              print(f"::error::resolved F1 {macro['resolved']} below 0.98 threshold", file=sys.stderr)
+              sys.exit(1)
+          PY
+
+  # 4) api-smoke — boot uvicorn, hit critical endpoints, confirm response shapes
+  api-smoke:
+    name: api-smoke (boot + curl critical endpoints)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    needs: [backend-tests]
+    defaults: { run: { working-directory: workers/ai } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          cache-dependency-glob: "workers/ai/uv.lock"
+      - run: uv python install ${{ env.PYTHON_VERSION }}
+      - run: uv sync
+      - name: seed + synth
+        run: |
+          uv run python -m tia_ai.seed
+          uv run python -m tia_ai.synthgen
+      - name: boot uvicorn (background)
+        run: |
+          nohup uv run uvicorn tia_ai.api.app:app --host 127.0.0.1 --port 8000 --log-level warning > /tmp/uvicorn.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health > /dev/null 2>&1 && break
+            sleep 0.5
+          done
+      - name: smoke endpoints
+        run: |
+          set -e
+          # /health -> ok
+          curl -fsS http://127.0.0.1:8000/health | python -c "import sys,json; assert json.load(sys.stdin)['status']=='ok'"
+          # /clients -> 10 rows
+          curl -fsS http://127.0.0.1:8000/clients | python -c "import sys,json; d=json.load(sys.stdin); assert len(d)==10, f'expected 10 clients, got {len(d)}'"
+          # upload a clean Excel -> routing=auto
+          curl -fsS -X POST -F "file=@${{ github.workspace }}/data/synthetic/case_07_clean.xlsx" \
+            -H "Idempotency-Key: smoke-c07" http://127.0.0.1:8000/intake/upload \
+            | python -c "import sys,json; d=json.load(sys.stdin); assert d['routing']=='auto', d"
+          # upload the ambiguous email -> routing=hitl
+          curl -fsS -X POST -F "file=@${{ github.workspace }}/data/synthetic/case_01_email_no_empid.eml" \
+            -H "Idempotency-Key: smoke-c01" http://127.0.0.1:8000/intake/upload \
+            | python -c "import sys,json; d=json.load(sys.stdin); assert d['routing']=='hitl', d"
+          # /eval -> shape OK
+          curl -fsS http://127.0.0.1:8000/eval \
+            | python -c "import sys,json; d=json.load(sys.stdin); assert 'passed' in d and 'macro_f1' in d, d"
+          # /documents -> at least 2
+          curl -fsS http://127.0.0.1:8000/documents \
+            | python -c "import sys,json; d=json.load(sys.stdin); assert len(d)>=2, d"
+      - name: uvicorn log (on failure)
+        if: failure()
+        run: cat /tmp/uvicorn.log || true
+
+  # 5) collector — single required check for branch protection
+  ci-status:
+    name: ci-status
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [backend-tests, frontend-build, eval-harness, api-smoke]
+    steps:
+      - name: aggregate
+        run: |
+          fail=0
+          if [[ "${{ needs.backend-tests.result }}" != "success" ]]; then echo "backend-tests: ${{ needs.backend-tests.result }}"; fail=1; fi
+          if [[ "${{ needs.frontend-build.result }}" != "success" ]]; then echo "frontend-build: ${{ needs.frontend-build.result }}"; fail=1; fi
+          if [[ "${{ needs.eval-harness.result }}" != "success" ]]; then echo "eval-harness: ${{ needs.eval-harness.result }}"; fail=1; fi
+          if [[ "${{ needs.api-smoke.result }}" != "success" ]]; then echo "api-smoke: ${{ needs.api-smoke.result }}"; fail=1; fi
+          exit $fail

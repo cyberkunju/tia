@@ -162,7 +162,13 @@ def process_doc(session: Session, doc: DocAsset) -> Timesheet:
     has_failed_validation = any(
         (not v["passed"]) and v.get("severity") != "warning" for v in inv["validations"]
     )
-    if ambiguous:
+    no_rows = len(extraction.rows) == 0
+    if no_rows:
+        ts.routing = "escalate"
+        ts.status = "awaiting_review"
+        ts.hitl_reason = "no rows extracted from document"
+        ts.confidence_calibrated = 0.0
+    elif ambiguous:
         ts.routing = "hitl"
         ts.status = "awaiting_review"
         ts.hitl_reason = "ambiguous entity resolution"

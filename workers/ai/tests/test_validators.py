@@ -92,3 +92,16 @@ def test_validate_payroll_full():
     rs = validate_payroll(_payroll())
     assert all(r.passed for r in rs)
     assert len(rs) == 4  # gross, net, working_days, currency
+
+
+def test_full_validator_catches_compound_failure():
+    """One payload that violates 3 rules at once — every rule must surface its
+    own error independently so the operator sees the full list, not just the first."""
+    bad = _payroll(gross=9000, currency="USD", working_days=30)
+    results = validate_payroll(bad)
+    failed = {r.rule for r in results if not r.passed}
+    assert "math_gross" in failed
+    assert "currency_aed" in failed
+    assert "working_days_bounds" in failed
+    # net check also fails because gross is bogus
+    assert "math_net" in failed

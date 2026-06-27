@@ -1,5 +1,7 @@
 # TIA — Touchless Invoice Agent
 
+[![ci](https://github.com/cyberkunju/tia/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberkunju/tia/actions/workflows/ci.yml)
+
 Self-hosted, open-weight agent that ingests staffing **timesheets** in any of 7 shapes
 (clean Excel → handwritten photo), resolves them against a payroll master, generates
 client-billable **invoices** through a mock ERP, validates them deterministically,
