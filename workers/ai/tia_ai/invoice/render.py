@@ -83,12 +83,16 @@ _TEMPLATE = r"""
   [*Due Date* \ {due_date}],
 )
 
-{sac_block}
+#v(6pt)
+
+#block(fill: rgb("#fafafa"), inset: (x: 10pt, y: 6pt), radius: 2pt)[
+  *Service Code:* {service_code}  ·  *Description:* {service_desc}
+]
 
 #v(10pt)
 
 #table(
-  columns: (1.6cm, 1fr, 1cm, 2cm, 1.6cm, 1.8cm, 2.3cm),
+  columns: (2.2cm, 1fr, 1cm, 2cm, 1.6cm, 1.8cm, 2.3cm),
   align: (left, left, right, right, right, right, right),
   stroke: 0.4pt + rgb("#cccccc"),
   fill: row_fill,
@@ -176,6 +180,23 @@ def _sac_block(invoice: dict) -> str:
     )
 
 
+def _service_code_for(invoice: dict) -> tuple[str, str]:
+    """Return (code, description) shown on every Tax Invoice.
+
+    India uses HSN/SAC under GST — for staffing services that's SAC 998513
+    ("Contract Staffing Services") or 998514 ("Temporary Staffing Services").
+    UAE has no equivalent mandated taxonomy, so we surface the SAC code anyway
+    as an informational service classification (TASC's actual practice on
+    cross-jurisdiction invoices), with the UAE Tax Invoice mandatory
+    'description of services' filled in.
+    """
+    sac = invoice.get("sac_code")
+    if sac:
+        return sac, "Contract Staffing Services"
+    # UAE default — surface SAC as informational classification, not as a tax code
+    return "SAC 998513 (informational)", "Manpower supply services — UAE FTA service category"
+
+
 def render_invoice(invoice: dict, invoice_id: str) -> str:
     import datetime as dt
 
@@ -191,6 +212,7 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
     place_of_supply = invoice.get("place_of_supply") or "UAE"
     today = dt.date.today().isoformat()
     due_date = invoice.get("due_date") or (dt.date.today() + dt.timedelta(days=30)).isoformat()
+    service_code, service_desc = _service_code_for(invoice)
 
     source = _TEMPLATE.format(
         seq_no=_esc(seq_no),
@@ -206,7 +228,8 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
         place_of_supply=_esc(place_of_supply),
         issue_date=today,
         due_date=_esc(due_date),
-        sac_block=_sac_block(invoice),
+        service_code=_esc(service_code),
+        service_desc=_esc(service_desc),
         rows=rows or "[—], [no line items], [], [], [], [], [],",
         warning=_warning_block(invoice),
         exceptions=_exceptions_block(invoice),
