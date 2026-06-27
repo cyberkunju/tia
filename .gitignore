@@ -32,12 +32,18 @@ tia.db
 
 # Data staging / artifacts
 /staging/
+**/staging/
 *.pdf.out
 data/synthetic/*.png
 data/synthetic/*.pdf
 data/synthetic/*.xlsx
 data/synthetic/*.eml
 !data/synthetic/.gitkeep
+
+# Local source material / credentials (never commit)
+*.pem
+*.zip
+extracted/
 
 # OS
 .DS_Store
