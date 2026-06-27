@@ -1,0 +1,258 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ExternalLink, Info, X, FileText, Check, FileSpreadsheet } from "lucide-react";
+import { api, API_BASE } from "../api";
+import { cn, fmtAED, fmtPct, vatBreakdown, TASC_ENTITY } from "../lib";
+import { StatusBadge, RoutingBadge, ConfidenceBadge, Badge, Spinner, EmptyState } from "../ui";
+import { useTabAvoidance } from "../hooks";
+import type { Candidate, ExtractedRow, RowMatch } from "../types";
+
+export function DocFocus({ docId }: { docId: string }) {
+  const qc = useQueryClient();
+  const { data, isLoading, refetch } = useQuery({
+    queryKey: ["doc", docId], queryFn: () => api.getDoc(docId), enabled: !!docId, refetchInterval: 3_000,
+  });
+  const ts = data?.timesheet;
+  const ex = ts?.extraction;
+  const mr = ts?.match_result;
+  const invoices = data?.invoices ?? [];
+
+  const [picks, setPicks] = useState<Record<number, string>>({});
+  const [whyOpen, setWhyOpen] = useState(false);
+  const bar = useTabAvoidance<HTMLDivElement>();
+
+  const approve = useMutation({
+    mutationFn: () => api.approve(ts!.id, Object.entries(picks).map(([k, v]) => ({ row_idx: Number(k), chosen_emp_id: v }))),
+    onSuccess: async () => { setPicks({}); await qc.invalidateQueries({ queryKey: ["doc", docId] }); await qc.invalidateQueries({ queryKey: ["docs"] }); await qc.invalidateQueries({ queryKey: ["invoices"] }); refetch(); },
+  });
+  const reject = useMutation({ mutationFn: (reason: string) => api.reject(ts!.id, reason), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["doc", docId] }); await qc.invalidateQueries({ queryKey: ["docs"] }); } });
+  const dispatchInv = useMutation({ mutationFn: (id: string) => api.dispatchInvoice(id), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["doc", docId] }); await qc.invalidateQueries({ queryKey: ["invoices"] }); } });
+
+  const sourceUrl = useMemo(() => (docId ? api.docSourceUrl(docId) : null), [docId]);
+  const sourceIsImage = data?.doc.mime?.startsWith("image/");
+  const sourceIsPdf = data?.doc.mime === "application/pdf";
+  const wantsText = !!data && !sourceIsImage && !sourceIsPdf;
+  const { data: srcText } = useQuery({
+    queryKey: ["src", docId],
+    queryFn: async () => (await fetch(sourceUrl!)).text(),
+    enabled: !!sourceUrl && wantsText,
+  });
+
+  if (isLoading) return <div className="flex items-center gap-2 text-ink-500 p-6"><Spinner /> Loading document…</div>;
+  if (!data || !ts) return <EmptyState icon={FileText} title="Document unavailable" />;
+
+  const allResolved = mr?.matches.every((m) => (m.chosen_emp_id && !m.ambiguous) || picks[m.row_idx]);
+  const ambiguousRows = mr?.matches.filter((m) => m.ambiguous) ?? [];
+
+  return (
+    <div className="divide-y divide-ink-100">
+      {/* header */}
+      <div className="px-4 py-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h2 className="text-sm font-semibold text-ink-900">{ts.client_code ?? "Client unknown"}</h2>
+            <span className="text-ink-300">·</span>
+            <span className="text-sm text-ink-500">{ts.period ?? "period unknown"}</span>
+            <StatusBadge status={ts.status} />
+            {ts.routing && <RoutingBadge routing={ts.routing} />}
+            {ts.confidence != null && <ConfidenceBadge value={ts.confidence} />}
+          </div>
+          {ts.hitl_reason && <p className="text-xs text-amber-700 mt-1">{ts.hitl_reason}</p>}
+        </div>
+        <button className="btn-outline btn-sm shrink-0" onClick={() => setWhyOpen(true)}><Info size={13} /> Why</button>
+      </div>
+
+      {/* source + extracted in two columns on wide */}
+      <div className="grid grid-cols-1 xl:grid-cols-2">
+        <div className="p-4 xl:border-r border-ink-100">
+          <div className="flex items-center justify-between mb-2">
+            <span className="eyebrow">Source · {data.doc.channel}{data.doc.filename ? ` · ${data.doc.filename}` : ""}</span>
+            <a href={sourceUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-700 hover:underline inline-flex items-center gap-1">raw <ExternalLink size={11} /></a>
+          </div>
+          {wantsText ? (
+            <pre className="bg-ink-50 rounded-lg h-72 overflow-auto border border-ink-100 p-3.5 text-xs leading-relaxed text-ink-700 whitespace-pre-wrap break-words font-mono">{srcText ?? "Loading source…"}</pre>
+          ) : (
+            <div className="bg-ink-50 rounded-lg h-72 flex items-center justify-center overflow-hidden border border-ink-100">
+              {sourceIsImage && <img src={sourceUrl!} alt="source" className="max-h-full max-w-full object-contain" />}
+              {sourceIsPdf && <iframe src={sourceUrl!} title="src" className="w-full h-full" />}
+            </div>
+          )}
+        </div>
+        <div className="p-4">
+          <span className="eyebrow">Extracted associates</span>
+          <div className="space-y-2 mt-2">
+            {ex?.rows.map((r, idx) => (
+              <RowCard key={idx} row={r} match={mr?.matches[idx]} pick={picks[idx]} onPick={(emp) => setPicks((p) => ({ ...p, [idx]: emp }))} />
+            ))}
+            {(!ex?.rows || ex.rows.length === 0) && <div className="text-ink-400 text-sm">No rows extracted.</div>}
+          </div>
+        </div>
+      </div>
+
+      {ambiguousRows.length > 0 && mr && (
+        <div className="p-4">
+          <span className="eyebrow">Hungarian assignment · cost matrix</span>
+          <p className="text-xs text-ink-500 mt-1 mb-2">Lower = stronger match. Near-equal columns (Δ≈0) signal ambiguity; assignment minimises total cost.</p>
+          <CostMatrix cost={mr.cost_matrix} rowLabels={mr.row_labels} colLabels={mr.candidate_labels} />
+        </div>
+      )}
+
+      {(ts.validations?.length ?? 0) > 0 && (
+        <div className="p-4">
+          <span className="eyebrow">BTP validations</span>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
+            {ts.validations.map((v, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <Badge tone={v.passed ? "green" : "red"} dot={false}>{v.passed ? "Pass" : "Fail"}</Badge>
+                <div className="min-w-0"><div className="text-sm font-medium text-ink-800">{v.rule}{v.emp_id && <span className="text-ink-400 font-normal"> · {v.emp_id}</span>}</div><div className="text-xs text-ink-500">{v.message}</div></div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ts.status === "awaiting_review" && (
+        <div ref={bar.ref} style={{ paddingRight: bar.avoid || undefined }} className="p-4 flex items-center justify-between gap-3 bg-amber-50/40 transition-[padding] duration-200">
+          <span className="text-sm text-ink-600">{ambiguousRows.length > 0 ? `Resolve ${ambiguousRows.length} ambiguous row${ambiguousRows.length === 1 ? "" : "s"}.` : "Approve to generate the invoice."}</span>
+          <div className="flex items-center gap-2">
+            <button className="btn-danger btn-sm" onClick={() => { const r = prompt("Reason for rejection?"); if (r) reject.mutate(r); }}>Reject</button>
+            <button className="btn-primary btn-sm" disabled={!allResolved || approve.isPending} onClick={() => approve.mutate()}>{approve.isPending ? <><Spinner /> Approving…</> : <><Check size={14} /> Approve & generate</>}</button>
+          </div>
+        </div>
+      )}
+
+      {invoices.map((inv) => {
+        const sub = inv.total_excl_vat ?? inv.amount;
+        const vat = inv.vat_amount ?? vatBreakdown(inv.amount).vat;
+        const tot = inv.total_incl_vat ?? vatBreakdown(inv.amount).total;
+        const trn = inv.supplier_trn ?? TASC_ENTITY.trn;
+        return (
+          <div key={inv.id} className="p-4">
+            <div className="flex items-center justify-between mb-2">
+              <span className="eyebrow">Tax invoice {inv.invoice_sequence_no ? `· ${inv.invoice_sequence_no}` : ""}</span>
+              <div className="flex items-center gap-2">
+                <StatusBadge status={inv.status} />
+                {inv.pdf_available && <a className="btn-outline btn-sm" href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer"><ExternalLink size={12} /> PDF</a>}
+                {inv.status === "generated" && <button className="btn-primary btn-sm" disabled={dispatchInv.isPending} onClick={() => dispatchInv.mutate(inv.id)}>{dispatchInv.isPending ? <Spinner /> : null} Dispatch</button>}
+              </div>
+            </div>
+            <div className="rounded-lg border border-ink-200 overflow-hidden">
+              <div className="px-3 py-2 bg-ink-50 text-2xs text-ink-500 flex justify-between gap-2">
+                <span>{TASC_ENTITY.name} · TRN {trn}</span>
+                <span>{inv.client_code} · {inv.period}</span>
+              </div>
+              <div className="px-3 py-2 text-sm space-y-1">
+                <Line label="Subtotal" value={fmtAED(sub)} />
+                <Line label={`VAT ${((inv.vat_rate ?? 0.05) * 100).toFixed(0)}%`} value={fmtAED(vat)} muted />
+                <div className="border-t border-ink-100 pt-1"><Line label="Total (AED)" value={fmtAED(tot)} bold /></div>
+              </div>
+              {(inv.sac_code || inv.customer_trn) && (
+                <div className="px-3 py-1.5 bg-ink-50 text-2xs text-ink-400 flex gap-3 border-t border-ink-100">
+                  {inv.sac_code && <span>SAC/HSN {inv.sac_code}</span>}
+                  {inv.customer_trn && <span>Customer TRN {inv.customer_trn}</span>}
+                  {inv.due_date && <span>Due {inv.due_date}</span>}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+
+      {ts.client_code && ts.period && (
+        <div className="p-3 flex flex-wrap items-center gap-2">
+          <span className="eyebrow mr-1">ERP-ready exports</span>
+          <a className="btn-outline btn-sm" href={api.consolidatedExcelUrl(ts.client_code, ts.period)} target="_blank" rel="noreferrer"><FileSpreadsheet size={13} /> SAP Excel</a>
+          <a className="btn-outline btn-sm" href={api.wpsSifUrl(ts.client_code, ts.period)} target="_blank" rel="noreferrer"><FileSpreadsheet size={13} /> WPS SIF</a>
+        </div>
+      )}
+
+      <AnimatePresence>{whyOpen && <WhyDrawer invoiceId={invoices[0]?.id ?? null} onClose={() => setWhyOpen(false)} />}</AnimatePresence>
+    </div>
+  );
+}
+
+function Line({ label, value, bold, muted }: { label: string; value: string; bold?: boolean; muted?: boolean }) {
+  return <div className="flex items-center justify-between"><span className={cn("text-ink-500", bold && "text-ink-800 font-medium")}>{label}</span><span className={cn("tnum", bold ? "font-semibold text-ink-900" : muted ? "text-ink-500" : "text-ink-700")}>{value}</span></div>;
+}
+
+function RowCard({ row, match, pick, onPick }: { row: ExtractedRow; match?: RowMatch; pick?: string; onPick: (emp: string) => void }) {
+  const chosen = pick ?? match?.chosen_emp_id;
+  const ambiguous = !!match?.ambiguous && !pick;
+  return (
+    <div className={cn("border rounded-lg p-2.5", ambiguous ? "border-amber-300 bg-amber-50/50" : "border-ink-200")}>
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <span className="font-medium text-sm text-ink-900 truncate">{row.employee_name}</span>
+          {chosen && <Badge tone="blue" dot={false}>{chosen}</Badge>}
+          {match?.confidence != null && <ConfidenceBadge value={match.confidence} />}
+          {ambiguous && <Badge tone="amber">ambiguous</Badge>}
+        </div>
+      </div>
+      <div className="text-xs text-ink-600 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+        {row.days_worked != null && <span><span className="text-ink-400">days</span> <span className="tnum">{row.days_worked}</span></span>}
+        {row.hours != null && <span><span className="text-ink-400">hrs</span> <span className="tnum">{row.hours}</span></span>}
+        {row.ot_hours != null && <span><span className="text-ink-400">OT</span> <span className="tnum">{row.ot_hours}</span></span>}
+        {row.leave_codes?.length > 0 && <span><span className="text-ink-400">leave</span> {row.leave_codes.join(", ")}</span>}
+      </div>
+      {ambiguous && match!.candidates.length > 1 && (
+        <div className="mt-2 pt-2 border-t border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          {match!.candidates.map((c: Candidate) => (
+            <button key={c.emp_id} onClick={() => onPick(c.emp_id)} className={cn("text-left text-xs px-2.5 py-1.5 rounded-md border transition-colors", pick === c.emp_id ? "border-brand-500 bg-brand-50" : "border-ink-200 hover:border-brand-400 hover:bg-ink-50")}>
+              <div className="font-medium text-ink-800">{c.emp_id} · {c.full_name}</div>
+              <div className="text-ink-500">{c.client_code} · score <span className="tnum">{c.score.toFixed(3)}</span></div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CostMatrix({ cost, rowLabels, colLabels }: { cost: number[][]; rowLabels: string[]; colLabels: string[] }) {
+  if (cost.length === 0 || cost[0].length === 0) return <div className="text-ink-400 text-sm">no candidates</div>;
+  const max = Math.max(...cost.flat(), 0.01);
+  return (
+    <div className="overflow-x-auto">
+      <table className="text-xs border-separate border-spacing-0">
+        <thead><tr><th className="p-2"></th>{colLabels.map((c) => <th key={c} className="text-left p-2 text-ink-500 font-medium whitespace-nowrap">{c}</th>)}</tr></thead>
+        <tbody>
+          {cost.map((rrow, i) => (
+            <tr key={i}>
+              <td className="p-2 text-ink-700 font-medium whitespace-nowrap">{rowLabels[i]}</td>
+              {rrow.map((v, j) => { const intensity = 1 - Math.min(1, v / max); return <td key={j} className="p-2 text-center border border-ink-100 font-mono tnum" style={{ background: `rgba(217,83,30,${0.06 + intensity * 0.5})` }} title={`cost ${v.toFixed(3)}`}>{v.toFixed(2)}</td>; })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: () => void }) {
+  const { data } = useQuery({ queryKey: ["why", invoiceId], queryFn: () => (invoiceId ? api.invoiceWhy(invoiceId) : Promise.resolve(null)), enabled: !!invoiceId });
+  return (
+    <>
+      <motion.div className="fixed inset-0 bg-ink-950/40 z-40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
+      <motion.aside className="fixed right-0 top-0 bottom-0 w-full max-w-[480px] bg-white shadow-lg z-50 overflow-y-auto" initial={{ x: 520 }} animate={{ x: 0 }} exit={{ x: 520 }} transition={{ type: "spring", stiffness: 280, damping: 32 }}>
+        <div className="sticky top-0 bg-white border-b border-ink-200 px-5 py-3 flex items-center justify-between">
+          <div><div className="eyebrow">Provenance</div><h3 className="font-semibold text-ink-900">Why this invoice?</h3></div>
+          <button className="btn-ghost btn-sm" onClick={onClose}><X size={16} /></button>
+        </div>
+        <div className="p-5 space-y-5">
+          {!invoiceId && <div className="text-ink-500 text-sm">No invoice yet — approve to generate.</div>}
+          {data?.match_result && data.match_result.cost_matrix.length > 0 && (
+            <div><h4 className="text-xs font-semibold text-ink-700 mb-2">Entity resolution</h4><CostMatrix cost={data.match_result.cost_matrix} rowLabels={data.match_result.row_labels} colLabels={data.match_result.candidate_labels} /></div>
+          )}
+          {data?.validations && data.validations.length > 0 && (
+            <div><h4 className="text-xs font-semibold text-ink-700 mb-2">Validations</h4><div className="space-y-1.5">{data.validations.map((v, i) => (<div key={i} className="flex items-start gap-2"><Badge tone={v.passed ? "green" : "red"} dot={false}>{v.passed ? "✓" : "×"}</Badge><div><div className="text-xs font-medium text-ink-800">{v.rule}</div><div className="text-ink-500 text-xs">{v.message}</div></div></div>))}</div></div>
+          )}
+          {data?.events && (
+            <div><h4 className="text-xs font-semibold text-ink-700 mb-2">Audit timeline</h4><ol className="space-y-2.5">{data.events.map((e) => (<li key={e.id} className="border-l-2 border-brand-300 pl-3"><div className="text-xs font-medium text-ink-800">{e.kind}.{e.action} <span className="text-ink-400 font-normal">· {e.actor}</span></div><div className="text-2xs text-ink-500">{new Date(e.at).toLocaleString()}</div></li>))}</ol></div>
+          )}
+          <p className="text-2xs text-ink-400">Confidence is computed by the matcher/validator — {fmtPct(data?.confidence_calibrated ?? 0)} calibrated. Never taken from the model.</p>
+        </div>
+      </motion.aside>
+    </>
+  );
+}

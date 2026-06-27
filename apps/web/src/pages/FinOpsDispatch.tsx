@@ -22,7 +22,7 @@ export function FinOpsDispatch() {
   const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
   const active = clientCode ?? clients?.[0]?.code;
   useEffect(() => {
-    if (!clientCode && active) nav(`/finops/dispatch/${active}`, { replace: true });
+    if (!clientCode && active) nav(`/console/dispatch/${active}`, { replace: true });
   }, [active, clientCode, nav]);
 
   const { data: invoices } = useQuery({
@@ -69,7 +69,7 @@ export function FinOpsDispatch() {
         title="Dispatch"
         description="Per-client ordering rule and dispatch queue."
         actions={
-          <select value={active} onChange={(e) => nav(`/finops/dispatch/${e.target.value}`)} className="select w-auto">
+          <select value={active} onChange={(e) => nav(`/console/dispatch/${e.target.value}`)} className="select w-auto">
             {clients?.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
           </select>
         }
@@ -141,3 +141,4 @@ export function FinOpsDispatch() {
     </div>
   );
 }
+

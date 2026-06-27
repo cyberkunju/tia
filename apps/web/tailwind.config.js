@@ -4,45 +4,18 @@ export default {
   theme: {
     extend: {
       colors: {
-        // TASC brand — bright tropical green (matches the actual Search Vacancies CTA on tasc.ae).
-        // Saturated, almost-neon — differentiates from ChatGPT's softer mint.
+        // TASC accent (orange-red) — used deliberately, never as a wash.
         brand: {
-          50:  "#e4fdef",
-          100: "#bef7d5",
-          200: "#86eeb0",
-          300: "#3ddf85",
-          400: "#0fd06a",
-          500: "#06b85d",
-          600: "#069c4f",
-          700: "#057c40",
-          800: "#066132",
-          900: "#08502a",
-        },
-        // TASC deep teal — header chrome, hero backgrounds, sidebar.
-        // The dark band at the top of tasc.ae.
-        teal: {
-          50:  "#e6f3f8",
-          100: "#bedee9",
-          200: "#92c5d8",
-          300: "#5fa7c0",
-          400: "#318ba8",
-          500: "#147093",
-          600: "#0b5b7a",
-          700: "#0b4762",
-          800: "#0a3a52",
-          900: "#08293a",
-          950: "#051923",
-        },
-        // TASC accent yellow — high-visibility CTA bar ("Download Now").
-        gold: {
-          50:  "#fffbe6",
-          100: "#fff3b0",
-          200: "#ffe673",
-          300: "#fcd72b",
-          400: "#e9c014",
-          500: "#c8a30c",
-          600: "#9e7e07",
-          700: "#7a6107",
+          50: "#fef4ef",
+          100: "#fde4d7",
+          200: "#fac6ae",
+          300: "#f5a07c",
+          400: "#ed7547",
+          500: "#d9531e",
+          600: "#bf4117",
+          700: "#9b3414",
+          800: "#7c2c15",
+          900: "#662614",
         },
         // Neutral spine — a single, consistent slate ramp for every surface/line/text.
         ink: {
@@ -71,7 +44,7 @@ export default {
         sm: "0 1px 2px 0 rgb(15 23 42 / 0.05), 0 1px 1px -1px rgb(15 23 42 / 0.04)",
         md: "0 6px 16px -6px rgb(15 23 42 / 0.10), 0 2px 6px -2px rgb(15 23 42 / 0.06)",
         lg: "0 16px 40px -12px rgb(15 23 42 / 0.18)",
-        focus: "0 0 0 3px rgb(19 185 106 / 0.22)",
+        focus: "0 0 0 3px rgb(217 83 30 / 0.18)",
       },
       borderRadius: {
         md: "0.4rem",
@@ -81,12 +54,10 @@ export default {
       keyframes: {
         shimmer: { "100%": { transform: "translateX(100%)" } },
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
-        "slide-in-right": { from: { transform: "translateX(100%)" }, to: { transform: "translateX(0)" } },
       },
       animation: {
         shimmer: "shimmer 1.4s infinite",
         "fade-in": "fade-in 0.18s ease-out",
-        "slide-in-right": "slide-in-right 0.22s ease-out",
       },
     },
   },

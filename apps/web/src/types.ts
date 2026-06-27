@@ -1,4 +1,4 @@
-/** Backend types — mirror the Python TimesheetExtraction + API responses. */
+﻿/** Backend types ΓÇö mirror the Python TimesheetExtraction + API responses. */
 
 export type LeaveCode = "AL" | "SICK" | "UNPAID" | "PUBLIC_HOLIDAY" | "ABSENT" | "PRESENT";
 export type Persona = "client" | "finops" | "finance";
@@ -148,24 +148,6 @@ export interface Invoice {
   client_approval_status?: "pending" | "approved" | "rejected" | null;
   client_approval_reason?: string | null;
   rule_results?: ValidationResult[];
-  // Clawback — void path
-  voided_at?: string | null;
-  voided_by?: string | null;
-  voided_reason_code?: string | null;
-  voided_reason?: string | null;
-  // Clawback — credit-note path
-  credit_note_sequence_no?: string | null;
-  credit_note_issued_at?: string | null;
-  credit_note_issued_by?: string | null;
-  credit_note_reason_code?: string | null;
-  credit_note_reason_text?: string | null;
-  credit_note_article_refs?: string[] | null;
-  credit_note_amount?: number | null;
-  credit_note_disputed_hours?: number | null;
-  adjustment_type?: string | null;
-  // Reissue chain
-  replaces_invoice_id?: string | null;
-  superseded_by_invoice_id?: string | null;
 }
 
 export interface ApiClient {
@@ -219,7 +201,7 @@ export interface EvalCaseResult {
   details: { employee_name: string; matched: boolean; row_ok?: boolean; expected: Record<string, unknown>; actual?: Record<string, unknown> }[];
 }
 
-/* ── Phase 3+ types ────────────────────────────────────────────── */
+/* ΓöÇΓöÇ Phase 3+ types ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 export interface QAResponse {
   answer: string;
@@ -246,7 +228,7 @@ export interface QueryThread {
   thread: QueryThreadMessage[];
 }
 
-/* ── Phase 5 metric/status types ───────────────────────────────── */
+/* ΓöÇΓöÇ Phase 5 metric/status types ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 export interface StpMetric {
   total: number; auto: number; hitl: number; escalate: number;
@@ -284,7 +266,7 @@ export interface StatusResponse {
   };
 }
 
-/* ── Contract / RateCard / SOW for the Contract panel ─────────── */
+/* ΓöÇΓöÇ Contract / RateCard / SOW for the Contract panel ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 export interface RateCard {
   labor_category: string;
@@ -322,7 +304,7 @@ export interface ContractDetail {
   sows: SOW[];
 }
 
-/* ── Dispatch tracking ─────────────────────────────────────────── */
+/* ΓöÇΓöÇ Dispatch tracking ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 export interface DispatchTrackingRow {
   id: string;
@@ -339,7 +321,7 @@ export interface DispatchTrackingRow {
   rule_results_failed: ValidationResult[];
 }
 
-/* ── Finance queue ─────────────────────────────────────────────── */
+/* ΓöÇΓöÇ Finance queue ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
 export interface FinanceQueueRow {
   id: string;
@@ -353,159 +335,4 @@ export interface FinanceQueueRow {
   status: string;
   threshold: number;
   rule_failures: ValidationResult[];
-}
-
-/* ── Phase α/β additions ─────────────────────────────────────── */
-
-export interface Payment {
-  id: string;
-  amount: number;
-  currency: string;
-  method: "bank_transfer" | "wire" | "card" | "cheque" | "ach" | string;
-  reference: string | null;
-  paid_at: string | null;
-  paid_by: string | null;
-  status: "received" | "reconciled" | "disputed" | "refunded";
-  receipt_number: string | null;
-}
-
-export interface StatementPeriod {
-  period: string;
-  invoices: number;
-  billed_excl_vat: number;
-  vat: number;
-  billed_incl_vat: number;
-  paid: number;
-  outstanding: number;
-}
-
-export interface ClientStatement {
-  client_code: string;
-  client_name: string;
-  currency: string;
-  generated_at: string;
-  periods: StatementPeriod[];
-  summary: {
-    invoices: number;
-    total_billed_incl_vat: number;
-    total_paid: number;
-    outstanding: number;
-  };
-}
-
-export interface NotificationRow {
-  id: string;
-  at: string | null;
-  actor: string | null;
-  kind: string;
-  entity_id: string;
-  action: string;
-  summary: string;
-  read: boolean;
-}
-
-export interface ClientUser {
-  email: string;
-  name: string;
-  role: "viewer" | "approver" | "admin";
-}
-
-export interface AuditChainReport {
-  ok: boolean;
-  total: number;
-  errors: {
-    event_id: string;
-    at: string | null;
-    kind: "hash_mismatch" | "prev_mismatch";
-    [k: string]: unknown;
-  }[];
-  head: string | null;
-}
-
-export interface SlaByStatus {
-  count: number;
-  mean_min: number;
-  max_min: number;
-}
-
-export interface SlaMetric {
-  by_status: Record<string, SlaByStatus>;
-  over_sla_count: number;
-  over_sla: { id: string; status: string; age_min: number; limit_min: number }[];
-  checked_at: string;
-}
-
-/* ── Touchless auto-dispatch + Clawback ──────────────────────────────── */
-
-export interface StpBreakdown {
-  auto_dispatched: number;
-  hitl_dispatched: number;
-  finance_dispatched: number;
-  total_dispatched: number;
-}
-
-// /metrics/stp extends with this — keep the original fields for compat
-export interface StpMetricFull extends StpMetric {
-  dispatched_breakdown?: StpBreakdown;
-}
-
-export type ClawbackReasonCode =
-  | "PRICING_ERROR" | "GOODS_RETURNED" | "DISCOUNT" | "DUPLICATE" | "OTHER";
-
-export type AdjustmentType =
-  | "CREDIT_TO_CLIENT"
-  | "DEDUCT_FROM_NEXT_INVOICE"
-  | "DEDUCT_FROM_PAYROLL"
-  | "INTERNAL_WRITE_OFF"
-  | "MANUAL_REVIEW";
-
-export type ClawbackAction =
-  | "void"
-  | "credit_note"
-  | "credit_note_with_refund_pending";
-
-export interface ClawbackEligibility {
-  current_state: string;
-  amount_aed?: number;
-  currency?: string;
-  action_when_clawed_back: ClawbackAction | null;
-  reason?: string;
-  dispatched_at?: string;
-  days_since_dispatch?: number;
-  fta_14_day_deadline?: string;
-  days_remaining?: number;
-  urgency?: "normal" | "warning" | "urgent";
-  explanation?: string;
-  valid_reason_codes?: ClawbackReasonCode[];
-  valid_adjustment_types?: AdjustmentType[];
-  adjustment_type_labels?: Record<AdjustmentType, string>;
-}
-
-export interface ClawbackRequest {
-  by_user?: string;
-  reason_code: ClawbackReasonCode;
-  reason_text?: string;
-  partial_amount?: number;
-  disputed_hours?: number;
-  adjustment_type?: AdjustmentType;
-}
-
-export interface ClawbackResponse {
-  action_taken: ClawbackAction | "already_settled" | "already_credit_noted";
-  status: string;
-  invoice_id: string;
-  voided_at?: string;
-  credit_note_sequence_no?: string;
-  credit_note_issued_at?: string;
-  article_refs?: string[];
-  source_timesheet_id?: string;
-  auto_query_id?: string;
-  refund_required?: boolean;
-  is_partial?: boolean;
-  credit_note_amount?: number;
-  invoice_amount?: number;
-  disputed_hours?: number;
-  adjustment_type?: AdjustmentType;
-  adjustment_friendly?: string;
-  reason?: string;
 }

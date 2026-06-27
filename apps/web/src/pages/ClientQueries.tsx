@@ -1,128 +1,87 @@
-import { useState, useMemo } from "react";
-import { useQuery, useQueries } from "@tanstack/react-query";
-import { MessageSquare, Building2, Clock } from "lucide-react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { MessageSquare, Send } from "lucide-react";
 import { api } from "../api";
-import { PageHeader, EmptyState, Badge } from "../ui";
-import type { QueryThread } from "../types";
+import { cn, fmtAge } from "../lib";
+import { PageHeader, Panel, Badge, EmptyState, Spinner } from "../ui";
 
 export function ClientQueries() {
+  const qc = useQueryClient();
   const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
-  const codes = useMemo(() => (clients ?? []).map((c) => c.code), [clients]);
+  const [client, setClient] = useState<string>("");
+  const code = client || clients?.[0]?.code || "";
 
-  const queryResults = useQueries({
-    queries: codes.map((code) => ({
-      queryKey: ["queries", code],
-      queryFn: () => api.listQueries(code),
-      refetchInterval: 5_000,
-    })),
+  const { data: threads, isLoading } = useQuery({
+    queryKey: ["queries", code], queryFn: () => api.listQueries(code), enabled: !!code, refetchInterval: 5_000,
   });
 
-  const all: { client: string; thread: QueryThread }[] = useMemo(() => {
-    const rows: { client: string; thread: QueryThread }[] = [];
-    queryResults.forEach((r, i) => {
-      if (r.data) r.data.forEach((q) => rows.push({ client: codes[i], thread: q }));
-    });
-    rows.sort((a, b) => (b.thread.raised_at ?? "").localeCompare(a.thread.raised_at ?? ""));
-    return rows;
-  }, [queryResults, codes]);
-
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = useMemo(
-    () => all.find((r) => r.thread.id === selectedId) ?? all[0] ?? null,
-    [all, selectedId],
-  );
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const raise = useMutation({
+    mutationFn: () => api.raiseQuery(code, { subject, body, raised_by: "client" }),
+    onSuccess: () => { setSubject(""); setBody(""); qc.invalidateQueries({ queryKey: ["queries", code] }); },
+  });
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        icon={MessageSquare}
-        title="Your queries"
-        description="Conversations with TASC's FinOps team about specific invoices."
-      />
+    <div>
+      <PageHeader icon={MessageSquare} title="Queries" description="Raise a billing question for FinOps and track the conversation."
+        actions={
+          <select className="select w-auto" value={code} onChange={(e) => setClient(e.target.value)}>
+            {clients?.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
+          </select>
+        } />
 
-      {all.length === 0 ? (
-        <div className="card">
-          <EmptyState
-            icon={MessageSquare}
-            title="No queries yet"
-            hint="Open Invoices and use 'Raise query' on any invoice to start a thread."
-          />
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4">
+        <div className="space-y-3">
+          {isLoading && <div className="text-ink-500 text-sm flex items-center gap-2"><Spinner /> Loading…</div>}
+          {!isLoading && (!threads || threads.length === 0) && <Panel><EmptyState icon={MessageSquare} title="No queries yet" hint="Raise one on the right." /></Panel>}
+          {threads?.map((q) => <Thread key={q.id} q={q} code={code} />)}
         </div>
-      ) : (
-        <div className="grid lg:grid-cols-[280px_1fr] gap-4">
-          {/* List */}
-          <div className="card-flush overflow-hidden">
-            <ul className="divide-y divide-ink-100">
-              {all.map(({ client, thread }) => {
-                const active = selected?.thread.id === thread.id;
-                return (
-                  <li key={thread.id}>
-                    <button
-                      onClick={() => setSelectedId(thread.id)}
-                      className={`w-full text-left px-3 py-3 transition-colors ${active ? "bg-brand-50" : "hover:bg-ink-50"}`}
-                    >
-                      <div className="flex items-center gap-1.5 text-2xs text-ink-500 mb-0.5">
-                        <Building2 size={11} /> {client}
-                        <span className="ml-auto">
-                          <ThreadStatus status={thread.status} />
-                        </span>
-                      </div>
-                      <p className="text-sm font-medium text-ink-900 truncate">{thread.subject}</p>
-                      {thread.raised_at && (
-                        <p className="text-2xs text-ink-400 mt-0.5">
-                          <Clock size={9} className="inline" /> {thread.raised_at.slice(0, 16).replace("T", " ")}
-                        </p>
-                      )}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+
+        <Panel title="Raise a query">
+          <label className="field-label">Subject</label>
+          <input className="input mb-3" value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="e.g. Overtime on invoice #…" />
+          <label className="field-label">Details</label>
+          <textarea className="textarea h-28" value={body} onChange={(e) => setBody(e.target.value)} placeholder="Describe the question…" />
+          <div className="flex justify-end mt-3">
+            <button className="btn-primary btn-sm" disabled={!subject || raise.isPending} onClick={() => raise.mutate()}>
+              {raise.isPending ? <Spinner /> : <Send size={14} />} Submit
+            </button>
           </div>
-
-          {/* Detail */}
-          {selected && <ThreadView client={selected.client} thread={selected.thread} />}
-        </div>
-      )}
+        </Panel>
+      </div>
     </div>
   );
 }
 
-function ThreadStatus({ status }: { status: QueryThread["status"] }) {
-  if (status === "open") return <Badge tone="amber">Open</Badge>;
-  if (status === "answered") return <Badge tone="blue">Answered</Badge>;
-  return <Badge tone="green">Closed</Badge>;
+function Thread({ q, code }: { q: import("../types").QueryThread; code: string }) {
+  const qc = useQueryClient();
+  const [reply, setReply] = useState("");
+  const send = useMutation({
+    mutationFn: () => api.replyToQuery(q.id, { body: reply, by_user: "client" }),
+    onSuccess: () => { setReply(""); qc.invalidateQueries({ queryKey: ["queries", code] }); },
+  });
+  const tone = q.status === "closed" ? "slate" : q.status === "answered" ? "green" : "amber";
+  return (
+    <Panel title={q.subject} subtitle={`Raised ${fmtAge(q.raised_at)} ago`} actions={<Badge tone={tone}>{q.status}</Badge>}>
+      <div className="space-y-2">
+        {q.body && <Bubble role="client" by={q.raised_by ?? "client"} body={q.body} />}
+        {q.thread.map((m, i) => <Bubble key={i} role={m.role} by={m.by} body={m.body} />)}
+      </div>
+      <div className="flex items-center gap-2 mt-3">
+        <input className="input" value={reply} onChange={(e) => setReply(e.target.value)} placeholder="Reply…" onKeyDown={(e) => e.key === "Enter" && reply && send.mutate()} />
+        <button className="btn-outline btn-sm" disabled={!reply || send.isPending} onClick={() => send.mutate()}><Send size={14} /></button>
+      </div>
+    </Panel>
+  );
 }
 
-function ThreadView({ client, thread }: { client: string; thread: QueryThread }) {
+function Bubble({ role, by, body }: { role: string; by: string; body: string }) {
+  const mine = role === "client";
   return (
-    <div className="card overflow-hidden flex flex-col">
-      <header className="px-5 py-4 border-b border-ink-200 bg-ink-50/40">
-        <div className="flex items-center gap-2 text-2xs text-ink-500 mb-1">
-          <Building2 size={12} /> {client}
-          {thread.invoice_id && <span className="text-2xs">· invoice {thread.invoice_id.slice(0, 8)}</span>}
-        </div>
-        <h2 className="text-base font-semibold text-ink-900">{thread.subject}</h2>
-      </header>
-      <div className="flex-1 px-5 py-4 space-y-3 max-h-[60vh] overflow-y-auto">
-        {(thread.thread ?? []).map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "client" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[80%] rounded-lg px-3 py-2 ${
-              msg.role === "client"
-                ? "bg-brand-50 border border-brand-100 text-ink-900"
-                : "bg-teal-50 border border-teal-100 text-ink-900"
-            }`}>
-              <p className="text-2xs font-medium opacity-70 mb-0.5">
-                {msg.role === "client" ? `${msg.by} (you)` : `${msg.by} · TASC FinOps`}
-                <span className="ml-1.5 opacity-70">· {msg.at.slice(11, 16)}</span>
-              </p>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.body || <em className="text-ink-400">(empty)</em>}</p>
-            </div>
-          </div>
-        ))}
-        {thread.status === "open" && (
-          <p className="text-2xs text-ink-400 text-center pt-2">FinOps will reply here.</p>
-        )}
+    <div className={cn("flex", mine ? "justify-end" : "justify-start")}>
+      <div className={cn("max-w-[80%] rounded-lg px-3 py-2 text-sm", mine ? "bg-brand-50 text-ink-800 rounded-br-sm" : "bg-ink-100 text-ink-700 rounded-bl-sm")}>
+        <div className="text-2xs text-ink-400 mb-0.5">{by} · {role}</div>{body}
       </div>
     </div>
   );
