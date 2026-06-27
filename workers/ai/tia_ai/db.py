@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from .config import DATABASE_URL
@@ -16,8 +16,32 @@ engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
 
 
+def _ensure_columns() -> None:
+    """Add ORM columns that are missing from already-existing tables.
+
+    `create_all` creates brand-new tables but never ALTERs an existing one, so once a
+    table has rows in prod, adding a model column silently diverges the DB until this
+    runs. We introspect each mapped table and add any missing column as NULLable
+    (existing rows get NULL; new inserts use the ORM default). Portable across SQLite
+    and Postgres; indexes/FKs are intentionally not back-filled (correctness over
+    optimisation — `create_all` covers them on a fresh DB).
+    """
+    insp = inspect(engine)
+    for table in Base.metadata.sorted_tables:
+        if not insp.has_table(table.name):
+            continue  # create_all handles new tables in full
+        existing = {c["name"] for c in insp.get_columns(table.name)}
+        for col in table.columns:
+            if col.name in existing:
+                continue
+            ddl_type = col.type.compile(dialect=engine.dialect)
+            with engine.begin() as conn:
+                conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl_type}'))
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    _ensure_columns()
 
 
 @contextmanager
