@@ -35,6 +35,11 @@ SIGNED_RE = re.compile(
 DAYS_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:days?|d)\b", re.IGNORECASE)
 OT_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:ot|o/t|overtime)\b", re.IGNORECASE)
 LEAVE_RE = re.compile(r"(?:leave|on)\s*[:\-]?\s*([A-Za-z/][A-Za-z/ ]*)", re.IGNORECASE)
+# bare leave tokens at line end (markdown shape: "Ahmed Khan 20 days AL")
+BARE_LEAVE_RE = re.compile(
+    r"\b(AL|A/L|A-L|SL|S/L|SICK|UNPAID|LWP|PH|ABSENT|PRESENT|ANNUAL|HOLIDAY)\b",
+    re.IGNORECASE,
+)
 REIMB_RE = re.compile(
     r"(?:reimbursement|reimburse|claim|expense)[^0-9]*?(?:AED\s*)?([0-9][0-9,]*\.?\d*)"
     r"(?:\s*for\s*([A-Za-z][A-Za-z ]+))?",
@@ -141,6 +146,11 @@ def extract_email(text: str) -> TimesheetExtraction:
         seen.add(key)
 
         leave_codes = canon_leaves(re.split(r"[,/ ]+", lv.group(1))) if lv else []
+        if not leave_codes:
+            # fall back to bare leave tokens scanned across the whole line
+            bare = BARE_LEAVE_RE.findall(line)
+            if bare:
+                leave_codes = canon_leaves(bare)
         reimb: list[Reimbursement] = []
         for amt, reason in reimb_hits:
             val = _clean_num(amt)
