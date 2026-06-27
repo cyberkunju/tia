@@ -314,6 +314,7 @@ def intake_email(
     ts = process_doc(s, doc)
     # cc_silent: if processed cleanly, no reply; if any exception, draft a reply
     reply_drafted = False
+    reply_sent = False
     if mode == "cc_silent" and ts.routing in ("hitl", "escalate"):
         reply_path = _draft_cc_silent_reply(payload, ts, s)
         log_event(
@@ -325,6 +326,40 @@ def intake_email(
             {"path": str(reply_path), "routing": ts.routing, "reason": ts.hitl_reason},
         )
         reply_drafted = True
+        # Close the loop: send via Zoho SMTP when configured.
+        try:
+            from ..mailbox.sender import send_reply_via_zoho, smtp_configured
+
+            if smtp_configured():
+                res = send_reply_via_zoho(reply_path)
+                if res.get("sent"):
+                    reply_sent = True
+                    log_event(
+                        s,
+                        "zoho-smtp",
+                        "doc",
+                        doc.id,
+                        "email.cc_silent_reply_sent",
+                        {"path": str(reply_path), "to": res.get("to"), "from": res.get("from")},
+                    )
+                else:
+                    log_event(
+                        s,
+                        "zoho-smtp",
+                        "doc",
+                        doc.id,
+                        "email.cc_silent_reply_send_failed",
+                        {"reason": res.get("reason")},
+                    )
+        except Exception as e:  # noqa: BLE001
+            log_event(
+                s,
+                "zoho-smtp",
+                "doc",
+                doc.id,
+                "email.cc_silent_reply_send_failed",
+                {"reason": str(e)[:200]},
+            )
     return {
         "doc_id": doc.id,
         "timesheet_id": ts.id,
@@ -333,6 +368,7 @@ def intake_email(
         "confidence": ts.confidence_calibrated,
         "intake_mode": mode,
         "reply_drafted": reply_drafted,
+        "reply_sent": reply_sent,
     }
 
 
@@ -1717,6 +1753,13 @@ def system_status(s: Session = Depends(db_session)) -> dict:
     out["openai"] = "configured" if os.getenv("OPENAI_API_KEY") else "missing_key"
     # modal-ocr
     out["modal_ocr"] = "configured" if os.getenv("GLM_OCR_API_KEY") else "missing_key"
+    # zoho mailbox
+    out["zoho_mail"] = (
+        "configured"
+        if (os.getenv("ZOHO_IMAP_USER") and os.getenv("ZOHO_IMAP_PASSWORD"))
+        else "missing_creds"
+    )
+    out["zoho_mail_address"] = os.getenv("ZOHO_IMAP_USER") or None
     # rust-dispatch (best-effort, swallows errors so /status is never down)
     rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
     if rust_url:

@@ -31,16 +31,37 @@ STAGING_DIR = Path(os.getenv("TIA_STAGING_DIR", REPO_ROOT / "staging"))
 # sqlite default; set e.g. postgresql+psycopg://tia:tia@localhost:5432/tia
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{REPO_ROOT / 'tia.db'}")
 
-# GLM-OCR — OpenAI-compatible vision endpoint (handwriting/PDF). See CONTRACTS.md §1.
-# BASE_URL may be given with or without a trailing /v1; the client normalises it.
-GLM_OCR_BASE_URL = os.getenv("GLM_OCR_BASE_URL", "https://versifine--glm-ocr-serve.modal.run")
+# GLM-OCR — OpenAI-compatible vision endpoint (handwriting/PDF).
+# Default: edneam's self-hosted vLLM. Swap to ANY OpenAI-compatible endpoint
+# via env vars — no code change. Proves the "no vendor lock" architecture.
+GLM_OCR_BASE_URL = os.getenv("GLM_OCR_BASE_URL", "https://ocr.cyberkunju.com/v1")
 GLM_OCR_API_KEY = os.getenv("GLM_OCR_API_KEY", "")
-GLM_OCR_MODEL = os.getenv("GLM_OCR_MODEL", "glm-ocr")
+GLM_OCR_MODEL = os.getenv("GLM_OCR_MODEL", "glm-ocr:q8_0")
 
 # Chat agent — OpenAI-compatible. Swap to a local model for demo by overriding
 # OPENAI_BASE_URL (e.g. a Modal-served vLLM) + OPENAI_MODEL (e.g. "qwen2.5-7b").
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_BASE_URL = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+
+# ─── Zoho Mail (tia@cyberkunju.com) — real-email ingestion + reply send ───
+#
+# IMAP: TIA polls the Zoho inbox for unseen messages and ingests each one
+#       through the same `/intake/email` pipeline. Marks as seen on success.
+# SMTP: When set, the cc_silent reply drafter additionally SENDS the .eml
+#       through Zoho — closing the loop end-to-end.
+#
+# Set ZOHO_IMAP_USER + ZOHO_IMAP_PASSWORD (App Password if 2FA on) in .env
+# to enable. Leave empty in dev to keep the poller idle.
+ZOHO_IMAP_HOST = os.getenv("ZOHO_IMAP_HOST", "imap.zoho.com")
+ZOHO_IMAP_PORT = int(os.getenv("ZOHO_IMAP_PORT", "993"))
+ZOHO_IMAP_USER = os.getenv("ZOHO_IMAP_USER", "")
+ZOHO_IMAP_PASSWORD = os.getenv("ZOHO_IMAP_PASSWORD", "")
+ZOHO_IMAP_FOLDER = os.getenv("ZOHO_IMAP_FOLDER", "INBOX")
+ZOHO_POLL_INTERVAL_SEC = int(os.getenv("ZOHO_POLL_INTERVAL_SEC", "30"))
+
+ZOHO_SMTP_HOST = os.getenv("ZOHO_SMTP_HOST", "smtp.zoho.com")
+ZOHO_SMTP_PORT = int(os.getenv("ZOHO_SMTP_PORT", "465"))
+ZOHO_SMTP_USE_SSL = os.getenv("ZOHO_SMTP_USE_SSL", "1").lower() in ("1", "true", "yes")
 
 STAGING_DIR.mkdir(parents=True, exist_ok=True)
