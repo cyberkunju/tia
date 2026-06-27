@@ -22,6 +22,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ..config import OPENAI_API_KEY, OPENAI_BASE_URL, OPENAI_MODEL
+from ..ai.llm import is_reasoning_model
 from ..models import (
     Client,
     Contract,
@@ -447,13 +448,18 @@ def answer(
 
     tool_calls_log: list[dict] = []
 
+    model = OPENAI_MODEL or "gpt-4o-mini"
+    # GPT-5 / o-series reasoning models reject a custom temperature (only the
+    # default is allowed). Omit it for those; keep it deterministic elsewhere.
+    create_kwargs: dict = {"tools": TOOLS, "tool_choice": "auto"}
+    if not is_reasoning_model(model):
+        create_kwargs["temperature"] = 0.1
+
     for _ in range(max_steps):
         resp = client.chat.completions.create(
-            model=OPENAI_MODEL or "gpt-4o-mini",
+            model=model,
             messages=messages,
-            tools=TOOLS,
-            tool_choice="auto",
-            temperature=0.1,
+            **create_kwargs,
         )
         msg = resp.choices[0].message
         if msg.tool_calls:
@@ -509,7 +515,7 @@ def answer(
             "answer": msg.content or "",
             "citations": _extract_citations(msg.content or ""),
             "tool_calls": tool_calls_log,
-            "model": OPENAI_MODEL or "gpt-4o-mini",
+            "model": model,
         }
 
     return {
