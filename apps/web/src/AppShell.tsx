@@ -9,6 +9,7 @@ import { Logo } from "./components/Logo";
 import { CommandPalette } from "./components/CommandPalette";
 import { Assistant } from "./components/Assistant";
 import { SystemStatusFooter } from "./components/SystemStatusFooter";
+import { Select } from "./components/Select";
 
 const PERSONA_HOME: Record<Persona, string> = { finops: "/console", client: "/portal", finance: "/finance" };
 const PERSONAS: { id: Persona; label: string }[] = [
@@ -26,19 +27,16 @@ function ActingAsPicker() {
   const { currentClientCode, setCurrentClientCode } = usePersona();
   const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
   return (
-    <select
+    <Select
+      variant="band"
+      className="hidden sm:inline-block"
       value={currentClientCode ?? ""}
-      onChange={(e) => setCurrentClientCode(e.target.value || null)}
+      onChange={(v) => setCurrentClientCode(v || null)}
+      options={(clients ?? []).map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+      placeholder={clients ? "Select client" : "Loading…"}
+      ariaLabel="Client this portal is acting on behalf of"
       title="Client this portal is acting on behalf of"
-      className="hidden sm:inline-flex h-8 rounded-lg border border-white/20 bg-white/10 text-white text-[11px] font-medium px-2.5 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
-    >
-      {!clients && <option value="">Loading…</option>}
-      {clients?.map((c) => (
-        <option key={c.code} value={c.code} className="text-ink-900">
-          {c.code} · {c.name}
-        </option>
-      ))}
-    </select>
+    />
   );
 }
 

@@ -6,6 +6,7 @@ import { Send, Check } from "lucide-react";
 import { api } from "../api";
 import { cn, fmtMoney } from "../lib";
 import { PageHeader, Panel, StatusBadge, EmptyState, Spinner } from "../ui";
+import { Select } from "../components/Select";
 
 const RULES = [
   { id: "alphabetical", label: "Alphabetical by employee" },
@@ -69,9 +70,14 @@ export function FinOpsDispatch() {
         title="Dispatch"
         description="Per-client ordering rule and dispatch queue."
         actions={
-          <select value={active} onChange={(e) => nav(`/console/dispatch/${e.target.value}`)} className="select w-auto">
-            {clients?.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
-          </select>
+          <Select
+            className="w-auto min-w-[220px]"
+            value={active ?? ""}
+            onChange={(v) => nav(`/console/dispatch/${v}`)}
+            options={(clients ?? []).map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+            align="right"
+            ariaLabel="Select client"
+          />
         }
       />
 

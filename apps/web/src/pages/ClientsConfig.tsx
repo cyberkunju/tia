@@ -5,6 +5,7 @@ import { Building2, Check, Plus, X } from "lucide-react";
 import { api } from "../api";
 import { cn, TASC_ENTITY } from "../lib";
 import { PageHeader, Panel, Badge, Spinner, EmptyState } from "../ui";
+import { Select } from "../components/Select";
 
 const DISPATCH_RULES = [
   { id: "alphabetical", label: "Alphabetical by associate" },
@@ -83,8 +84,8 @@ export function ClientsConfig() {
 
             <Panel title="Processing parameters" actions={<button className="btn-primary btn-sm" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? <Spinner /> : <Check size={14} />} Save</button>}>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><label className="field-label">Dispatch rule</label><select className="select" value={rule} onChange={(e) => setRule(e.target.value)}>{DISPATCH_RULES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}</select></div>
-                <div><label className="field-label">Validation profile</label><select className="select" value={profile} onChange={(e) => setProfile(e.target.value)}>{PROFILES.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
+                <div><label className="field-label">Dispatch rule</label><Select value={rule} onChange={setRule} options={DISPATCH_RULES.map((r) => ({ value: r.id, label: r.label }))} ariaLabel="Dispatch rule" /></div>
+                <div><label className="field-label">Validation profile</label><Select value={profile} onChange={setProfile} options={PROFILES.map((p) => ({ value: p, label: p }))} ariaLabel="Validation profile" /></div>
                 <div><label className="field-label">Management markup (%)</label><input className="input tnum" type="number" step="0.01" value={markup} onChange={(e) => setMarkup(parseFloat(e.target.value))} /></div>
                 <div><label className="field-label">Finance approval threshold (AED)</label><input className="input tnum" type="number" step="1000" value={threshold} onChange={(e) => setThreshold(parseFloat(e.target.value))} /></div>
               </div>

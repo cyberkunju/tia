@@ -4,6 +4,7 @@ import { MessageSquare, Send } from "lucide-react";
 import { api } from "../api";
 import { cn, fmtAge } from "../lib";
 import { PageHeader, Panel, Badge, EmptyState, Spinner } from "../ui";
+import { Select } from "../components/Select";
 import { usePersona } from "../store";
 
 export function ClientQueries() {
@@ -30,9 +31,14 @@ export function ClientQueries() {
     <div>
       <PageHeader icon={MessageSquare} title="Queries" description="Raise a billing question for FinOps and track the conversation."
         actions={
-          <select className="select w-auto" value={code} onChange={(e) => setOverride(e.target.value)}>
-            {clients?.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
-          </select>
+          <Select
+            className="w-auto min-w-[220px]"
+            value={code}
+            onChange={(v) => setOverride(v)}
+            options={(clients ?? []).map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+            align="right"
+            ariaLabel="Select client"
+          />
         } />
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4">
