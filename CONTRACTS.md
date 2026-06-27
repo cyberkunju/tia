@@ -34,7 +34,7 @@ Same shape, prompt = `prompt_layout_all_en`. Returns
 `[{ "bbox": [x1,y1,x2,y2], "category": "Text|Table|Picture|...", "text": "..." }, ...]`
 in resized-image coords. Used by the reconciler to anchor KIE fields to a source bbox.
 
-**Fallback chain (worker side):** GLM-OCR → (optional) dots.ocr layout ensemble → Tesseract+regex (offline).
+**Fallback chain (worker side):** GLM-OCR markdown → GLM-OCR KIE (schema-constrained JSON). GLM-OCR is the sole OCR; no Tesseract.
 
 ---
 

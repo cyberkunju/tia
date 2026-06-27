@@ -1,7 +1,10 @@
-"""OCR client: GLM-OCR (primary, via Modal) with a Tesseract offline fallback.
+"""OCR client: GLM-OCR on Modal (OpenAI-compatible vLLM endpoint).
 
-Teammate owns the Modal serving; this is the client + the brief-required fallback +
-the JSON parsing into our canonical schema.
+GLM-OCR is the sole OCR. Two prompt modes:
+  - markdown: faithful page-to-markdown (best for our handwritten/printed timesheets)
+  - kie: image + JSON schema → filled JSON (fallback when markdown is too unstructured)
+
+Teammate owns the Modal serving.
 """
 
 from __future__ import annotations
@@ -12,8 +15,10 @@ import re
 
 import httpx
 
-from ..config import GLM_OCR_BASE_URL
+from ..config import GLM_OCR_API_KEY, GLM_OCR_BASE_URL
 from ..schema import TimesheetExtraction
+
+MARKDOWN_PROMPT = "Convert this document to Markdown. Transcribe handwriting faithfully. Preserve structure (tables as Markdown tables, lists as lists). Do not add commentary."
 
 KIE_PROMPT = """You are extracting a staffing timesheet. Read the document image and
 return ONLY a JSON object matching exactly this schema (no prose, no code fences):
@@ -34,6 +39,13 @@ Transcribe handwriting faithfully. Do not invent values; use null when unsure.""
 LAYOUT_PROMPT = "prompt_layout_all_en"
 
 
+def _headers() -> dict[str, str]:
+    h = {"Content-Type": "application/json"}
+    if GLM_OCR_API_KEY:
+        h["Authorization"] = f"Bearer {GLM_OCR_API_KEY}"
+    return h
+
+
 def _b64_data_url(image_bytes: bytes, mime: str = "image/png") -> str:
     return f"data:{mime};base64,{base64.b64encode(image_bytes).decode()}"
 
@@ -46,9 +58,7 @@ def _strip_json(text: str) -> str:
     return m.group(0) if m else text
 
 
-def glm_kie(
-    image_bytes: bytes, mime: str = "image/png", timeout: float = 90.0
-) -> TimesheetExtraction:
+def _call(image_bytes: bytes, prompt: str, mime: str = "image/png", timeout: float = 180.0) -> str:
     payload = {
         "model": "glm-ocr",
         "messages": [
@@ -56,48 +66,40 @@ def glm_kie(
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": _b64_data_url(image_bytes, mime)}},
-                    {"type": "text", "text": KIE_PROMPT},
+                    {"type": "text", "text": prompt},
                 ],
             }
         ],
         "temperature": 0.0,
     }
-    r = httpx.post(f"{GLM_OCR_BASE_URL}/v1/chat/completions", json=payload, timeout=timeout)
+    r = httpx.post(
+        f"{GLM_OCR_BASE_URL}/v1/chat/completions",
+        json=payload,
+        headers=_headers(),
+        timeout=timeout,
+    )
     r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"]
+    return r.json()["choices"][0]["message"]["content"]
+
+
+def glm_markdown(image_bytes: bytes, mime: str = "image/png", timeout: float = 180.0) -> str:
+    """Primary path: page → markdown. Robust and reusable."""
+    return _call(image_bytes, MARKDOWN_PROMPT, mime=mime, timeout=timeout)
+
+
+def glm_kie(
+    image_bytes: bytes, mime: str = "image/png", timeout: float = 180.0
+) -> TimesheetExtraction:
+    """Schema-constrained JSON path. Used only if markdown parsing yields no rows."""
+    content = _call(image_bytes, KIE_PROMPT, mime=mime, timeout=timeout)
     data = json.loads(_strip_json(content))
     return TimesheetExtraction.model_validate(data)
 
 
-def glm_layout(image_bytes: bytes, mime: str = "image/png", timeout: float = 90.0) -> list[dict]:
-    """Return [{bbox,category,text}] for provenance anchoring."""
-    payload = {
-        "model": "glm-ocr",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": _b64_data_url(image_bytes, mime)}},
-                    {"type": "text", "text": LAYOUT_PROMPT},
-                ],
-            }
-        ],
-        "temperature": 0.0,
-    }
-    r = httpx.post(f"{GLM_OCR_BASE_URL}/v1/chat/completions", json=payload, timeout=timeout)
-    r.raise_for_status()
-    content = r.json()["choices"][0]["message"]["content"]
+def glm_layout(image_bytes: bytes, mime: str = "image/png", timeout: float = 180.0) -> list[dict]:
+    """[{bbox,category,text}] for provenance anchoring."""
+    content = _call(image_bytes, LAYOUT_PROMPT, mime=mime, timeout=timeout)
     try:
         return json.loads(_strip_json(content))
     except (json.JSONDecodeError, ValueError):
         return []
-
-
-def tesseract_text(image_bytes: bytes) -> str:
-    """Offline fallback (brief-required). Returns raw OCR text."""
-    import io
-
-    import pytesseract
-    from PIL import Image
-
-    return pytesseract.image_to_string(Image.open(io.BytesIO(image_bytes)))

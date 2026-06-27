@@ -28,8 +28,8 @@ is the other twelve.
 | Hot storage | Local NVMe staging dir |
 | Durable storage | SeaweedFS (S3 API + Filer) |
 | Vector retrieval | Qdrant |
-| AI / doc workers | Python 3.12 · uv · Pydantic v2 · OpenCV · openpyxl · pdfplumber · Tesseract · imagehash |
-| OCR serving | vLLM · GLM-OCR (primary) · dots.ocr (layout ensemble) · Tesseract (offline fallback) · Modal GPU |
+| AI / doc workers | Python 3.12 · uv · Pydantic v2 · OpenCV · openpyxl · pdfplumber · imagehash |
+| OCR serving | vLLM · GLM-OCR on Modal (sole OCR; OpenAI-compatible) · markdown + KIE prompt modes |
 | Matching | pg_trgm retrieval · phonetic · rapidfuzz-style sim · Hungarian assignment (visible cost matrix) |
 | Validation | Rust · decimal money math · deterministic rules · threshold approval · OOO delegate routing |
 | Invoice | Rust · Typst · sandboxed render dir · PDF in SeaweedFS |

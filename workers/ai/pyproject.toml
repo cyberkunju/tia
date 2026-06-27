@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-ocr = ["opencv-python-headless>=4.10", "pytesseract>=0.3.10"]
+ocr = ["opencv-python-headless>=4.10"]
 dev = ["pytest>=8.2", "ruff>=0.5"]
 
 [build-system]

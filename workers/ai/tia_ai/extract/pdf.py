@@ -1,4 +1,4 @@
-"""Native-PDF extractor — pdfplumber text/tables, no LLM. Scanned PDFs route to vision."""
+"""Native-PDF extractor — pdfplumber text/tables; scanned PDFs route to GLM-OCR via vision."""
 
 from __future__ import annotations
 
@@ -22,12 +22,11 @@ def extract_pdf(path: str | Path) -> TimesheetExtraction:
         # has a real text layer -> parse like an email body / structured text
         return email_ex.extract_email(text)
 
-    # no text layer -> scanned/handwritten; rasterize page 1 to image and use vision
+    # no text layer -> scanned/handwritten; rasterize page 1 and route to vision/GLM-OCR
     try:
         import io
 
         import pdfplumber as _pp
-        from PIL import Image  # noqa: F401
 
         from . import vision as vision_ex
 
