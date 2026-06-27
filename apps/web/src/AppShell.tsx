@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useNavigate } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RotateCw, Search } from "lucide-react";
 import { usePersona, type Persona } from "./store";
+import { api } from "./api";
 import { cn } from "./lib";
 import { Logo } from "./components/Logo";
 import { CommandPalette } from "./components/CommandPalette";
 import { Assistant } from "./components/Assistant";
+import { SystemStatusFooter } from "./components/SystemStatusFooter";
 
 const PERSONA_HOME: Record<Persona, string> = { finops: "/console", client: "/portal", finance: "/finance" };
 const PERSONAS: { id: Persona; label: string }[] = [
@@ -13,6 +16,59 @@ const PERSONAS: { id: Persona; label: string }[] = [
   { id: "client", label: "Client" },
   { id: "finance", label: "Finance" },
 ];
+
+/**
+ * Acting-as Client picker — only visible when the active persona is "client".
+ * Picks the client identity the Portal pages scope to. Defaults to CL001 the
+ * first time someone switches into the Client persona (handled in store.ts).
+ */
+function ActingAsPicker() {
+  const { currentClientCode, setCurrentClientCode } = usePersona();
+  const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
+  return (
+    <select
+      value={currentClientCode ?? ""}
+      onChange={(e) => setCurrentClientCode(e.target.value || null)}
+      title="Client this portal is acting on behalf of"
+      className="hidden sm:inline-flex h-8 rounded-lg border border-white/20 bg-white/10 text-white text-[11px] font-medium px-2.5 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/30"
+    >
+      {!clients && <option value="">Loading…</option>}
+      {clients?.map((c) => (
+        <option key={c.code} value={c.code} className="text-ink-900">
+          {c.code} · {c.name}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+/**
+ * Stage helper — only renders when the URL has `?demo=1`. Wipes demo data via
+ * the existing /admin/demo-reset endpoint so the same browser can replay the
+ * click-through without leaving the page.
+ */
+function DemoResetButton() {
+  const loc = useLocation();
+  const qc = useQueryClient();
+  const visible = new URLSearchParams(loc.search).has("demo");
+  const reset = useMutation({ mutationFn: api.demoReset, onSuccess: () => qc.invalidateQueries() });
+  if (!visible) return null;
+  return (
+    <button
+      onClick={() => {
+        if (window.confirm("Reset demo data? This wipes documents, timesheets, invoices, and events.")) {
+          reset.mutate();
+        }
+      }}
+      disabled={reset.isPending}
+      className="hidden md:inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60"
+      title="Wipe demo data (only visible with ?demo=1)"
+    >
+      <RotateCw size={11} className={reset.isPending ? "animate-spin" : ""} />
+      {reset.isPending ? "Resetting…" : "Reset demo"}
+    </button>
+  );
+}
 
 export function AppShell() {
   const { persona, setPersona } = usePersona();
@@ -55,6 +111,16 @@ export function AppShell() {
               <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1 rounded border border-white/25 bg-white/10 text-[10px] font-medium text-white/80">K</kbd>
             </span>
           </button>
+
+          {/* Acting-as Client identity — only relevant for the Client persona. */}
+          {persona === "client" && <ActingAsPicker />}
+
+          {/* Six-dot system heartbeat — judges spot misconfig on stage at a glance. */}
+          <div className="hidden lg:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-white/20 bg-white/10 shrink-0" title="External services (api · db · openai · ocr · mail · dispatch)">
+            <SystemStatusFooter compact />
+          </div>
+
+          <DemoResetButton />
 
           <div className="flex p-0.5 rounded-lg bg-white/10 border border-white/15 shrink-0 ml-auto sm:ml-0">
             {PERSONAS.map((p) => (

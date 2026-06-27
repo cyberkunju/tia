@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { Upload, FileText, ArrowRight, CheckCircle2 } from "lucide-react";
 import { api } from "../api";
 import { cn } from "../lib";
 import { PageHeader, Panel, StatusBadge, RoutingBadge, Spinner } from "../ui";
+import { usePersona } from "../store";
 
 const SAMPLE_EMAILS: Record<string, string> = {
   "Name only (ambiguous)": `Subject: Payout request\n\nClient: Majid Al Futtaim Retail LLC\nPeriod: June 2026\n\nFatima Khan - 23 days, total AED 12000\n\nRegards,\nOperations`,
@@ -25,6 +26,9 @@ type Result = { doc_id: string; timesheet_id: string; status: string; routing: s
 
 export function ClientSubmit() {
   const qc = useQueryClient();
+  const { currentClientCode } = usePersona();
+  const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
+  const clientName = clients?.find((c) => c.code === currentClientCode)?.name;
   const [tab, setTab] = useState<"upload" | "email">("upload");
   const [emailBody, setEmailBody] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
@@ -36,7 +40,15 @@ export function ClientSubmit() {
 
   return (
     <div>
-      <PageHeader icon={Upload} title="Submit timesheet" description="Upload a file or paste an email body — any of the 7 shapes. The agent does the rest." />
+      <PageHeader
+        icon={Upload}
+        title={clientName ? `Submit timesheet · ${clientName}` : "Submit timesheet"}
+        description={
+          currentClientCode
+            ? <span>Submitting on behalf of <span className="font-mono">{currentClientCode}</span> — upload a file or paste an email body. Any of the 7 shapes. The agent does the rest.</span>
+            : "Upload a file or paste an email body — any of the 7 shapes. The agent does the rest."
+        }
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
         {/* Form — fills two thirds */}

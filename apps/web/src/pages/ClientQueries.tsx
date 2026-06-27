@@ -4,12 +4,16 @@ import { MessageSquare, Send } from "lucide-react";
 import { api } from "../api";
 import { cn, fmtAge } from "../lib";
 import { PageHeader, Panel, Badge, EmptyState, Spinner } from "../ui";
+import { usePersona } from "../store";
 
 export function ClientQueries() {
   const qc = useQueryClient();
+  const { currentClientCode } = usePersona();
   const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
-  const [client, setClient] = useState<string>("");
-  const code = client || clients?.[0]?.code || "";
+  // Local override lets the user inspect another client's threads without
+  // changing the global "Acting as" identity. Defaults to the global pick.
+  const [override, setOverride] = useState<string>("");
+  const code = override || currentClientCode || clients?.[0]?.code || "";
 
   const { data: threads, isLoading } = useQuery({
     queryKey: ["queries", code], queryFn: () => api.listQueries(code), enabled: !!code, refetchInterval: 5_000,
@@ -26,7 +30,7 @@ export function ClientQueries() {
     <div>
       <PageHeader icon={MessageSquare} title="Queries" description="Raise a billing question for FinOps and track the conversation."
         actions={
-          <select className="select w-auto" value={code} onChange={(e) => setClient(e.target.value)}>
+          <select className="select w-auto" value={code} onChange={(e) => setOverride(e.target.value)}>
             {clients?.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
           </select>
         } />

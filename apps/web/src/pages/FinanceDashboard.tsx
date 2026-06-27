@@ -3,6 +3,7 @@ import { LayoutDashboard } from "lucide-react";
 import { api } from "../api";
 import { fmtAED, fmtPct } from "../lib";
 import { PageHeader, Panel, Metric, StatusBadge, EmptyState } from "../ui";
+import { AuditChainCard } from "../components/AuditChainCard";
 
 export function FinanceDashboard() {
   const { data: stp } = useQuery({ queryKey: ["m-stp"], queryFn: api.metricsStp, refetchInterval: 6_000 });
@@ -28,6 +29,11 @@ export function FinanceDashboard() {
         <Metric label="Time to invoice" value={time ? `${time.mean_minutes.toFixed(1)}m` : "—"} hint={time ? `${time.samples} samples · target <${time.target_max_minutes}m` : ""} />
         <Metric label="Accuracy (F1)" value={acc?.overall_macro_f1 != null ? acc.overall_macro_f1.toFixed(2) : (acc ? `${acc.passed}/${acc.runnable}` : "—")} hint={acc ? `target ${acc.target} · ECE ${acc.ece ?? "—"}` : ""} />
         <Metric label="Billed (incl. VAT)" value={fmtAED(total)} hint={`${(invoices ?? []).length} invoices · ${head?.total_unique_emps ?? 0} associates`} />
+      </div>
+
+      {/* Tamper-evident audit chain — green dot when intact, red banner if broken. */}
+      <div className="mb-4">
+        <AuditChainCard />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

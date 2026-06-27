@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
 import { Sparkles, X, CornerDownLeft } from "lucide-react";
 import { api } from "../api";
-import { fmtAED, fmtPct } from "../lib";
+import { fmtAED, fmtPct, stripMarkdown } from "../lib";
 import { Spinner } from "../ui";
 
 type Msg = { role: "user" | "aida"; text: string; cites?: { kind: string; id: string }[] };
@@ -76,7 +76,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
               {msgs.map((m, i) => (
                 <div key={i} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
                   <div className={m.role === "user" ? "max-w-[85%] rounded-lg rounded-br-sm bg-brand-600 text-white px-3 py-2 text-sm" : "max-w-[90%] rounded-lg rounded-bl-sm bg-ink-100 text-ink-800 px-3 py-2 text-sm"}>
-                    {m.text}
+                    <span className="whitespace-pre-wrap">{m.role === "aida" ? stripMarkdown(m.text) : m.text}</span>
                     {m.cites && m.cites.length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {m.cites.map((c, j) => <span key={j} className="text-2xs px-1.5 py-0.5 rounded bg-white/70 text-ink-500 border border-ink-200">{c.kind}:{c.id.slice(0, 8)}</span>)}
