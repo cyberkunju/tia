@@ -47,14 +47,14 @@ function capturingSender(): { sender: Sender; sent: SentText[]; docs: Array<{ to
 }
 
 /** Fake upstream: records intake calls; returns a configurable status + invoice. */
-function fakeUpstream(status: string, invoice: InvoiceRef | null): { upstream: UpstreamClient; intakes: any[] } {
+function fakeUpstream(status: string, invoice: InvoiceRef | null, routing?: string): { upstream: UpstreamClient; intakes: any[] } {
   const intakes: any[] = [];
   let n = 0;
   const upstream: UpstreamClient = {
     async intakeWhatsapp(payload, idem): Promise<IntakeResult | null> {
       intakes.push({ payload, idem });
       n += 1;
-      return { mode: "intake", docId: `doc-${n}`, timesheetId: `ts-${n}`, status };
+      return { mode: "intake", docId: `doc-${n}`, timesheetId: `ts-${n}`, status, routing };
     },
     async invoiceForTimesheet(): Promise<InvoiceRef | null> { return invoice; },
     async invoicePdf() { return { bytes: new Uint8Array([1, 2, 3]), mime: "application/pdf" }; },
@@ -101,12 +101,24 @@ describe("bridge adapter → core /intake/whatsapp", () => {
 
   test("awaiting_review → sends a review message, no document", async () => {
     const { sender, sent, docs } = capturingSender();
-    const { upstream } = fakeUpstream("awaiting_review", null);
+    const { upstream } = fakeUpstream("awaiting_review", null, "hitl");
     const built = buildApp({ config, media: fakeMedia, sender, upstream });
     await fire(built.app, [{ from: "9717", id: "wamid.r1", type: "text", text: { body: "Fatima Khan 23 days" } }]);
     await built.whenIdle();
     expect(docs).toHaveLength(0);
     expect(sent.some((s) => s.body.toLowerCase().includes("human check"))).toBe(true);
+  });
+
+  test("escalate → asks for a clearer/typed submission (distinct from review)", async () => {
+    const { sender, sent, docs } = capturingSender();
+    const { upstream } = fakeUpstream("awaiting_review", null, "escalate");
+    const built = buildApp({ config, media: fakeMedia, sender, upstream });
+    await fire(built.app, [{ from: "9721", id: "wamid.e1", type: "image", image: { id: "IMG_JPG", mime_type: "image/jpeg" } }]);
+    await built.whenIdle();
+    expect(docs).toHaveLength(0);
+    expect(sent.some((s) => s.body.toLowerCase().includes("couldn't read"))).toBe(true);
+    // media submissions get an immediate processing ack before the result
+    expect(sent.some((s) => s.body.includes("reading your timesheet"))).toBe(true);
   });
 
   test("media download failure → graceful prompt, no forward", async () => {

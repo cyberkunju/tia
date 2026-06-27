@@ -587,14 +587,32 @@ def intake_whatsapp(
     """
     import httpx
 
-    from ..whatsapp import answer_for_sender, classify_inbound_text, resolve_sender
+    from ..whatsapp import (
+        HELP_TEXT,
+        answer_for_sender,
+        classify_inbound_text,
+        client_for_sender,
+        resolve_sender,
+    )
 
-    # ---- talk-to-the-invoice: a question from a known sender, no attachment ----
-    if not payload.attachment_url and (payload.message_text or "").strip():
-        if classify_inbound_text(payload.message_text) == "question":
+    # ---- typed text: greeting/help, or a question from a known sender ----
+    text = (payload.message_text or "").strip()
+    if not payload.attachment_url and text:
+        intent = classify_inbound_text(text)
+        if intent == "greeting":
+            log_event(
+                s,
+                payload.from_ or "whatsapp",
+                "client",
+                client_for_sender(s, payload.from_) or "unknown",
+                "whatsapp.greeting",
+                {"text": text[:120]},
+            )
+            return {"mode": "answer", "answer": HELP_TEXT, "citations": [], "tool_calls": []}
+        if intent == "question":
             ctx = resolve_sender(s, payload.from_)
             if ctx is not None:
-                result = answer_for_sender(s, payload.from_, payload.message_text)
+                result = answer_for_sender(s, payload.from_, text)
                 log_event(
                     s,
                     payload.from_ or "whatsapp",
@@ -602,7 +620,7 @@ def intake_whatsapp(
                     ctx.get("client_code") or "unknown",
                     "whatsapp.question_answered",
                     {
-                        "question": (payload.message_text or "")[:300],
+                        "question": text[:300],
                         "tool_calls": [t.get("name") for t in result.get("tool_calls", [])],
                         "invoice_id": ctx.get("invoice_id"),
                     },
@@ -614,6 +632,10 @@ def intake_whatsapp(
                     "tool_calls": result.get("tool_calls", []),
                     "model": result.get("model"),
                 }
+
+    # bind the sender to a registered client (Client.settings.whatsapp_number) so the
+    # submission is correctly attributed even when the document is silent/ambiguous.
+    sender_client = client_for_sender(s, payload.from_)
 
     if payload.attachment_url:
         r = httpx.get(payload.attachment_url, timeout=60.0)
@@ -639,7 +661,7 @@ def intake_whatsapp(
         uploaded_by=payload.from_ or "whatsapp",
         idempotency_key=idempotency_key,
     )
-    ts = process_doc(s, doc)
+    ts = process_doc(s, doc, client_hint=sender_client)
     return JSONResponse(
         status_code=202,
         content={
@@ -647,6 +669,7 @@ def intake_whatsapp(
             "doc_id": doc.id,
             "timesheet_id": ts.id,
             "status": ts.status,
+            "routing": ts.routing,
         },
     )
 

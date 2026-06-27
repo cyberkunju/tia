@@ -171,13 +171,30 @@ def ingest_file(
     return doc
 
 
-def process_doc(session: Session, doc: DocAsset) -> Timesheet:
-    """Run extract → resolve → validate → invoice → dispatch decision."""
+def process_doc(session: Session, doc: DocAsset, client_hint: str | None = None) -> Timesheet:
+    """Run extract → resolve → validate → invoice → dispatch decision.
+
+    `client_hint` (a client_code) binds the document to a known client when the
+    source channel identifies the sender — e.g. a WhatsApp submission from a phone
+    registered to a client. It only fills in a client the document itself didn't
+    specify, and it scopes entity resolution to that client (disambiguating
+    cross-client names like "Aisha Al Zaabi").
+    """
     if not doc.staging_path:
         raise ValueError("doc has no staged file")
     p = Path(doc.staging_path)
 
     extraction = extract(p, mime=doc.mime, channel=doc.source_channel)
+    if client_hint and not extraction.client_code:
+        extraction.client_code = client_hint
+        log_event(
+            session,
+            "system",
+            "doc",
+            doc.id,
+            "client_bound",
+            {"client_code": client_hint, "via": doc.source_channel},
+        )
     log_event(
         session,
         "system",

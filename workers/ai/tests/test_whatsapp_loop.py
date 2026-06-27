@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from tia_ai import whatsapp as wa
 from tia_ai.api.app import app
 from tia_ai.db import SessionLocal, init_db
-from tia_ai.models import DocAsset, Invoice, Timesheet
+from tia_ai.models import Client, DocAsset, Invoice, Timesheet
 from tia_ai.seed import seed
 from tia_ai.synthgen import generate_all
 
@@ -68,6 +68,92 @@ def test_classify_question(text):
 def test_classify_empty_defaults_timesheet():
     assert wa.classify_inbound_text("") == "timesheet"
     assert wa.classify_inbound_text(None) == "timesheet"
+
+
+@pytest.mark.parametrize(
+    "text", ["hi", "Hello", "hey there"[:3], "thanks", "thank you", "help", "good morning", "menu", "/start"]
+)
+def test_classify_greeting(text):
+    assert wa.classify_inbound_text(text) == "greeting"
+
+
+def test_help_request_is_question_not_greeting():
+    # a real request that merely contains "help" must not be swallowed as a greeting
+    assert wa.classify_inbound_text("help me understand my invoice total") == "question"
+
+
+# ----------------------------------------------------- sender → client binding
+
+
+def test_client_for_sender_matches_with_country_code_variants():
+    s = SessionLocal()
+    try:
+        c = s.get(Client, "CL002")
+        c.settings = {**(c.settings or {}), "whatsapp_number": "9400245958"}
+        s.commit()
+        # stored without country code; inbound with country code → still matches
+        assert wa.client_for_sender(s, "919400245958") == "CL002"
+        assert wa.client_for_sender(s, "+91 94002 45958") == "CL002"
+        assert wa.client_for_sender(s, "9400245958") == "CL002"
+        # an unrelated number does not match
+        assert wa.client_for_sender(s, "971500000001") != "CL002"
+    finally:
+        # clean up so other tests aren't affected
+        c = s.get(Client, "CL002")
+        c.settings = {k: v for k, v in (c.settings or {}).items() if k != "whatsapp_number"}
+        s.commit()
+        s.close()
+
+
+def test_greeting_returns_help_without_creating_doc(client):
+    s = SessionLocal()
+    try:
+        before = s.query(DocAsset).filter_by(source_channel="whatsapp").count()
+    finally:
+        s.close()
+    r = client.post(
+        "/intake/whatsapp",
+        json={"from_": "971500444555", "message_text": "hi"},
+        headers={"Idempotency-Key": f"wa-greet-{uuid.uuid4().hex}"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["mode"] == "answer"
+    assert "AIDA" in body["answer"]
+    s = SessionLocal()
+    try:
+        after = s.query(DocAsset).filter_by(source_channel="whatsapp").count()
+    finally:
+        s.close()
+    assert after == before  # greeting must not create a junk timesheet
+
+
+def test_registered_sender_binds_client(client):
+    phone = "919812345678"
+    s = SessionLocal()
+    try:
+        c = s.get(Client, "CL001")
+        c.settings = {**(c.settings or {}), "whatsapp_number": phone}
+        s.commit()
+    finally:
+        s.close()
+    # a clean unique employee at CL001, with no client named in the text
+    r = client.post(
+        "/intake/whatsapp",
+        json={"from_": phone, "message_text": "EMP10001 worked 22 days in June 2026"},
+        headers={"Idempotency-Key": f"wa-bind-{uuid.uuid4().hex}"},
+    )
+    assert r.status_code == 202, r.text
+    ts_id = r.json()["timesheet_id"]
+    s = SessionLocal()
+    try:
+        ts = s.get(Timesheet, ts_id)
+        assert ts.client_code == "CL001"  # bound from the registered sender number
+    finally:
+        c = s.get(Client, "CL001")
+        c.settings = {k: v for k, v in (c.settings or {}).items() if k != "whatsapp_number"}
+        s.commit()
+        s.close()
 
 
 # ----------------------------------------------------- resolve + invoice push

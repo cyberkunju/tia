@@ -53,6 +53,10 @@ const UNSUPPORTED_TEXT =
   "one of those forms 🙏";
 const FETCH_FAILED_TEXT = "I couldn't download that attachment from WhatsApp — please try sending it again.";
 const UPSTREAM_FAILED_TEXT = "I couldn't reach the billing service just now — please try again shortly.";
+const PROCESSING_TEXT = "📥 Got it — reading your timesheet and checking it against the contract. One moment…";
+const UNREADABLE_TEXT =
+  "I couldn't read a clear timesheet in that. Please resend a sharper photo, or type the details " +
+  "(e.g. \"EMP10001 worked 22 days, 5 OT hours\").";
 
 function ref(docId: string): string {
   return `TIA-${docId.replace(/-/g, "").slice(0, 8).toUpperCase()}`;
@@ -64,12 +68,14 @@ function sha256(data: Uint8Array | string): string {
 
 /** Statuses that mean the core auto-generated an invoice. */
 const INVOICED = new Set(["invoice_generated", "approved", "auto", "dispatched"]);
-const REVIEW = new Set(["awaiting_review", "escalate", "hitl"]);
 
 export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
   const { media, sender, storage, upstream, publicUrl } = deps;
 
-  async function deliverOutcome(to: string, r: { docId: string; timesheetId: string; status: string }): Promise<IngestResult> {
+  async function deliverOutcome(
+    to: string,
+    r: { docId: string; timesheetId: string; status: string; routing?: string },
+  ): Promise<IngestResult> {
     if (INVOICED.has(r.status)) {
       const inv = await upstream.invoiceForTimesheet(r.timesheetId);
       if (inv) {
@@ -87,10 +93,17 @@ export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
         return { status: "invoiced", docId: r.docId };
       }
     }
-    if (REVIEW.has(r.status)) {
+    // Unreadable / nothing extracted → ask for a clearer submission (distinct from review).
+    if (r.routing === "escalate") {
+      await sender.sendText(to, UNREADABLE_TEXT);
+      return { status: "review", docId: r.docId, reason: "escalate" };
+    }
+    // Ambiguous match or a contract-rule flag → a human at TASC confirms, then we send it.
+    if (r.status === "awaiting_review" || r.routing === "hitl") {
       await sender.sendText(
         to,
-        `⚠️ Got your timesheet (${ref(r.docId)}). A couple of details need a human check — our team will confirm shortly.`,
+        `✅ Got your timesheet (${ref(r.docId)}). A couple of details need a quick human check — ` +
+          `our team at TASC will confirm and I'll send your invoice here shortly.`,
       );
       return { status: "review", docId: r.docId };
     }
@@ -132,6 +145,10 @@ export function createIntakeService(deps: IntakeServiceDeps): IntakeService {
       await sender.sendText(to, UNSUPPORTED_TEXT);
       return { status: "unsupported", reason: inbound.kind };
     }
+
+    // For file/photo submissions the pipeline (OCR + rules) can take many seconds —
+    // send an immediate ack so the user isn't left watching a typing indicator.
+    if (attachmentUrl !== null) await sender.sendText(to, PROCESSING_TEXT);
 
     const result = await upstream.intakeWhatsapp(
       {

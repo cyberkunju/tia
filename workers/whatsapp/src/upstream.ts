@@ -9,12 +9,14 @@ export interface IntakeResult {
   /**
    * "intake" — a timesheet was ingested (docId/timesheetId/status are set; the bridge
    * delivers the invoice or a review notice). "answer" — the core answered a question
-   * ("talk to the invoice"); `answer` holds the reply text to send back.
+   * ("talk to the invoice") or a greeting; `answer` holds the reply text to send back.
    */
   readonly mode: "intake" | "answer";
   readonly docId: string;
   readonly timesheetId: string;
   readonly status: string;
+  /** auto | hitl | escalate — drives the review-vs-unreadable reply wording. */
+  readonly routing?: string;
   readonly answer?: string;
 }
 
@@ -76,9 +78,10 @@ export function createUpstreamClient(deps: UpstreamDeps): UpstreamClient {
         doc_id?: string;
         timesheet_id?: string;
         status?: string;
+        routing?: string;
         answer?: string;
       };
-      // "talk to the invoice" — the core answered a question; no timesheet was created.
+      // "talk to the invoice" / greeting — the core answered; no timesheet was created.
       if (j.mode === "answer") {
         return {
           mode: "answer",
@@ -94,6 +97,7 @@ export function createUpstreamClient(deps: UpstreamDeps): UpstreamClient {
         docId: j.doc_id,
         timesheetId: j.timesheet_id,
         status: j.status ?? "",
+        routing: j.routing,
       };
     } catch {
       return null;

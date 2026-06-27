@@ -25,9 +25,30 @@ import re
 from sqlalchemy.orm import Session
 
 from .config import INTERNAL_SECRET, TIA_SELF_URL, WHATSAPP_BRIDGE_URL
-from .models import DocAsset, Invoice, Timesheet
+from .models import Client, DocAsset, Invoice, Timesheet
 
 WHATSAPP_CHANNEL = "whatsapp"
+
+HELP_TEXT = (
+    "👋 I'm AIDA, TASC's invoice assistant.\n\n"
+    "Send a timesheet and I'll turn it into a VAT invoice:\n"
+    "• an Excel or PDF file\n"
+    "• a photo of a handwritten sheet\n"
+    "• or just type it — e.g. \"EMP10001 worked 22 days, 5 OT hours\"\n\n"
+    "Once your invoice is ready you can ask me about it — the total, the VAT, "
+    "or why a line is what it is."
+)
+
+# ---------------------------------------------------------------- intent
+
+# Standalone greetings / commands / pleasantries — answered with help, never pushed
+# into the extraction pipeline (so a "hi" doesn't create a junk escalate timesheet).
+_GREETING = re.compile(
+    r"^\s*(hi+|hey+|hello+|hii+|yo|hai|namaste|as-?salam(u)?( alaikum)?|salam|"
+    r"good\s*(morning|afternoon|evening|day)|start|menu|help|/start|/help|"
+    r"thanks|thank\s*you|thx|ok|okay|cool|nice|great|test|ping)[\s!.?😊👍🙏]*$",
+    re.IGNORECASE,
+)
 
 # ---------------------------------------------------------------- intent
 
@@ -57,21 +78,51 @@ _QUESTION_VOCAB = re.compile(
 
 
 def classify_inbound_text(text: str | None) -> str:
-    """Return "timesheet" or "question".
+    """Return "greeting", "timesheet", or "question".
 
-    Timesheet signals win when present (a typed timesheet is unambiguous). Otherwise a
-    leading question word or billing vocabulary, or a trailing '?', marks a question.
-    Empty / unclear text defaults to "timesheet" so first-contact data still flows into
-    the pipeline (the caller only routes to chat when the sender has prior context).
+    A standalone greeting/command wins first (so "hi" gets help, not a junk doc).
+    Then timesheet signals (a typed timesheet is unambiguous). Otherwise a leading
+    question word, billing vocabulary, or trailing '?' marks a question. Empty /
+    unclear text defaults to "timesheet" so first-contact data still flows in (the
+    caller only routes to chat when the sender has prior context).
     """
     t = (text or "").strip()
     if not t:
         return "timesheet"
+    if _GREETING.fullmatch(t):
+        return "greeting"
     if any(p.search(t) for p in _TIMESHEET_PATTERNS):
         return "timesheet"
     if t.endswith("?") or _QUESTION_LEAD.search(t) or _QUESTION_VOCAB.search(t):
         return "question"
     return "timesheet"
+
+
+# ---------------------------------------------------------------- sender → client
+
+
+def _digits(s: str | None) -> str:
+    return re.sub(r"\D", "", s or "")
+
+
+def client_for_sender(session: Session, phone: str | None) -> str | None:
+    """Map a WhatsApp sender phone to a registered client via
+    `Client.settings.whatsapp_number`.
+
+    Comparison is digit-only with a suffix match so stored "9400245958",
+    "919400245958", and "+91 94002 45958" all resolve to the same client (country
+    code / formatting differences are common). Requires ≥8 shared digits to avoid
+    spurious matches. This makes a known client's WhatsApp submissions correctly
+    attributed even when the document text is silent or ambiguous about the client.
+    """
+    pd = _digits(phone)
+    if len(pd) < 8:
+        return None
+    for c in session.query(Client).all():
+        wn = _digits((c.settings or {}).get("whatsapp_number"))
+        if len(wn) >= 8 and (pd == wn or pd.endswith(wn) or wn.endswith(pd)):
+            return c.code
+    return None
 
 
 # ---------------------------------------------------------------- sender context
@@ -80,8 +131,10 @@ def classify_inbound_text(text: str | None) -> str:
 def resolve_sender(session: Session, phone: str | None) -> dict | None:
     """Resolve a WhatsApp phone to its latest timesheet + invoice + owning client.
 
-    Returns None when this sender has no WhatsApp-channel history (so the caller can
-    refuse to answer rather than leak another client's data).
+    Falls back to the registered-client binding (`Client.settings.whatsapp_number`)
+    when the sender has no submission history yet, so a known client contact can still
+    chat scoped to their own client. Returns None only when neither resolves (so the
+    caller refuses to answer rather than leak another client's data).
     """
     if not phone:
         return None
@@ -96,7 +149,10 @@ def resolve_sender(session: Session, phone: str | None) -> dict | None:
         .first()
     )
     if ts is None:
-        return None
+        bound = client_for_sender(session, phone)
+        if bound is None:
+            return None
+        return {"client_code": bound, "timesheet_id": None, "invoice_id": None}
     inv = (
         session.query(Invoice)
         .filter(Invoice.timesheet_id == ts.id)
@@ -104,7 +160,7 @@ def resolve_sender(session: Session, phone: str | None) -> dict | None:
         .first()
     )
     return {
-        "client_code": ts.client_code,
+        "client_code": ts.client_code or client_for_sender(session, phone),
         "timesheet_id": ts.id,
         "invoice_id": inv.id if inv else None,
     }
