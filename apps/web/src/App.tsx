@@ -12,6 +12,7 @@ import { ClientInvoices } from "./pages/ClientInvoices";
 import { ClientQueries } from "./pages/ClientQueries";
 import { FinanceDashboard } from "./pages/FinanceDashboard";
 import { FinanceQueue } from "./pages/FinanceQueue";
+import { Landing } from "./pages/Landing";
 
 import type { ReactNode } from "react";
 import { SectionNav } from "./components/SectionNav";
@@ -27,11 +28,12 @@ const Padded = ({ children }: { children: ReactNode }) => (
 );
 
 const router = createBrowserRouter([
+  // Public landing page — standalone, no app chrome.
+  { path: "/", element: <Landing /> },
+  // The application — wrapped in the flow-console shell.
   {
-    path: "/",
     element: <AppShell />,
     children: [
-      { index: true, element: <Navigate to="/console" replace /> },
       // FinOps - the pipeline console
       { path: "console", element: <Console /> },
       { path: "console/eval", element: <Padded><FinOpsEval /></Padded> },
