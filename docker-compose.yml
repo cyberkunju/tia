@@ -35,12 +35,22 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tia}:${POSTGRES_PASSWORD:-tia}@db:5432/${POSTGRES_DB:-tia}
-      GLM_OCR_BASE_URL: ${GLM_OCR_BASE_URL:-https://versifine--glm-ocr-serve.modal.run}
+      GLM_OCR_BASE_URL: ${GLM_OCR_BASE_URL:-https://ocr.cyberkunju.com/v1}
       GLM_OCR_API_KEY: ${GLM_OCR_API_KEY:-}
-      GLM_OCR_MODEL: ${GLM_OCR_MODEL:-glm-ocr}
+      GLM_OCR_MODEL: ${GLM_OCR_MODEL:-glm-ocr:q8_0}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      # Zoho Mail — email-intake mailbox poller + outbound replies
+      ZOHO_IMAP_USER: ${ZOHO_IMAP_USER:-}
+      ZOHO_IMAP_PASSWORD: ${ZOHO_IMAP_PASSWORD:-}
+      ZOHO_IMAP_HOST: ${ZOHO_IMAP_HOST:-imap.zoho.in}
+      ZOHO_IMAP_PORT: ${ZOHO_IMAP_PORT:-993}
+      ZOHO_IMAP_FOLDER: ${ZOHO_IMAP_FOLDER:-INBOX}
+      ZOHO_POLL_INTERVAL_SEC: ${ZOHO_POLL_INTERVAL_SEC:-10}
+      ZOHO_SMTP_HOST: ${ZOHO_SMTP_HOST:-smtp.zoho.in}
+      ZOHO_SMTP_PORT: ${ZOHO_SMTP_PORT:-465}
+      ZOHO_SMTP_USE_SSL: ${ZOHO_SMTP_USE_SSL:-1}
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TIA_SEED_ON_START: ${TIA_SEED_ON_START:-true}
