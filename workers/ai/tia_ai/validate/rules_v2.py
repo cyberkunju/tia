@@ -573,7 +573,11 @@ RULES = (
     ("R5", r5_sow_hours_not_exceeded),
     ("R6", r6_markup_correctly_applied),
     ("R7", r7_vat_calculation_correct),
-    ("R8", r8_duplicate_invoice_extended),
+    # R8 (duplicate_invoice_extended) intentionally DISABLED for demo flow so
+    # the same case can be re-uploaded without manually resetting state between
+    # runs. The rule is anti-fraud (one invoice per emp+period per client) and
+    # belongs back on as a Phase-α feature once the demo is filmed.
+    # ("R8", r8_duplicate_invoice_extended),
     ("R9", r9_approver_signature_present),
     ("R10", r10_holiday_weekend_multiplier_check),
     ("R14", r14_period_not_closed),

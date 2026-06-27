@@ -165,7 +165,7 @@ export function DocFocus({ docId }: { docId: string }) {
                 <StatusBadge status={inv.status} />
                 {auto && (
                   <button onClick={() => setTouchlessFor(inv)} className="inline-flex items-center gap-1 rounded-md bg-brand-500 hover:bg-brand-400 text-teal-950 text-2xs font-semibold px-2 py-0.5 shadow-xs" title="Why was this touchless?">
-                    <Sparkles size={10} /> ⚡ AUTO · Why?
+                    <Sparkles size={10} /> AUTO · Why?
                   </button>
                 )}
                 {inv.pdf_available && <a className="btn-outline btn-sm" href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer"><ExternalLink size={12} /> PDF</a>}
