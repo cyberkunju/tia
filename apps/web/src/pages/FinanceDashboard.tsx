@@ -43,7 +43,7 @@ const SEED_PAYLOADS: { subject: string; body: string }[] = [
 export function FinanceDashboard() {
   const qc = useQueryClient();
   const [seeding, setSeeding] = useState(false);
-  // Aggressive 3s refetch on the live numbers — the dashboard should _feel_
+  // Aggressive 3s refetch on the live numbers - the dashboard should _feel_
   // live during the demo. The static-ish metrics (accuracy, headcount) use
   // the default cache because they don't drift each second.
   const { data: stp } = useQuery({ queryKey: ["m-stp"], queryFn: api.metricsStp, refetchInterval: 3_000 });
@@ -57,7 +57,7 @@ export function FinanceDashboard() {
   const seedSamples = async () => {
     setSeeding(true);
     try {
-      // Fire serially — each post triggers a full pipeline run; running them
+      // Fire serially - each post triggers a full pipeline run; running them
       // in parallel saturates the orchestrator and the chain-hash linearity
       // depends on serial appends anyway.
       for (const p of SEED_PAYLOADS) {
@@ -101,7 +101,7 @@ export function FinanceDashboard() {
     <div>
       <PageHeader
         icon={LayoutDashboard}
-        title="Finance — month close"
+        title="Finance - month close"
         description="Live touchless rate, cycle time, accuracy, and billed value (AED). Auto-refreshes every 3 seconds."
         actions={
           <button
@@ -119,7 +119,7 @@ export function FinanceDashboard() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <Metric
           label="Touchless rate"
-          value={stp ? fmtPct(stp.touchless_rate) : "—"}
+          value={stp ? fmtPct(stp.touchless_rate) : "-"}
           hint={
             stp
               ? `${stp.auto} of ${stp.total} invoices · brief target ${fmtPct(stp.target)}`
@@ -129,7 +129,7 @@ export function FinanceDashboard() {
         />
         <Metric
           label="Cycle time per invoice"
-          value={mins != null ? `${mins.toFixed(1)} min` : "—"}
+          value={mins != null ? `${mins.toFixed(1)} min` : "-"}
           hint={
             mins != null
               ? speedup
@@ -145,7 +145,7 @@ export function FinanceDashboard() {
               ? acc.overall_macro_f1.toFixed(2)
               : acc
               ? `${acc.passed}/${acc.runnable}`
-              : "—"
+              : "-"
           }
           hint={
             acc
@@ -160,17 +160,17 @@ export function FinanceDashboard() {
         />
       </div>
 
-      {/* Tamper-evident audit chain — green dot when intact, red banner if broken. */}
+      {/* Tamper-evident audit chain - green dot when intact, red banner if broken. */}
       <div className="mb-4">
         <AuditChainCard />
       </div>
 
-      {/* 3-pillar dispatch breakdown — auto / hitl / finance touchless story. */}
+      {/* 3-pillar dispatch breakdown - auto / hitl / finance touchless story. */}
       <div className="mb-4">
         <DispatchPillars stp={stp as StpMetricFull | undefined} />
       </div>
 
-      {/* Live event stream — SSE from /events/stream. */}
+      {/* Live event stream - SSE from /events/stream. */}
       <div className="mb-4">
         <LiveActivityRail max={25} />
       </div>
