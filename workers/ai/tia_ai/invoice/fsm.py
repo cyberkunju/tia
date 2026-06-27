@@ -7,20 +7,20 @@ systems all run on FSMs — this keeps our flow honest.
 States:
   generated          — invoice rendered, awaiting next gate
   finance_approved   — passed Finance threshold check (only when amount > threshold)
-  client_approved    — client signed off via /client-approve
+  client_approved    — client signed off via /client-approve (or auto-dispatch fast path)
   client_rejected    — client raised a query / refused; awaiting correction
   dispatched         — Rust service wrote outbox + audit event
   rejected           — terminal "never going out" (FinOps decision or void)
-  voided             — terminal "issued in error"; replaces a previous invoice
+  voided             — terminal: invoice was created in error (pre-dispatch clawback)
+  superseded         — terminal: replaced by a reissued invoice (replaces_invoice_id chain)
 
-Transitions:
-  generated         → finance_approved | client_approved | rejected | voided
-  finance_approved  → client_approved   | rejected | voided
-  client_approved   → dispatched        | voided
-  client_rejected   → generated         | voided        # after correction
-  dispatched        → voided                            # rare, with reason
-  rejected          → voided
-  voided            → (terminal)
+Clawback (real-product AR semantics):
+  - Pre-dispatch (generated / pending_client_review / client_approved / finance_approved)
+    → VOID (status=voided): invoice never existed, AR reversal
+  - Dispatched + no payment → CREDIT NOTE: invoice stays "dispatched", a credit-note
+    record is attached (credit_note_*) and rendered as page 2 of the PDF.
+    Status moves to "superseded" only when a corrected invoice replaces it.
+  - Dispatched + paid → CREDIT NOTE + payment_refund_required event.
 """
 
 from __future__ import annotations
@@ -34,9 +34,10 @@ ALLOWED: dict[str, set[str]] = {
     "finance_approved": {"client_approved", "rejected", "voided"},
     "client_approved": {"dispatched", "voided"},
     "client_rejected": {"generated", "voided"},
-    "dispatched": {"voided"},
+    "dispatched": {"superseded", "voided"},  # voided rarely; superseded after a reissue
     "rejected": {"voided"},
     "voided": set(),
+    "superseded": set(),
 }
 
 # Friendly labels for the UI
@@ -49,6 +50,16 @@ LABELS: dict[str, str] = {
     "dispatched": "Dispatched",
     "rejected": "Rejected",
     "voided": "Voided",
+    "superseded": "Superseded (reissued)",
+}
+
+# Pre-dispatch states — clawback in any of these is a VOID, not a credit note.
+PRE_DISPATCH_STATES: set[str] = {
+    "generated",
+    "pending_client_review",
+    "finance_approved",
+    "client_approved",
+    "client_rejected",
 }
 
 

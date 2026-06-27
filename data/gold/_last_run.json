@@ -1,15 +1,15 @@
 {
   "total_cases": 14,
   "passed": 13,
-  "runnable": 13,
+  "runnable": 14,
   "macro_f1": {
-    "emp_id": 0.6923,
-    "days_worked": 1.0,
-    "ot_hours": 0.6923,
-    "hours": 0.0769,
-    "leave_codes": 0.3077,
-    "resolved": 1.0,
-    "ambiguous": 1.0
+    "emp_id": 0.6429,
+    "days_worked": 0.9286,
+    "ot_hours": 0.6429,
+    "hours": 0.0714,
+    "leave_codes": 0.2857,
+    "resolved": 0.9286,
+    "ambiguous": 0.9286
   },
   "ece": 0.0712,
   "results": [
@@ -40,7 +40,7 @@
       "invoice_amount": 0.0,
       "client_code": null,
       "exceptions": 1,
-      "latency_s": 0.001,
+      "latency_s": 0.003,
       "calibration": [
         [
           0.45,
@@ -253,8 +253,62 @@
     },
     {
       "case": "04",
-      "skipped": true,
-      "reason": "vision case \u2014 no GLM_OCR_API_KEY set"
+      "input": "case_04_handwritten.png",
+      "channel": "upload",
+      "passed": false,
+      "f1": {
+        "emp_id": 0.0,
+        "days_worked": 0.0,
+        "ot_hours": 0.0,
+        "hours": 0.0,
+        "leave_codes": 0.0,
+        "resolved": 0.0,
+        "ambiguous": 0.0
+      },
+      "extracted_rows": 0,
+      "expected_rows": 3,
+      "matches": [],
+      "invoice_amount": 0.0,
+      "client_code": null,
+      "exceptions": 0,
+      "latency_s": 0.117,
+      "calibration": [],
+      "details": [
+        {
+          "employee_name": "Carlos Smith",
+          "matched": false,
+          "expected": {
+            "employee_name": "Carlos Smith",
+            "days_worked": 22,
+            "ot_hours": 2,
+            "resolved": true,
+            "ambiguous": false
+          }
+        },
+        {
+          "employee_name": "Ahmed Khan",
+          "matched": false,
+          "expected": {
+            "employee_name": "Ahmed Khan",
+            "days_worked": 20,
+            "leave_codes": [
+              "AL"
+            ],
+            "resolved": true,
+            "ambiguous": false
+          }
+        },
+        {
+          "employee_name": "Meera Al Rashid",
+          "matched": false,
+          "expected": {
+            "employee_name": "Meera Al Rashid",
+            "days_worked": 21,
+            "resolved": true,
+            "ambiguous": false
+          }
+        }
+      ]
     },
     {
       "case": "05",
@@ -524,7 +578,7 @@
       "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.003,
+      "latency_s": 0.004,
       "calibration": [
         [
           0.99,
@@ -711,7 +765,7 @@
       "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.004,
+      "latency_s": 0.005,
       "calibration": [
         [
           0.99,
@@ -927,7 +981,7 @@
       "invoice_amount": 35361.65,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.049,
+      "latency_s": 0.084,
       "calibration": [
         [
           0.99,
@@ -1158,7 +1212,7 @@
       "invoice_amount": 13249.04,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.004,
+      "latency_s": 0.003,
       "calibration": [
         [
           0.99,

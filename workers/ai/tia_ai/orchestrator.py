@@ -440,7 +440,130 @@ def _generate_invoice(
             **smart_bot_artifacts,
         },
     )
+
+    # ── Auto-dispatch (Option B: re-use validation_threshold_aed) ─────────
+    # Decision: amount ≤ threshold AND all blocking rules passed AND R14 didn't
+    # fire (period not closed). Skip if Finance approval is intentionally
+    # required (over-threshold case routes there instead).
+    _maybe_auto_dispatch(session, invoice, client, rule_results or [])
     return invoice
+
+
+def _maybe_auto_dispatch(session, invoice, client, rule_results: list) -> None:
+    """Tolerance-based touchless dispatch.
+
+    Lives here (not in the dispatch endpoint) because every channel funnels
+    through `_generate_invoice` — upload, email, mailbox-webhook, online form,
+    Zoho IMAP poller. One hook → universal touchless behaviour.
+    """
+    if invoice.status != "generated":
+        return
+    threshold = 50000.0
+    if client and (client.settings or {}).get("validation_threshold_aed") is not None:
+        try:
+            threshold = float(client.settings["validation_threshold_aed"])
+        except (TypeError, ValueError):
+            threshold = 50000.0
+
+    if (invoice.amount or 0) > threshold:
+        return  # Finance approval queue takes it from here
+
+    passed_ids: list[str] = []
+    blocking_failures: list[str] = []
+    warned_ids: list[str] = []
+    for r in rule_results:
+        rid = r.get("rule_id") or r.get("rule")
+        if not rid:
+            continue
+        if r.get("passed"):
+            passed_ids.append(rid)
+        elif r.get("severity") == "warning":
+            warned_ids.append(rid)
+        else:
+            blocking_failures.append(rid)
+
+    if blocking_failures:
+        return  # any blocking failure → HITL
+
+    # all clear → auto-dispatch
+    import datetime as dt
+    import os
+
+    from .invoice.fsm import set_status
+
+    try:
+        set_status(session, invoice, "client_approved")
+    except Exception:  # noqa: BLE001
+        return  # FSM blocked it → defer to manual queue
+
+    dispatch_key = f"auto:{invoice.id}"
+    rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
+    engine = "in_process"
+
+    if rust_url:
+        try:
+            import httpx
+
+            session.commit()  # release sqlite lock so the Rust process can write
+            r = httpx.post(
+                f"{rust_url}/dispatch/{invoice.id}",
+                json={"by_user": "system"},
+                headers={"Idempotency-Key": dispatch_key},
+                timeout=10.0,
+            )
+            r.raise_for_status()
+            engine = "rust"
+        except Exception as e:  # noqa: BLE001
+            log_event(
+                session,
+                "system",
+                "invoice",
+                invoice.id,
+                "auto_dispatch_skipped",
+                {
+                    "reason": f"rust unreachable: {e}",
+                    "threshold": threshold,
+                    "amount": invoice.amount,
+                },
+            )
+            return
+    else:
+        # in-process fallback: same as the manual dispatch endpoint's fallback path
+        invoice.dispatch_idempotency_key = dispatch_key
+        invoice.dispatch_attempted_at = dt.datetime.now(dt.timezone.utc)
+        try:
+            set_status(session, invoice, "dispatched")
+        except Exception:  # noqa: BLE001
+            return
+
+    log_event(
+        session,
+        "system",
+        "invoice",
+        invoice.id,
+        "auto_dispatched_within_tolerance",
+        {
+            "amount": invoice.amount,
+            "threshold": threshold,
+            "currency": invoice.currency,
+            "rules_passed_count": len(passed_ids),
+            "rules_warned_count": len(warned_ids),
+            "rules_passed": sorted(passed_ids),
+            "decision": (
+                f"amount {invoice.amount:.2f} ≤ threshold {threshold:.2f}; "
+                f"{len(passed_ids)} blocking rules passed"
+            ),
+            "engine": engine,
+            "idempotency_key": dispatch_key,
+        },
+        before={"status": "generated"},
+        after={
+            "status": invoice.status,
+            "dispatch_attempted_at": (
+                invoice.dispatch_attempted_at.isoformat() if invoice.dispatch_attempted_at else None
+            ),
+        },
+    )
 
 
 def approve_timesheet(

@@ -782,6 +782,26 @@ def _inv_dict(i: Invoice) -> dict:
         "client_approval_status": i.client_approval_status,
         "client_approval_reason": i.client_approval_reason,
         "rule_results": i.rule_results or [],
+        # clawback — void path
+        "voided_at": i.voided_at.isoformat() if i.voided_at else None,
+        "voided_by": i.voided_by,
+        "voided_reason_code": i.voided_reason_code,
+        "voided_reason": i.voided_reason,
+        # clawback — credit-note path
+        "credit_note_sequence_no": i.credit_note_sequence_no,
+        "credit_note_issued_at": (
+            i.credit_note_issued_at.isoformat() if i.credit_note_issued_at else None
+        ),
+        "credit_note_issued_by": i.credit_note_issued_by,
+        "credit_note_reason_code": i.credit_note_reason_code,
+        "credit_note_reason_text": i.credit_note_reason_text,
+        "credit_note_article_refs": i.credit_note_article_refs,
+        "credit_note_amount": i.credit_note_amount,
+        "credit_note_disputed_hours": i.credit_note_disputed_hours,
+        "adjustment_type": i.adjustment_type,
+        # reissue chain
+        "replaces_invoice_id": i.replaces_invoice_id,
+        "superseded_by_invoice_id": i.superseded_by_invoice_id,
     }
 
 
@@ -1575,13 +1595,38 @@ def reply_to_query(
 
 @app.get("/metrics/stp")
 def metric_stp(s: Session = Depends(db_session)) -> dict:
-    """Straight-through processing rate — the brief's '80%+ touchless' headline."""
+    """Straight-through processing rate — the brief's '80%+ touchless' headline.
+
+    Three-pillar breakdown for the dashboard:
+      auto_dispatched   — invoice shipped under threshold without human click
+      hitl_dispatched   — FinOps reviewed, then dispatched
+      finance_dispatched — Finance signed off (over threshold), then dispatched
+    """
     rows = s.query(Timesheet).all()
     total = len(rows)
     auto = sum(1 for t in rows if t.routing == "auto")
     hitl = sum(1 for t in rows if t.routing == "hitl")
     escalate = sum(1 for t in rows if t.routing == "escalate")
     rate = (auto / total) if total else 0.0
+
+    # Count invoices by dispatch path (derived from the audit chain).
+    # `dispatched` (regular path) and `auto_dispatched_within_tolerance` (touchless
+    # path) are both "an invoice left the building" — we sum both.
+    manually_dispatched_ids = {
+        e.entity_id for e in s.query(Event).filter(Event.action == "dispatched").all()
+    }
+    auto_disp_ids = {
+        e.entity_id
+        for e in s.query(Event).filter(Event.action == "auto_dispatched_within_tolerance").all()
+    }
+    finance_approved_ids = {
+        e.entity_id for e in s.query(Event).filter(Event.action == "finance_approved").all()
+    }
+    auto_dispatched = len(auto_disp_ids)
+    finance_dispatched = len((manually_dispatched_ids & finance_approved_ids) - auto_disp_ids)
+    hitl_dispatched = len(manually_dispatched_ids - auto_disp_ids - finance_approved_ids)
+    total_dispatched = len(manually_dispatched_ids | auto_disp_ids)
+
     return {
         "total": total,
         "auto": auto,
@@ -1589,6 +1634,13 @@ def metric_stp(s: Session = Depends(db_session)) -> dict:
         "escalate": escalate,
         "touchless_rate": round(rate, 4),
         "target": 0.80,
+        # 3-pillar breakdown for the Finance dashboard tile
+        "dispatched_breakdown": {
+            "auto_dispatched": auto_dispatched,
+            "hitl_dispatched": hitl_dispatched,
+            "finance_dispatched": finance_dispatched,
+            "total_dispatched": total_dispatched,
+        },
     }
 
 
@@ -1936,6 +1988,400 @@ def eval_run() -> dict:
 
 
 # ---------- /admin/demo-reset (stage demo helper) ----------
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  CLAWBACK — state-aware void / credit-note (UAE VAT Art. 60 + Decision 7/2019)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ClawbackRequest(BaseModel):
+    by_user: str = "finops"
+    reason_code: str = "OTHER"  # PRICING_ERROR|GOODS_RETURNED|DISCOUNT|DUPLICATE|OTHER
+    reason_text: str | None = None
+    # Partial clawback (e.g., 4 of 40 hours = AED 200 of AED 2000).
+    # If null, credit note covers the full invoice. UAE Art. 60 supports partials.
+    partial_amount: float | None = None
+    disputed_hours: float | None = None
+    # Where the recovery is applied (defaults to CREDIT_TO_CLIENT).
+    adjustment_type: str = "CREDIT_TO_CLIENT"
+
+
+_VALID_REASON_CODES = {"PRICING_ERROR", "GOODS_RETURNED", "DISCOUNT", "DUPLICATE", "OTHER"}
+_VALID_ADJUSTMENT_TYPES = {
+    "CREDIT_TO_CLIENT",
+    "DEDUCT_FROM_NEXT_INVOICE",
+    "DEDUCT_FROM_PAYROLL",
+    "INTERNAL_WRITE_OFF",
+    "MANUAL_REVIEW",
+}
+_FRIENDLY_REASON: dict[str, str] = {
+    "PRICING_ERROR": "the billing rate was incorrect",
+    "GOODS_RETURNED": "services were returned or cancelled",
+    "DISCOUNT": "a post-sale discount was granted",
+    "DUPLICATE": "the invoice was a duplicate of an earlier one",
+    "OTHER": "an adjustment was needed",
+}
+_FRIENDLY_ADJUSTMENT: dict[str, str] = {
+    "CREDIT_TO_CLIENT": "Credit memo issued against your AR balance",
+    "DEDUCT_FROM_NEXT_INVOICE": "Will be netted against your next invoice",
+    "DEDUCT_FROM_PAYROLL": "Recovered from the associate's next pay run",
+    "INTERNAL_WRITE_OFF": "Absorbed internally — no further recovery",
+    "MANUAL_REVIEW": "Escalated to Finance for manual reconciliation",
+}
+
+
+def _has_payment(s: Session, invoice_id: str) -> bool:
+    from ..models import Payment
+
+    return s.query(Payment).filter_by(invoice_id=invoice_id).first() is not None
+
+
+def _next_credit_note_seq(s: Session, client_code: str, period: str | None) -> str:
+    """Sequence credit notes per (client, period). UAE Art. 60 requires referenceable sequence."""
+    period_key = (period or "0000-00").replace(" ", "").upper()
+    count = (
+        s.query(Invoice)
+        .filter(Invoice.client_code == client_code, Invoice.credit_note_sequence_no.is_not(None))
+        .count()
+    ) + 1
+    return f"TIA-CN-{client_code}-{period_key}-{count:04d}"
+
+
+@app.get("/invoices/{inv_id}/clawback-eligibility")
+def clawback_eligibility(inv_id: str, s: Session = Depends(db_session)) -> dict:
+    """Return the action this invoice would resolve into if the operator clawed
+    back NOW, plus the FTA 14-day countdown for credit-note scenarios."""
+    import datetime as dt
+
+    from ..invoice.fsm import PRE_DISPATCH_STATES
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    if i.status in {"voided", "superseded"}:
+        return {
+            "current_state": i.status,
+            "action_when_clawed_back": None,
+            "reason": "terminal state — already settled",
+        }
+    if i.credit_note_sequence_no:
+        return {
+            "current_state": i.status,
+            "action_when_clawed_back": None,
+            "reason": "credit note already issued",
+        }
+
+    out: dict = {"current_state": i.status, "amount_aed": i.amount, "currency": i.currency}
+    if i.status in PRE_DISPATCH_STATES:
+        out["action_when_clawed_back"] = "void"
+        out["explanation"] = "Pre-dispatch — invoice will be voided as if never issued."
+        return out
+
+    if i.status == "dispatched":
+        action = "credit_note_with_refund_pending" if _has_payment(s, inv_id) else "credit_note"
+        out["action_when_clawed_back"] = action
+        dispatched_at = i.dispatch_attempted_at or i.created_at
+        if dispatched_at:
+            now = dt.datetime.now(dt.timezone.utc)
+            # normalise — naive datetimes get utc tz attached
+            if dispatched_at.tzinfo is None:
+                dispatched_at = dispatched_at.replace(tzinfo=dt.timezone.utc)
+            days_since = (now - dispatched_at).days
+            deadline = dispatched_at + dt.timedelta(days=14)
+            out["dispatched_at"] = dispatched_at.isoformat()
+            out["days_since_dispatch"] = days_since
+            out["fta_14_day_deadline"] = deadline.date().isoformat()
+            out["days_remaining"] = max(0, 14 - days_since)
+            if out["days_remaining"] <= 2:
+                out["urgency"] = "urgent"
+            elif out["days_remaining"] <= 5:
+                out["urgency"] = "warning"
+            else:
+                out["urgency"] = "normal"
+        out["explanation"] = (
+            "Issue a UAE Tax Credit Note (Art. 60). Source timesheet returns for re-review. "
+            "Client is notified via a query thread."
+        )
+        if action == "credit_note_with_refund_pending":
+            out["explanation"] += " A refund will be flagged for manual processing."
+        out["valid_reason_codes"] = sorted(_VALID_REASON_CODES)
+        out["valid_adjustment_types"] = sorted(_VALID_ADJUSTMENT_TYPES)
+        out["adjustment_type_labels"] = _FRIENDLY_ADJUSTMENT
+        return out
+
+    out["action_when_clawed_back"] = None
+    out["reason"] = f"clawback not valid from state '{i.status}'"
+    return out
+
+
+@app.post("/invoices/{inv_id}/clawback")
+def clawback_invoice(
+    inv_id: str,
+    payload: ClawbackRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    """State-aware clawback:
+       pre-dispatch       → VOID
+       dispatched, unpaid → CREDIT NOTE (UAE Art. 60), source timesheet → needs_review
+       dispatched, paid   → CREDIT NOTE + payment_refund_required event
+
+    Always immediate (no settling period; research-backed — NetSuite/Pelcro pattern).
+    Idempotent on Idempotency-Key.
+    """
+    import datetime as dt
+
+    from ..invoice.fsm import PRE_DISPATCH_STATES, InvalidTransition, set_status
+    from ..models import Payment, Query as QueryModel
+
+    if payload.reason_code not in _VALID_REASON_CODES:
+        raise HTTPException(400, f"reason_code must be one of {sorted(_VALID_REASON_CODES)}")
+    if payload.adjustment_type not in _VALID_ADJUSTMENT_TYPES:
+        raise HTTPException(
+            400, f"adjustment_type must be one of {sorted(_VALID_ADJUSTMENT_TYPES)}"
+        )
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    if i.status in {"voided", "superseded"}:
+        return {"action_taken": "already_settled", "status": i.status, "invoice_id": inv_id}
+    if i.credit_note_sequence_no:
+        return {
+            "action_taken": "already_credit_noted",
+            "status": i.status,
+            "invoice_id": inv_id,
+            "credit_note_sequence_no": i.credit_note_sequence_no,
+        }
+
+    now = dt.datetime.now(dt.timezone.utc)
+    friendly_reason = _FRIENDLY_REASON.get(payload.reason_code, "an adjustment was needed")
+
+    # ── pre-dispatch → VOID ───────────────────────────────────────────────
+    if i.status in PRE_DISPATCH_STATES:
+        before = {"status": i.status}
+        try:
+            set_status(s, i, "voided")
+        except InvalidTransition as e:
+            raise HTTPException(409, str(e)) from e
+        i.voided_at = now
+        i.voided_by = payload.by_user
+        i.voided_reason_code = payload.reason_code
+        i.voided_reason = payload.reason_text or friendly_reason
+        log_event(
+            s,
+            payload.by_user,
+            "invoice",
+            inv_id,
+            "invoice.voided",
+            {
+                "reason_code": payload.reason_code,
+                "reason_text": payload.reason_text,
+                "friendly": friendly_reason,
+                "sequence_no": i.invoice_sequence_no,
+            },
+            idempotency_key=idempotency_key,
+            before=before,
+            after={"status": i.status, "voided_by": payload.by_user},
+        )
+        # If we auto-dispatched a moment ago, rename the outbox file so it's clearly marked
+        try:
+            outbox = Path(STAGING_DIR) / "outbox"
+            for f in outbox.glob(f"dispatch_{inv_id}_*.txt"):
+                voided_path = f.with_name(f"voided_{f.name}")
+                f.rename(voided_path)
+                # write a void notice next to it
+                voided_path.with_suffix(".void.txt").write_text(
+                    f"This dispatch was VOIDED by {payload.by_user} at {now.isoformat()}.\n"
+                    f"Reason ({payload.reason_code}): {payload.reason_text or friendly_reason}\n",
+                    encoding="utf-8",
+                )
+        except Exception:  # noqa: BLE001
+            pass  # never let the file rename fail the clawback
+        return {
+            "action_taken": "voided",
+            "status": i.status,
+            "invoice_id": inv_id,
+            "voided_at": i.voided_at.isoformat(),
+            "reason": friendly_reason,
+        }
+
+    # ── dispatched → CREDIT NOTE ──────────────────────────────────────────
+    if i.status != "dispatched":
+        raise HTTPException(409, f"clawback not valid from state '{i.status}'")
+
+    paid = _has_payment(s, inv_id)
+    article_refs = [
+        "UAE VAT Law Article 60",
+        "UAE VAT Law Article 62",
+        "FTA Decision No. 7 of 2019",
+    ]
+    cn_seq = _next_credit_note_seq(s, i.client_code, i.period)
+
+    # Partial vs full clawback (UAE Art. 60 supports partial credit notes).
+    full_amount = float(i.amount or 0)
+    requested_partial = payload.partial_amount
+    is_partial = requested_partial is not None and 0 < float(requested_partial) < full_amount
+    cn_amount = (
+        float(requested_partial) if (is_partial and requested_partial is not None) else full_amount
+    )
+
+    before = {
+        "credit_note_sequence_no": None,
+        "credit_note_issued_at": None,
+        "adjustment_type": None,
+    }
+    i.credit_note_sequence_no = cn_seq
+    i.credit_note_issued_at = now
+    i.credit_note_issued_by = payload.by_user
+    i.credit_note_reason_code = payload.reason_code
+    i.credit_note_reason_text = payload.reason_text or friendly_reason
+    i.credit_note_article_refs = article_refs
+    i.credit_note_amount = cn_amount
+    i.credit_note_disputed_hours = payload.disputed_hours
+    i.adjustment_type = payload.adjustment_type
+
+    # Re-render the PDF as 2 pages (page 1 = original invoice, page 2 = credit note)
+    try:
+        from ..invoice.render import render_invoice_with_credit_note
+
+        i.pdf_path = render_invoice_with_credit_note(i)
+    except Exception as e:  # noqa: BLE001
+        log_event(
+            s, "system", "invoice", inv_id, "credit_note.pdf_render_failed", {"error": str(e)[:200]}
+        )
+
+    after = {
+        "credit_note_sequence_no": cn_seq,
+        "credit_note_issued_at": i.credit_note_issued_at.isoformat(),
+        "credit_note_amount": cn_amount,
+        "is_partial": is_partial,
+        "adjustment_type": payload.adjustment_type,
+    }
+    log_event(
+        s,
+        payload.by_user,
+        "invoice",
+        inv_id,
+        "invoice.credit_note_issued",
+        {
+            "reason_code": payload.reason_code,
+            "reason_text": payload.reason_text,
+            "friendly": friendly_reason,
+            "credit_note_sequence_no": cn_seq,
+            "original_sequence_no": i.invoice_sequence_no,
+            "article_refs": article_refs,
+            "has_payment": paid,
+            "is_partial": is_partial,
+            "credit_note_amount": cn_amount,
+            "invoice_amount": full_amount,
+            "disputed_hours": payload.disputed_hours,
+            "adjustment_type": payload.adjustment_type,
+            "adjustment_friendly": _FRIENDLY_ADJUSTMENT.get(payload.adjustment_type, ""),
+        },
+        idempotency_key=idempotency_key,
+        before=before,
+        after=after,
+    )
+
+    # Mark source timesheet for re-review (Q1 path b)
+    ts = s.get(Timesheet, i.timesheet_id) if i.timesheet_id else None
+    if ts:
+        ts.status = "needs_review"
+        ts.routing = "hitl"
+        ts.needs_review_reason = (
+            f"Credit Note {cn_seq} issued — {friendly_reason}. Please upload a corrected timesheet."
+        )
+        ts.needs_review_since = now
+        log_event(
+            s,
+            "system",
+            "timesheet",
+            ts.id,
+            "timesheet.needs_review_after_clawback",
+            {"credit_note_sequence_no": cn_seq, "reason_code": payload.reason_code},
+        )
+
+    # Auto-open a client query thread (Q-final = a)
+    cn_amount_text = f"{cn_amount:.2f} {i.currency or 'AED'}" + (
+        f" (partial — {payload.disputed_hours:g} disputed hour"
+        + ("s" if payload.disputed_hours and payload.disputed_hours != 1 else "")
+        + ")"
+        if is_partial and payload.disputed_hours
+        else (" (partial)" if is_partial else "")
+    )
+    adjustment_friendly = _FRIENDLY_ADJUSTMENT.get(payload.adjustment_type, "Credit memo issued")
+    client_msg = (
+        f"We've issued Tax Credit Note {cn_seq} for invoice "
+        f"{i.invoice_sequence_no or inv_id[:8]} on {now.date().isoformat()}. "
+        f"Amount: {cn_amount_text}. "
+        f"Reason: {friendly_reason}. "
+        f"Adjustment: {adjustment_friendly}. "
+        f"A corrected invoice will follow once FinOps completes a re-review of the source timesheet."
+    )
+    q = QueryModel(
+        client_code=i.client_code,
+        invoice_id=inv_id,
+        subject=f"Credit Note {cn_seq} issued",
+        body=client_msg,
+        raised_by="TIA · auto-notification",
+        thread=[
+            {
+                "by": "TIA · auto-notification",
+                "role": "finops",
+                "body": client_msg,
+                "at": now.isoformat(),
+            }
+        ],
+    )
+    s.add(q)
+    s.flush()
+    log_event(
+        s,
+        "system",
+        "client",
+        i.client_code,
+        "query.auto_opened_credit_note",
+        {"query_id": q.id, "credit_note_sequence_no": cn_seq, "invoice_id": inv_id},
+    )
+
+    # Refund event if there was a payment
+    if paid:
+        pay = s.query(Payment).filter_by(invoice_id=inv_id).first()
+        log_event(
+            s,
+            "system",
+            "invoice",
+            inv_id,
+            "payment_refund_required",
+            {
+                "credit_note_sequence_no": cn_seq,
+                "payment_id": pay.id if pay else None,
+                "amount": pay.amount if pay else i.amount,
+                "currency": pay.currency if pay else i.currency,
+                "reason": "credit note issued against paid invoice",
+            },
+        )
+
+    return {
+        "action_taken": "credit_note_with_refund_pending" if paid else "credit_note_issued",
+        "status": i.status,
+        "invoice_id": inv_id,
+        "credit_note_sequence_no": cn_seq,
+        "credit_note_issued_at": i.credit_note_issued_at.isoformat(),
+        "article_refs": article_refs,
+        "source_timesheet_id": i.timesheet_id,
+        "auto_query_id": q.id,
+        "refund_required": paid,
+        "is_partial": is_partial,
+        "credit_note_amount": cn_amount,
+        "invoice_amount": full_amount,
+        "disputed_hours": payload.disputed_hours,
+        "adjustment_type": payload.adjustment_type,
+        "adjustment_friendly": adjustment_friendly,
+        "reason": friendly_reason,
+    }
 
 
 @app.post("/admin/demo-reset")

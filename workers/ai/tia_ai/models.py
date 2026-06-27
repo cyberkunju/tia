@@ -131,6 +131,10 @@ class Timesheet(Base):
     validations: Mapped[list] = mapped_column(JSON, default=list)
     match_result: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)
+    # Set when a clawback bounces the timesheet back for review (Q1 path b).
+    # FinOps re-uploads the corrected version; the new doc carries a fresh timesheet.
+    needs_review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    needs_review_since: Mapped[dt.datetime | None] = mapped_column(nullable=True)
 
     hypotheses: Mapped[list[Hypothesis]] = relationship(back_populates="timesheet")
 
@@ -186,6 +190,40 @@ class Invoice(Base):
     client_approval_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     # validation provenance — list of {rule_id, passed, expected, actual, severity}
     rule_results: Mapped[list] = mapped_column(JSON, default=list)
+    # ── clawback: void path ─────────────────────────────────────────────
+    voided_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    voided_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    voided_reason_code: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # PRICING_ERROR|GOODS_RETURNED|DISCOUNT|DUPLICATE|OTHER
+    voided_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── clawback: credit-note path (UAE VAT Art. 60 + Decision 7/2019) ──
+    # Lives as 2nd-page on the same PDF; sequence_no is a separate parallel sequence.
+    credit_note_sequence_no: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    credit_note_issued_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    credit_note_issued_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    credit_note_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    credit_note_reason_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credit_note_article_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Partial vs full clawback. When set, the credit note covers `credit_note_amount`
+    # only (UAE Art. 60 allows partials), not the full invoice value. Used for
+    # the "4 of 40 hours disputed" case from real staffing operations.
+    credit_note_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    credit_note_disputed_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Where the recovery is applied (drives downstream reconciliation):
+    #   CREDIT_TO_CLIENT          — issue a credit memo against AR (default)
+    #   DEDUCT_FROM_NEXT_INVOICE  — net against the client's next invoice
+    #   DEDUCT_FROM_PAYROLL       — recover from the employee's next pay run
+    #   INTERNAL_WRITE_OFF        — absorb the loss; no further recovery
+    #   MANUAL_REVIEW             — escalate for Finance to decide
+    adjustment_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    # ── reissue chain (linked corrections across versions) ──────────────
+    replaces_invoice_id: Mapped[str | None] = mapped_column(
+        ForeignKey("invoices.id"), nullable=True
+    )
+    superseded_by_invoice_id: Mapped[str | None] = mapped_column(
+        ForeignKey("invoices.id"), nullable=True
+    )
 
 
 # --------------------------- contracts (BTP-style validation profile) -------
