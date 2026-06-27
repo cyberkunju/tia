@@ -1378,3 +1378,27 @@ def eval_run() -> dict:
     from ..eval.run import run_eval
 
     return run_eval(persist=True)
+
+
+# ---------- /admin/demo-reset (stage demo helper) ----------
+
+
+@app.post("/admin/demo-reset")
+def admin_demo_reset(s: Session = Depends(db_session)) -> dict:
+    """Wipe transient state (docs, timesheets, invoices, events, queries) so the
+    demo can run on a clean slate without losing master data (clients/employees/
+    contracts/rate_cards/SOWs/payroll). Idempotent: safe to call multiple times.
+    """
+    from ..models import Hypothesis, Query as QueryModel
+
+    counts = {
+        "events": s.query(Event).delete(),
+        "queries": s.query(QueryModel).delete(),
+        "invoices": s.query(Invoice).delete(),
+        "hypotheses": s.query(Hypothesis).delete(),
+        "timesheets": s.query(Timesheet).delete(),
+        "docs": s.query(DocAsset).delete(),
+    }
+    s.commit()
+    log_event(s, "admin", "system", "reset", "admin.demo_reset", counts)
+    return {"status": "ok", "wiped": counts}
