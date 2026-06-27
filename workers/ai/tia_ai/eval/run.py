@@ -130,11 +130,20 @@ def _ece(buckets: list[tuple[float, bool]], n_bins: int = 5) -> float:
     return round(err, 4)
 
 
+_VISION_EXT = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+
+
 def run_case(case_id: str) -> dict:
     spec = json.loads((GOLD / f"case_{case_id}.json").read_text())
     inp = SYN / spec["input"]
     if not inp.exists():
         return {"case": case_id, "skipped": True, "reason": "input not found"}
+    # Vision cases need the Modal GLM-OCR endpoint. Without a key, skip rather than
+    # hang on a 180s httpx timeout (CI / offline). With a key set, run normally.
+    from ..config import GLM_OCR_API_KEY
+
+    if inp.suffix.lower() in _VISION_EXT and not GLM_OCR_API_KEY:
+        return {"case": case_id, "skipped": True, "reason": "vision case — no GLM_OCR_API_KEY set"}
     t0 = time.time()
     ex = extract(inp)
     elapsed = round(time.time() - t0, 3)
