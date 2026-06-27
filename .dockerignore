@@ -1,0 +1,51 @@
+# ─── Build context hygiene for the API image (context = repo root) ───
+# Keep the image lean and reproducible: ship only source + seed data.
+
+# VCS / CI / editor
+.git
+.github
+.gitignore
+.vscode
+.idea
+*.swp
+
+# Frontend (built in its own image)
+apps/web/node_modules
+apps/web/dist
+apps/web/.vite
+
+# Python build/runtime artifacts
+**/__pycache__
+**/*.pyc
+**/.venv
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+
+# Local runtime state — never bake into the image
+staging/
+**/staging/
+*.db
+*.db-journal
+**/*.db
+
+# Generated eval fixtures (regenerated at container start by synthgen)
+data/synthetic/*.png
+data/synthetic/*.pdf
+data/synthetic/*.xlsx
+data/synthetic/*.eml
+data/synthetic/*.txt
+data/gold/_last_run.json
+
+# Docs & decks (not needed at runtime)
+docs/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Compose / env
+.env
+.env.*
+!.env.example
+docker-compose*.yml

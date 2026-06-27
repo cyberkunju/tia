@@ -1,0 +1,11 @@
+[Unit]
+Description=TIA continuous deploy (poll origin, redeploy on change)
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# docker lives in /usr/bin; the user-level compose plugin is found via $HOME/.docker.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+ExecStart=%h/Deploy/tia/deploy/update.sh
+TimeoutStartSec=1800

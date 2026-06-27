@@ -77,6 +77,44 @@ make web             # Vite on http://127.0.0.1:5173
 The eval workflow at `.github/workflows/eval.yml` enforces a CI gate: PRs fail if any of the
 6 non-vision cases regress (vision case 4 is gated locally because Modal requires credentials).
 
+## Deploy with Docker
+
+Production stack — **Postgres 18 + FastAPI + nginx-served SPA**, fully containerized:
+
+```bash
+cp .env.docker.example .env     # set POSTGRES_PASSWORD, optional GLM_OCR_API_KEY
+docker compose up -d --build    # builds api + web images, boots the 3 services
+# open http://localhost:8080
+```
+
+What you get:
+
+| Service | Image | Notes |
+|---|---|---|
+| `db`  | `postgres:18-alpine` | named volume `db-data` at `/var/lib/postgresql` (PG18 layout) |
+| `api` | multi-stage `uv` build → `python:3.12-slim` | non-root, healthchecked, seeds master data + eval fixtures on boot, serves with `uvicorn` workers; Typst + fonts baked in |
+| `web` | multi-stage `bun` build → `nginx:1.27-alpine` | serves the SPA and reverse-proxies `/api` → `api:8000` (single origin, no CORS) |
+
+The web container is the only published port (`WEB_PORT`, default `8080`). The SPA calls the API
+same-origin via `/api`, so nginx proxies it internally — including SSE at `/api/events/stream`.
+The API blocks on Postgres readiness, then reseeds idempotently (toggle with `TIA_SEED_ON_START`
+/ `TIA_SYNTH_ON_START`). Uploaded files and rendered invoice PDFs persist in the `staging` volume.
+
+```bash
+docker compose logs -f api      # tail the pipeline
+docker compose down             # stop (keeps volumes)
+docker compose down -v          # stop + wipe data
+```
+
+SQLite remains the zero-infra default for local `make` workflows; the container stack flips to
+Postgres purely via `DATABASE_URL` (no code change).
+
+### Continuous deployment
+
+`deploy/` ships a self-contained auto-updater: a systemd **user** timer polls `origin` and, on a
+new commit to the default branch, pulls and runs `docker compose up -d --build` — so a push to the
+repo rolls out to the host within a minute. Install it with `deploy/install.sh` (see that script).
+
 ## Package manager policy
 
 **Bun only** for JS/TS. **uv only** for Python. No npm/yarn/pnpm, no pip/poetry.

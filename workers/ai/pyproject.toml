@@ -24,6 +24,8 @@ dependencies = [
 
 [project.optional-dependencies]
 ocr = ["opencv-python-headless>=4.10"]
+# Postgres 18 driver for production/container deployments (SQLite stays the default).
+postgres = ["psycopg[binary]>=3.2"]
 dev = ["pytest>=8.2", "ruff>=0.5"]
 
 [build-system]

@@ -1,0 +1,12 @@
+# Web image build context hygiene (context = apps/web)
+node_modules
+dist
+.vite
+.git
+.gitignore
+Dockerfile
+.dockerignore
+*.log
+.DS_Store
+Thumbs.db
+README.md

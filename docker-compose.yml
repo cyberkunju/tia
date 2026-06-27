@@ -1,0 +1,72 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# TIA — production stack: Postgres 18 + FastAPI worker + nginx-served SPA.
+#
+#   cp .env.docker.example .env   # then edit secrets
+#   docker compose up -d --build
+#   open http://localhost:8080
+# ─────────────────────────────────────────────────────────────────────────────
+name: tia
+
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tia}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tia}
+      POSTGRES_DB: ${POSTGRES_DB:-tia}
+    volumes:
+      # Postgres 18+ stores data in a version-specific subdir; mount the parent.
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tia} -d ${POSTGRES_DB:-tia}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks: [tia]
+
+  api:
+    build:
+      context: .
+      dockerfile: workers/ai/Dockerfile
+    image: tia-api:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tia}:${POSTGRES_PASSWORD:-tia}@db:5432/${POSTGRES_DB:-tia}
+      GLM_OCR_BASE_URL: ${GLM_OCR_BASE_URL:-https://versifine--glm-ocr-serve.modal.run}
+      GLM_OCR_API_KEY: ${GLM_OCR_API_KEY:-}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TIA_SEED_ON_START: ${TIA_SEED_ON_START:-true}
+      TIA_SYNTH_ON_START: ${TIA_SYNTH_ON_START:-true}
+    volumes:
+      - staging:/app/staging
+    expose:
+      - "8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [tia]
+
+  web:
+    build:
+      context: apps/web
+      args:
+        VITE_API_BASE: /api
+    image: tia-web:latest
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [tia]
+
+volumes:
+  db-data:
+  staging:
+
+networks:
+  tia:
+    driver: bridge

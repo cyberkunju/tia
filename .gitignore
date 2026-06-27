@@ -22,6 +22,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+!.env.docker.example
 
 # Runtime SQLite (Postgres in prod)
 *.db
@@ -43,3 +44,6 @@ Thumbs.db
 
 # Observability volumes
 infra/volumes/
+
+# Local-only remote-ops helper scripts (not part of the repo)
+/_remote_*.sh
