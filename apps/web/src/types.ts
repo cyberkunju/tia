@@ -476,6 +476,17 @@ export type ClawbackAction =
   | "credit_note"
   | "credit_note_with_refund_pending";
 
+/**
+ * Backend-side string for action that actually occurred (past-tense).
+ * Eligibility uses present-tense `ClawbackAction`; the POST response uses this.
+ */
+export type ClawbackActionTaken =
+  | "voided"
+  | "credit_note_issued"
+  | "credit_note_with_refund_pending"
+  | "already_settled"
+  | "already_credit_noted";
+
 export interface ClawbackEligibility {
   current_state: string;
   amount_aed?: number;
@@ -503,7 +514,7 @@ export interface ClawbackRequest {
 }
 
 export interface ClawbackResponse {
-  action_taken: ClawbackAction | "already_settled" | "already_credit_noted";
+  action_taken: ClawbackActionTaken;
   status: string;
   invoice_id: string;
   voided_at?: string;
