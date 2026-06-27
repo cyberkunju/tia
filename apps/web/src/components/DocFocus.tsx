@@ -212,9 +212,6 @@ export function DocFocus({ docId }: { docId: string }) {
             <div className="mt-2">
               <InvoiceFSMStrip status={inv.status} />
             </div>
-
-            {/* Inline payment ledger. */}
-            <PaymentLedger invoiceId={inv.id} />
           </div>
         );
       })}
@@ -329,39 +326,5 @@ function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: 
         </div>
       </motion.aside>
     </>
-  );
-}
-
-/** Inline payment ledger for a single invoice — collapsed when no payments yet. */
-function PaymentLedger({ invoiceId }: { invoiceId: string }) {
-  const { data: payments } = useQuery({
-    queryKey: ["payments", invoiceId],
-    queryFn: () => api.listPayments(invoiceId),
-    refetchInterval: 10_000,
-    retry: false,
-  });
-  if (!payments || payments.length === 0) return null;
-  const total = payments.reduce((a, p) => a + p.amount, 0);
-  return (
-    <div className="mt-2 rounded-md border border-ink-200 bg-emerald-50/40">
-      <div className="px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide text-emerald-800 border-b border-emerald-100 flex items-center justify-between">
-        <span>Payments ({payments.length}) · AED {total.toFixed(2)}</span>
-      </div>
-      <ul className="divide-y divide-emerald-100">
-        {payments.map((p) => (
-          <li key={p.id} className="px-3 py-1.5 text-2xs flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="font-mono text-emerald-700">{p.receipt_number ?? p.id.slice(0, 8)}</span>
-              <span className="text-ink-500">{p.method}</span>
-              {p.reference && <span className="text-ink-400 truncate">· {p.reference}</span>}
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="tnum font-medium text-ink-800">AED {p.amount.toFixed(2)}</span>
-              <Badge tone={p.status === "received" ? "green" : p.status === "refunded" ? "red" : "blue"} dot={false}>{p.status}</Badge>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }

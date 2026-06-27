@@ -7,12 +7,9 @@ import { FinOpsEval } from "./pages/FinOpsEval";
 import { ClientsConfig } from "./pages/ClientsConfig";
 import { RulesConfig } from "./pages/RulesConfig";
 import { FinOpsDispatchTracking } from "./pages/FinOpsDispatchTracking";
-import { FinOpsDispatchQueue } from "./pages/FinOpsDispatchQueue";
-import { GlobalAuditLog } from "./pages/GlobalAuditLog";
 import { ClientSubmit } from "./pages/ClientSubmit";
 import { ClientInvoices } from "./pages/ClientInvoices";
 import { ClientQueries } from "./pages/ClientQueries";
-import { ClientStatement } from "./pages/ClientStatement";
 import { FinanceDashboard } from "./pages/FinanceDashboard";
 import { FinanceQueue } from "./pages/FinanceQueue";
 
@@ -40,15 +37,13 @@ const router = createBrowserRouter([
       { path: "console/eval", element: <Padded><FinOpsEval /></Padded> },
       { path: "console/dispatch", element: <Padded><FinOpsDispatch /></Padded> },
       { path: "console/dispatch/tracking", element: <Padded><FinOpsDispatchTracking /></Padded> },
-      { path: "console/dispatch/:clientCode", element: <Padded><FinOpsDispatchQueue /></Padded> },
+      { path: "console/dispatch/:clientCode", element: <Padded><FinOpsDispatch /></Padded> },
       { path: "console/settings/clients", element: <Padded><ClientsConfig /></Padded> },
       { path: "console/settings/rules", element: <Padded><RulesConfig /></Padded> },
-      { path: "console/audit", element: <Padded><GlobalAuditLog /></Padded> },
       // Client — portal
       { path: "portal", element: <Padded><ClientSubmit /></Padded> },
       { path: "portal/invoices", element: <Padded><ClientInvoices /></Padded> },
       { path: "portal/queries", element: <Padded><ClientQueries /></Padded> },
-      { path: "portal/statement", element: <Padded><ClientStatement /></Padded> },
       // Finance — close
       { path: "finance", element: <Padded><FinanceDashboard /></Padded> },
       { path: "finance/queue", element: <Padded><FinanceQueue /></Padded> },

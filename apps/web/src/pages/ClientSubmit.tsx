@@ -6,8 +6,6 @@ import { api } from "../api";
 import { cn } from "../lib";
 import { PageHeader, Panel, StatusBadge, RoutingBadge, Spinner } from "../ui";
 import { usePersona } from "../store";
-import { IntakeChannelsPanel } from "../components/IntakeChannelsPanel";
-import { DemoCasesPanel } from "../components/DemoCasesPanel";
 
 const SAMPLE_EMAILS: Record<string, string> = {
   "Name only (ambiguous)": `Subject: Payout request\n\nClient: Majid Al Futtaim Retail LLC\nPeriod: June 2026\n\nFatima Khan - 23 days, total AED 12000\n\nRegards,\nOperations`,
@@ -133,12 +131,6 @@ export function ClientSubmit() {
             </div>
           </Panel>
         </div>
-      </div>
-
-      {/* Live channels + demo cases — judges can replay any seed in one click. */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
-        <IntakeChannelsPanel />
-        <DemoCasesPanel />
       </div>
     </div>
   );
