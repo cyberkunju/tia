@@ -15,6 +15,7 @@ import { fmtMoney, cn } from "../lib";
 import { ContractPanel } from "../components/ContractPanel";
 import { RuleChip, RuleSummary } from "../components/RuleChip";
 import { EmlCard } from "../components/EmlCard";
+import { TextCard } from "../components/TextCard";
 import { EventTimeline } from "../components/EventTimeline";
 
 export function FinOpsReview() {
@@ -68,6 +69,9 @@ export function FinOpsReview() {
   const sourceIsPdf = mime === "application/pdf";
   const sourceIsEml = mime === "message/rfc822" || data.doc.filename?.toLowerCase().endsWith(".eml");
   const sourceIsExcel = mime.includes("spreadsheet") || mime.includes("excel") || data.doc.filename?.toLowerCase().endsWith(".xlsx");
+  const sourceIsText = !sourceIsEml && !sourceIsExcel && !sourceIsImage && !sourceIsPdf && (
+    mime.startsWith("text/") || data.doc.filename?.toLowerCase().endsWith(".txt")
+  );
 
   const ambiguous = mr?.matches?.some((m) => m.ambiguous);
   const canApprove = ts.routing === "hitl" || ts.routing === "escalate";
@@ -105,8 +109,9 @@ export function FinOpsReview() {
               {sourceIsImage ? <FileImage size={13} /> :
                 sourceIsPdf ? <FileText size={13} /> :
                 sourceIsEml ? <Mail size={13} /> :
-                sourceIsExcel ? <FileSpreadsheet size={13} /> : <FileText size={13} />}
-              Source · {mime || data.doc.channel}
+                sourceIsExcel ? <FileSpreadsheet size={13} /> :
+                sourceIsText ? <FileText size={13} /> : <FileText size={13} />}
+              Source · {sourceIsText ? "online form / text" : mime || data.doc.channel}
             </div>
             <span className="text-2xs text-ink-400 font-mono">{data.doc.filename}</span>
           </header>
@@ -121,6 +126,7 @@ export function FinOpsReview() {
               <iframe src={sourceUrl} title="source pdf" className="w-full h-[640px] border-0" />
             )}
             {sourceIsEml && <EmlCard sourceUrl={sourceUrl} />}
+            {sourceIsText && <TextCard sourceUrl={sourceUrl} filename={data.doc.filename} />}
             {sourceIsExcel && (
               <div className="h-full flex flex-col items-center justify-center text-ink-500 text-sm gap-2 px-6 text-center">
                 <FileSpreadsheet size={36} className="text-emerald-600" />
@@ -130,9 +136,9 @@ export function FinOpsReview() {
                 </a>
               </div>
             )}
-            {!sourceIsImage && !sourceIsPdf && !sourceIsEml && !sourceIsExcel && (
+            {!sourceIsImage && !sourceIsPdf && !sourceIsEml && !sourceIsExcel && !sourceIsText && (
               <div className="h-full flex flex-col items-center justify-center text-ink-500 text-sm px-6 text-center">
-                Source: {mime || "text"}.{" "}
+                Source: {mime || "unknown"}.{" "}
                 <a className="text-brand-700 underline ml-1" href={sourceUrl} target="_blank" rel="noreferrer">
                   Open raw
                 </a>
