@@ -120,10 +120,15 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
     <AnimatePresence>
       {open && (
         <>
-          <motion.div className="fixed inset-0 bg-ink-950/40 backdrop-blur-[1px] z-40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
+          <motion.div className="fixed inset-0 bg-ink-950/25 backdrop-blur-[1px] z-40" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} />
           <motion.aside
-            className="fixed right-0 top-0 bottom-0 w-full max-w-[420px] bg-white shadow-2xl z-50 flex flex-col"
-            initial={{ x: 460 }} animate={{ x: 0 }} exit={{ x: 460 }} transition={{ type: "spring", stiffness: 320, damping: 36 }}
+            style={{ transformOrigin: "bottom right" }}
+            className="fixed z-50 flex flex-col bg-white overflow-hidden
+                       inset-x-3 top-3 bottom-3
+                       sm:inset-x-auto sm:left-auto sm:right-4 sm:top-4 sm:bottom-4 sm:w-[410px]
+                       rounded-2xl border border-brand-200/80 shadow-2xl shadow-brand-900/15"
+            initial={{ opacity: 0, scale: 0.98, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: 10 }}
+            transition={{ type: "spring", stiffness: 340, damping: 32 }}
           >
             {/* Brand hairline */}
             <div className="h-[3px] brand-band shrink-0" />
