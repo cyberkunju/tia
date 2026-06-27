@@ -37,6 +37,13 @@ def log_event(
     payload: dict | None = None,
     idempotency_key: str | None = None,
 ) -> Event:
+    """Append an audit event. Idempotent on `idempotency_key` — replays return the
+    original row without raising, so the same retried HTTP request observes the
+    same outcome (the prod-correct semantic for Idempotency-Key)."""
+    if idempotency_key:
+        existing = session.query(Event).filter_by(idempotency_key=idempotency_key).first()
+        if existing:
+            return existing
     ev = Event(
         actor=actor,
         entity_kind=kind,

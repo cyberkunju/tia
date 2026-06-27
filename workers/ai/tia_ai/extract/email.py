@@ -35,10 +35,10 @@ SIGNED_RE = re.compile(
 DAYS_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:days?|d)\b", re.IGNORECASE)
 OT_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:ot|o/t|overtime)\b", re.IGNORECASE)
 LEAVE_RE = re.compile(r"(?:leave|on)\s*[:\-]?\s*([A-Za-z/][A-Za-z/ ]*)", re.IGNORECASE)
-# bare leave tokens at line end (markdown shape: "Ahmed Khan 20 days AL")
+# bare leave tokens at line end (markdown shape: "Ahmed Khan 20 days AL").
+# Case-sensitive on purpose so "Al Rashid" (a name fragment) doesn't match "AL".
 BARE_LEAVE_RE = re.compile(
-    r"\b(AL|A/L|A-L|SL|S/L|SICK|UNPAID|LWP|PH|ABSENT|PRESENT|ANNUAL|HOLIDAY)\b",
-    re.IGNORECASE,
+    r"\b(AL|A/L|A-L|SL|S/L|SICK|UNPAID|LWP|PH|ABSENT|PRESENT|ANNUAL|HOLIDAY)\b"
 )
 REIMB_RE = re.compile(
     r"(?:reimbursement|reimburse|claim|expense)[^0-9]*?(?:AED\s*)?([0-9][0-9,]*\.?\d*)"

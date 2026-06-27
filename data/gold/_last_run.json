@@ -243,9 +243,7 @@
             "days_worked": 21.0,
             "ot_hours": null,
             "hours": null,
-            "leave_codes": [
-              "AL"
-            ],
+            "leave_codes": [],
             "resolved": true,
             "ambiguous": false
           },
@@ -292,7 +290,7 @@
       "invoice_amount": 33888.24,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 1.729,
+      "latency_s": 2.112,
       "calibration": [
         [
           0.9,
@@ -368,9 +366,7 @@
             "days_worked": 21.0,
             "ot_hours": null,
             "hours": null,
-            "leave_codes": [
-              "AL"
-            ],
+            "leave_codes": [],
             "resolved": true,
             "ambiguous": false
           },
@@ -417,7 +413,7 @@
       "invoice_amount": 6431.05,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.004,
+      "latency_s": 0.005,
       "calibration": [
         [
           0.99,
@@ -646,7 +642,7 @@
       "invoice_amount": 33888.24,
       "client_code": "CL001",
       "exceptions": 0,
-      "latency_s": 0.004,
+      "latency_s": 0.003,
       "calibration": [
         [
           0.99,
