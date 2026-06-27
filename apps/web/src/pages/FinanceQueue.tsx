@@ -1,8 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ShieldCheck, Check, X } from "lucide-react";
+import { useState } from "react";
+import { ShieldCheck, Check, X, DollarSign } from "lucide-react";
 import { api } from "../api";
 import { fmtAED } from "../lib";
 import { PageHeader, Badge, EmptyState, Spinner, TableSkeleton } from "../ui";
+import { PaymentsModal } from "../components/PaymentsModal";
+import type { FinanceQueueRow, Invoice } from "../types";
 
 export function FinanceQueue() {
   const qc = useQueryClient();
@@ -10,6 +13,22 @@ export function FinanceQueue() {
   const inval = () => { qc.invalidateQueries({ queryKey: ["finance-queue"] }); qc.invalidateQueries({ queryKey: ["invoices"] }); };
   const approve = useMutation({ mutationFn: (id: string) => api.financeApprove(id), onSuccess: inval });
   const reject = useMutation({ mutationFn: ({ id, reason }: { id: string; reason: string }) => api.financeReject(id, reason), onSuccess: inval });
+  const [payFor, setPayFor] = useState<Invoice | null>(null);
+
+  const asInvoice = (r: FinanceQueueRow): Invoice => ({
+    id: r.id,
+    timesheet_id: "",
+    client_code: r.client_code,
+    period: r.period,
+    amount: r.amount,
+    currency: r.currency ?? "AED",
+    status: r.status,
+    line_items: [],
+    pdf_available: false,
+    dispatched_at: null,
+    invoice_sequence_no: r.invoice_sequence_no,
+    total_incl_vat: r.total_incl_vat,
+  });
 
   return (
     <div>
@@ -35,8 +54,17 @@ export function FinanceQueue() {
                     <td>{r.rule_failures?.length ? <Badge tone="red">{r.rule_failures.length} failed</Badge> : <span className="text-ink-300 text-xs">—</span>}</td>
                     <td>
                       <div className="flex items-center justify-end gap-1.5">
-                        <button className="btn-outline btn-sm" disabled={reject.isPending} onClick={() => { const x = prompt("Reason for rejection?"); if (x) reject.mutate({ id: r.id, reason: x }); }}><X size={13} /> Reject</button>
-                        <button className="btn-primary btn-sm" disabled={approve.isPending} onClick={() => approve.mutate(r.id)}>{approve.isPending ? <Spinner /> : <Check size={13} />} Approve</button>
+                        {r.status === "dispatched"
+                          ? (
+                            <button className="btn-outline btn-sm" onClick={() => setPayFor(asInvoice(r))}>
+                              <DollarSign size={13} /> Record payment
+                            </button>
+                          ) : (
+                            <>
+                              <button className="btn-outline btn-sm" disabled={reject.isPending} onClick={() => { const x = prompt("Reason for rejection?"); if (x) reject.mutate({ id: r.id, reason: x }); }}><X size={13} /> Reject</button>
+                              <button className="btn-primary btn-sm" disabled={approve.isPending} onClick={() => approve.mutate(r.id)}>{approve.isPending ? <Spinner /> : <Check size={13} />} Approve</button>
+                            </>
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -47,6 +75,10 @@ export function FinanceQueue() {
         </div>
         {!isLoading && (!data || data.length === 0) && <EmptyState icon={ShieldCheck} title="Approval queue is clear" hint="No invoices currently need Finance sign-off." />}
       </div>
+
+      {payFor && (
+        <PaymentsModal invoice={payFor} onClose={() => setPayFor(null)} onDone={() => { setPayFor(null); inval(); }} />
+      )}
     </div>
   );
 }

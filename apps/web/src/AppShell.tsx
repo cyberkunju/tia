@@ -10,6 +10,7 @@ import { CommandPalette } from "./components/CommandPalette";
 import { Assistant } from "./components/Assistant";
 import { SystemStatusFooter } from "./components/SystemStatusFooter";
 import { Select } from "./components/Select";
+import { NotificationsBell } from "./components/NotificationsBell";
 
 const PERSONA_HOME: Record<Persona, string> = { finops: "/console", client: "/portal", finance: "/finance" };
 const PERSONAS: { id: Persona; label: string }[] = [
@@ -117,6 +118,8 @@ export function AppShell() {
           <div className="hidden lg:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-white/20 bg-white/10 shrink-0" title="External services (api · db · openai · ocr · mail · dispatch)">
             <SystemStatusFooter compact />
           </div>
+
+          <NotificationsBell />
 
           <DemoResetButton />
 

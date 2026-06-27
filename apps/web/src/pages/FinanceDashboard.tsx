@@ -5,6 +5,7 @@ import { fmtAED, fmtPct } from "../lib";
 import { PageHeader, Panel, Metric, StatusBadge, EmptyState } from "../ui";
 import { AuditChainCard } from "../components/AuditChainCard";
 import { DispatchPillars } from "../components/DispatchPillars";
+import { SlaAgingCard } from "../components/SlaAgingCard";
 import type { StpMetricFull } from "../types";
 
 export function FinanceDashboard() {
@@ -41,6 +42,11 @@ export function FinanceDashboard() {
       {/* 3-pillar dispatch breakdown — auto / hitl / finance touchless story. */}
       <div className="mb-4">
         <DispatchPillars stp={stp as StpMetricFull | undefined} />
+      </div>
+
+      {/* SLA aging — invoices over per-client SLA window. */}
+      <div className="mb-4">
+        <SlaAgingCard />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

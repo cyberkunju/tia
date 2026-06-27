@@ -9,12 +9,14 @@ const LINKS: Record<Persona, { to: string; label: string; end?: boolean }[]> = {
     { to: "/console/settings/rules", label: "Rules" },
     { to: "/console/dispatch", label: "Dispatch", end: true },
     { to: "/console/dispatch/tracking", label: "Tracking" },
+    { to: "/console/audit", label: "Audit log" },
     { to: "/console/eval", label: "Evaluation" },
   ],
   client: [
     { to: "/portal", label: "Submit", end: true },
     { to: "/portal/invoices", label: "Invoices" },
     { to: "/portal/queries", label: "Queries" },
+    { to: "/portal/statement", label: "Statement" },
   ],
   finance: [
     { to: "/finance", label: "Overview", end: true },
