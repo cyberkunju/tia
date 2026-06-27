@@ -12,6 +12,9 @@ import { ContractPanel } from "./ContractPanel";
 import { EventTimeline } from "./EventTimeline";
 import { TouchlessRationale } from "./TouchlessRationale";
 import { ClawbackModal } from "./ClawbackModal";
+import { EmlCard } from "./EmlCard";
+import { TextCard } from "./TextCard";
+import { InvoiceFSMStrip } from "./InvoiceFSMStrip";
 
 export function DocFocus({ docId }: { docId: string }) {
   const qc = useQueryClient();
@@ -48,12 +51,6 @@ export function DocFocus({ docId }: { docId: string }) {
   const sourceUrl = useMemo(() => (docId ? api.docSourceUrl(docId) : null), [docId]);
   const sourceIsImage = data?.doc.mime?.startsWith("image/");
   const sourceIsPdf = data?.doc.mime === "application/pdf";
-  const wantsText = !!data && !sourceIsImage && !sourceIsPdf;
-  const { data: srcText } = useQuery({
-    queryKey: ["src", docId],
-    queryFn: async () => (await fetch(sourceUrl!)).text(),
-    enabled: !!sourceUrl && wantsText,
-  });
 
   if (isLoading) return <div className="flex items-center gap-2 text-ink-500 p-6"><Spinner /> Loading document…</div>;
   if (!data || !ts) return <EmptyState icon={FileText} title="Document unavailable" />;
@@ -86,12 +83,18 @@ export function DocFocus({ docId }: { docId: string }) {
             <span className="eyebrow">Source · {data.doc.channel}{data.doc.filename ? ` · ${data.doc.filename}` : ""}</span>
             <a href={sourceUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-700 hover:underline inline-flex items-center gap-1">raw <ExternalLink size={11} /></a>
           </div>
-          {wantsText ? (
-            <pre className="bg-ink-50 rounded-lg h-72 overflow-auto border border-ink-100 p-3.5 text-xs leading-relaxed text-ink-700 whitespace-pre-wrap break-words font-mono">{srcText ?? "Loading source…"}</pre>
-          ) : (
+          {sourceIsImage || sourceIsPdf ? (
             <div className="bg-ink-50 rounded-lg h-72 flex items-center justify-center overflow-hidden border border-ink-100">
               {sourceIsImage && <img src={sourceUrl!} alt="source" className="max-h-full max-w-full object-contain" />}
               {sourceIsPdf && <iframe src={sourceUrl!} title="src" className="w-full h-full" />}
+            </div>
+          ) : data.doc.channel === "email" || data.doc.filename?.endsWith(".eml") ? (
+            <div className="rounded-lg h-72 overflow-hidden border border-ink-100">
+              <EmlCard sourceUrl={sourceUrl!} />
+            </div>
+          ) : (
+            <div className="rounded-lg h-72 overflow-hidden border border-ink-100">
+              <TextCard sourceUrl={sourceUrl!} filename={data.doc.filename} />
             </div>
           )}
         </div>
@@ -204,6 +207,14 @@ export function DocFocus({ docId }: { docId: string }) {
                 </div>
               )}
             </div>
+
+            {/* Invoice FSM breadcrumb. */}
+            <div className="mt-2">
+              <InvoiceFSMStrip status={inv.status} />
+            </div>
+
+            {/* Inline payment ledger. */}
+            <PaymentLedger invoiceId={inv.id} />
           </div>
         );
       })}
@@ -318,5 +329,39 @@ function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: 
         </div>
       </motion.aside>
     </>
+  );
+}
+
+/** Inline payment ledger for a single invoice — collapsed when no payments yet. */
+function PaymentLedger({ invoiceId }: { invoiceId: string }) {
+  const { data: payments } = useQuery({
+    queryKey: ["payments", invoiceId],
+    queryFn: () => api.listPayments(invoiceId),
+    refetchInterval: 10_000,
+    retry: false,
+  });
+  if (!payments || payments.length === 0) return null;
+  const total = payments.reduce((a, p) => a + p.amount, 0);
+  return (
+    <div className="mt-2 rounded-md border border-ink-200 bg-emerald-50/40">
+      <div className="px-3 py-1.5 text-2xs font-semibold uppercase tracking-wide text-emerald-800 border-b border-emerald-100 flex items-center justify-between">
+        <span>Payments ({payments.length}) · AED {total.toFixed(2)}</span>
+      </div>
+      <ul className="divide-y divide-emerald-100">
+        {payments.map((p) => (
+          <li key={p.id} className="px-3 py-1.5 text-2xs flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="font-mono text-emerald-700">{p.receipt_number ?? p.id.slice(0, 8)}</span>
+              <span className="text-ink-500">{p.method}</span>
+              {p.reference && <span className="text-ink-400 truncate">· {p.reference}</span>}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="tnum font-medium text-ink-800">AED {p.amount.toFixed(2)}</span>
+              <Badge tone={p.status === "received" ? "green" : p.status === "refunded" ? "red" : "blue"} dot={false}>{p.status}</Badge>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
