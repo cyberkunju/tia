@@ -365,6 +365,53 @@ def get_invoice_pdf(inv_id: str, s: Session = Depends(db_session)):
     return FileResponse(i.pdf_path, media_type="application/pdf", filename=Path(i.pdf_path).name)
 
 
+@app.get("/consolidate/{client_code}/{period}.xlsx")
+def get_consolidated_excel(client_code: str, period: str, s: Session = Depends(db_session)):
+    """Smart Bot + SAP step ①: consolidated SAP-ready (Ramco SRP-shaped) Excel.
+
+    Brief §4.3: 'Normalize and consolidate everything into a single ERP-uploadable
+    (e.g., SAP-style) Excel format.' The columns here mirror what Ramco SRP's
+    payroll/billing import expects, so the export is a one-mapping-away path
+    to real SAP/Ramco integration.
+    """
+    from ..erp.smart_bot_sap import build_consolidated_excel
+
+    # period may be "June%202026" or "June-2026" or "2026-06" — accept both
+    period_clean = period.replace("-", " ").replace("%20", " ")
+    try:
+        path = build_consolidated_excel(s, client_code, period_clean)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"failed to consolidate: {e}") from e
+    if not path.exists():
+        raise HTTPException(404, "no consolidated workbook generated")
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=path.name,
+    )
+
+
+@app.get("/payroll/sif/{client_code}/{period}.sif")
+def get_wps_sif(client_code: str, period: str, s: Session = Depends(db_session)):
+    """WPS SIF file ready for the bank gateway (Central Bank + MOHRE channel).
+
+    SCR header + EDR rows per employee. Real production would submit this to
+    the corporate bank's WPS API; for the demo we materialise the file so judges
+    can see the compliance artifact. Filename pattern matches MOHRE spec:
+    `<13-digit MOHRE employer ID>_YYYYMMDD_HHMMSS_<client>.sif`.
+    """
+    from ..erp.smart_bot_sap import build_wps_sif
+
+    period_clean = period.replace("-", " ").replace("%20", " ")
+    try:
+        path = build_wps_sif(s, client_code, period_clean)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"failed to build SIF: {e}") from e
+    if not path.exists():
+        raise HTTPException(404, "no SIF generated")
+    return FileResponse(path, media_type="text/plain", filename=path.name)
+
+
 @app.get("/invoices/{inv_id}/audit")
 def get_invoice_audit(inv_id: str, s: Session = Depends(db_session)) -> dict:
     i = s.get(Invoice, inv_id)

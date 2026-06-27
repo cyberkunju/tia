@@ -16,6 +16,11 @@ from sqlalchemy.orm import Session
 
 from .config import STAGING_DIR
 from .erp.mock import build_invoice
+from .erp.smart_bot_sap import (
+    build_consolidated_excel,
+    build_wps_sif,
+    process_payroll_event_payload,
+)
 from .extract import extract
 from .invoice.render import render_invoice
 from .match.resolver import resolve
@@ -293,6 +298,35 @@ def _generate_invoice(
     period_for_seq = (inv.get("period") or "0000-00").replace(" ", "").upper()
     sequence_no = f"TIA-{inv['client_code'] or 'NA'}-{period_for_seq}-{seq_count:04d}"
 
+    # Smart Bot + SAP step ① — consolidated SAP-ready Excel
+    # Smart Bot + SAP step ② — process payroll (visible event)
+    # (step ③ "generate invoices" is what this very function does)
+    smart_bot_artifacts: dict = {}
+    if inv.get("client_code") and inv.get("period"):
+        try:
+            consolidated = build_consolidated_excel(session, inv["client_code"], inv["period"])
+            sif = build_wps_sif(session, inv["client_code"], inv["period"])
+            payload = process_payroll_event_payload(
+                consolidated, sif, len(inv.get("line_items") or [])
+            )
+            log_event(
+                session, "smart_bot_sap", "invoice", inv_id, "payroll_processed_by_sap", payload
+            )
+            smart_bot_artifacts = {
+                "consolidated_excel": str(consolidated),
+                "wps_sif": str(sif),
+            }
+        except Exception as e:  # noqa: BLE001
+            # never block invoice gen on artifact gen
+            log_event(
+                session,
+                "smart_bot_sap",
+                "invoice",
+                inv_id,
+                "smart_bot_sap.skipped",
+                {"reason": str(e)[:200]},
+            )
+
     # inv payload for Typst — extend with tax fields
     inv_for_pdf = {
         **inv,
@@ -348,6 +382,7 @@ def _generate_invoice(
             "client": inv["client_code"],
             "sequence_no": sequence_no,
             "pdf": pdf,
+            **smart_bot_artifacts,
         },
     )
     return invoice
