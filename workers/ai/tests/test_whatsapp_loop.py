@@ -71,6 +71,27 @@ def test_classify_empty_defaults_timesheet():
 
 
 @pytest.mark.parametrize(
+    "mime,url,expected",
+    [
+        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", None, ".xlsx"),
+        ("application/vnd.ms-excel", None, ".xls"),
+        ("text/csv", None, ".csv"),
+        ("application/pdf", None, ".pdf"),
+        ("image/jpeg", None, ".jpg"),
+        ("image/png", None, ".png"),
+        # unknown mime → fall back to the attachment URL's real suffix (bridge names it <hash>.xlsx)
+        (None, "http://bridge/media/abc123.xlsx", ".xlsx"),
+        ("application/octet-stream", "http://bridge/media/abc.csv", ".csv"),
+        (None, None, ".bin"),
+    ],
+)
+def test_whatsapp_attachment_ext(mime, url, expected):
+    from tia_ai.api.app import whatsapp_attachment_ext
+
+    assert whatsapp_attachment_ext(mime, url) == expected
+
+
+@pytest.mark.parametrize(
     "text", ["hi", "Hello", "hey there"[:3], "thanks", "thank you", "help", "good morning", "menu", "/start"]
 )
 def test_classify_greeting(text):

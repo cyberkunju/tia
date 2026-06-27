@@ -569,6 +569,40 @@ class WhatsAppIntake(BaseModel):
     message_text: str | None = None
 
 
+# Map an inbound attachment to the correct on-disk extension. openpyxl (and the
+# extractor dispatch) are extension-sensitive, so a WhatsApp xlsx/csv MUST be saved
+# with its real extension — not a blanket ".png" — or it fails to parse silently.
+_WA_MIME_EXT = {
+    "image/png": ".png",
+    "image/jpeg": ".jpg",
+    "image/jpg": ".jpg",
+    "image/webp": ".webp",
+    "image/tiff": ".tiff",
+    "image/heic": ".heic",
+    "application/pdf": ".pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-excel": ".xls",
+    "text/csv": ".csv",
+    "text/plain": ".txt",
+}
+
+
+def whatsapp_attachment_ext(mime: str | None, url: str | None) -> str:
+    """Best correct extension: MIME map first, then the attachment URL's suffix
+    (the bridge already names media `<hash>.<ext>`), else a safe default."""
+    if mime:
+        base = mime.split(";", 1)[0].strip().lower()
+        if base in _WA_MIME_EXT:
+            return _WA_MIME_EXT[base]
+    if url:
+        from urllib.parse import urlparse
+
+        suf = Path(urlparse(url).path).suffix.lower()
+        if 1 < len(suf) <= 6:
+            return suf
+    return ".bin"
+
+
 @app.post("/intake/whatsapp")
 def intake_whatsapp(
     payload: WhatsAppIntake,
@@ -640,11 +674,7 @@ def intake_whatsapp(
     if payload.attachment_url:
         r = httpx.get(payload.attachment_url, timeout=60.0)
         r.raise_for_status()
-        ext = ".png"
-        if payload.attachment_mime == "image/jpeg":
-            ext = ".jpg"
-        elif payload.attachment_mime == "application/pdf":
-            ext = ".pdf"
+        ext = whatsapp_attachment_ext(payload.attachment_mime, payload.attachment_url)
         tmp = Path(STAGING_DIR) / f"_wa_{uuid.uuid4().hex}{ext}"
         tmp.write_bytes(r.content)
         mime = payload.attachment_mime
