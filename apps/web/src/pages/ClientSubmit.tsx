@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { Upload, FileText, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Upload, FileText, ArrowRight } from "lucide-react";
 import { api } from "../api";
 import { cn } from "../lib";
-import { PageHeader, Panel, StatusBadge, RoutingBadge, Spinner } from "../ui";
+import { PageHeader, Panel, Spinner } from "../ui";
 import { usePersona } from "../store";
+import { UploadReceipt } from "../components/UploadReceipt";
 
 const SAMPLE_EMAILS: Record<string, string> = {
   "Name only (ambiguous)": `Subject: Payout request\n\nClient: Majid Al Futtaim Retail LLC\nPeriod: June 2026\n\nFatima Khan - 23 days, total AED 12000\n\nRegards,\nOperations`,
@@ -99,20 +99,7 @@ export function ClientSubmit() {
 
         {/* Context column — fills the last third */}
         <div className="space-y-4">
-          {result && (
-            <div className="card p-4 animate-fade-in">
-              <div className="flex items-center gap-2 text-sm mb-1">
-                <CheckCircle2 size={16} className="text-emerald-600" />
-                <span className="font-medium text-ink-800">Received</span>
-                <span className="font-mono text-2xs text-ink-400">{result.doc_id.slice(0, 8)}</span>
-              </div>
-              <div className="flex items-center gap-1.5 mb-3"><StatusBadge status={result.status} /><RoutingBadge routing={result.routing} /></div>
-              <div className="flex flex-col gap-2">
-                <Link to={`/console?doc=${result.doc_id}`} className="btn-primary btn-sm justify-center">Track in pipeline <ArrowRight size={14} /></Link>
-                <Link to="/portal/invoices" className="btn-outline btn-sm justify-center">View invoices</Link>
-              </div>
-            </div>
-          )}
+          {result && <UploadReceipt docId={result.doc_id} />}
 
           <Panel title="How TIA processes this">
             <ol className="space-y-3">
