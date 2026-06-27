@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html, body, #root { height: 100%; }
+  body {
+    background: #f8fafc;
+    color: #0f172a;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .card { @apply bg-white rounded-xl border border-ink-200 shadow-sm; }
+  .badge { @apply inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium; }
+  .badge-green { @apply badge bg-emerald-50 text-emerald-700 border border-emerald-200; }
+  .badge-amber { @apply badge bg-amber-50 text-amber-800 border border-amber-200; }
+  .badge-red { @apply badge bg-red-50 text-red-700 border border-red-200; }
+  .badge-blue { @apply badge bg-sky-50 text-sky-700 border border-sky-200; }
+  .badge-slate { @apply badge bg-ink-100 text-ink-800 border border-ink-200; }
+  .btn { @apply inline-flex items-center justify-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50; }
+  .btn-primary { @apply btn bg-brand-600 hover:bg-brand-700 text-white; }
+  .btn-ghost { @apply btn bg-transparent hover:bg-ink-100 text-ink-800; }
+  .btn-outline { @apply btn border border-ink-200 hover:bg-ink-100 text-ink-800; }
+}
