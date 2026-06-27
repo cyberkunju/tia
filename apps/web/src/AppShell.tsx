@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
+import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { RotateCw, Search } from "lucide-react";
 import { usePersona, type Persona } from "./store";
@@ -41,26 +41,29 @@ function ActingAsPicker() {
 }
 
 /**
- * Stage helper — only renders when the URL has `?demo=1`. Wipes demo data via
- * the existing /admin/demo-reset endpoint so the same browser can replay the
- * click-through without leaving the page.
+ * Stage helper — wipes demo data via /admin/demo-reset so the same browser can
+ * replay the click-through without leaving the page. Always visible (no URL
+ * gate) so it works mid-recording. Single-click — no confirm dialog — because
+ * "fast" is the whole point during a demo.
  */
 function DemoResetButton() {
-  const loc = useLocation();
   const qc = useQueryClient();
-  const visible = new URLSearchParams(loc.search).has("demo");
-  const reset = useMutation({ mutationFn: api.demoReset, onSuccess: () => qc.invalidateQueries() });
-  if (!visible) return null;
+  const nav = useNavigate();
+  const bumpReset = usePersona((s) => s.bumpReset);
+  const reset = useMutation({
+    mutationFn: api.demoReset,
+    onSuccess: () => {
+      qc.clear();
+      bumpReset();
+      nav("/portal", { replace: true });
+    },
+  });
   return (
     <button
-      onClick={() => {
-        if (window.confirm("Reset demo data? This wipes documents, timesheets, invoices, and events.")) {
-          reset.mutate();
-        }
-      }}
+      onClick={() => reset.mutate()}
       disabled={reset.isPending}
-      className="hidden md:inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60"
-      title="Wipe demo data (only visible with ?demo=1)"
+      className="inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60 shrink-0"
+      title="Wipe all documents, timesheets, invoices, and events — for demo replay."
     >
       <RotateCw size={11} className={reset.isPending ? "animate-spin" : ""} />
       {reset.isPending ? "Resetting…" : "Reset demo"}

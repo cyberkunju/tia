@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Upload, FileText, ArrowRight } from "lucide-react";
 import { api } from "../api";
@@ -27,12 +27,23 @@ type Result = { doc_id: string; timesheet_id: string; status: string; routing: s
 export function ClientSubmit() {
   const qc = useQueryClient();
   const { currentClientCode } = usePersona();
-  const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
+  const clients = useQuery({ queryKey: ["clients"], queryFn: api.listClients }).data;
   const clientName = clients?.find((c) => c.code === currentClientCode)?.name;
   const [tab, setTab] = useState<"upload" | "email">("upload");
   const [emailBody, setEmailBody] = useState("");
   const [emailSubject, setEmailSubject] = useState("");
   const [result, setResult] = useState<Result | null>(null);
+
+  // When Reset Demo fires the header button, every component-local bit of
+  // post-upload state needs to go too — otherwise the UploadReceipt keeps
+  // polling a doc the backend just deleted.
+  const resetTick = usePersona((s) => s.resetTick);
+  useEffect(() => {
+    setResult(null);
+    setEmailBody("");
+    setEmailSubject("");
+    setTab("upload");
+  }, [resetTick]);
 
   const onDone = (r: Result) => { setResult(r); qc.invalidateQueries({ queryKey: ["docs"] }); };
   const upload = useMutation({ mutationFn: (file: File) => api.uploadFile(file), onSuccess: onDone });
