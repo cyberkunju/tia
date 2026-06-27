@@ -196,7 +196,7 @@ def intake_whatsapp(
 # ---------------------------------------------------------------- docs / timesheets
 
 
-@app.get("/docs")
+@app.get("/documents")
 def list_docs(s: Session = Depends(db_session), limit: int = 100) -> list[dict]:
     docs = s.query(DocAsset).order_by(DocAsset.uploaded_at.desc()).limit(limit).all()
     out = []
@@ -220,7 +220,7 @@ def list_docs(s: Session = Depends(db_session), limit: int = 100) -> list[dict]:
     return out
 
 
-@app.get("/docs/{doc_id}")
+@app.get("/documents/{doc_id}")
 def get_doc(doc_id: str, s: Session = Depends(db_session)) -> dict:
     d = s.get(DocAsset, doc_id)
     if not d:
@@ -241,7 +241,7 @@ def get_doc(doc_id: str, s: Session = Depends(db_session)) -> dict:
     }
 
 
-@app.get("/docs/{doc_id}/source")
+@app.get("/documents/{doc_id}/source")
 def get_doc_source(doc_id: str, s: Session = Depends(db_session)):
     d = s.get(DocAsset, doc_id)
     if not d or not d.staging_path or not Path(d.staging_path).exists():

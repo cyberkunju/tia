@@ -43,9 +43,9 @@ export const api = {
     ),
 
   // docs / timesheets
-  listDocs: () => req<DocSummary[]>("/docs"),
-  getDoc: (id: string) => req<{ doc: { id: string; channel: string; mime: string; filename: string; uploaded_at: string; uploaded_by: string }; timesheet: Timesheet | null; invoices: Invoice[] }>(`/docs/${id}`),
-  docSourceUrl: (id: string) => `${API_BASE}/docs/${id}/source`,
+  listDocs: () => req<DocSummary[]>("/documents"),
+  getDoc: (id: string) => req<{ doc: { id: string; channel: string; mime: string; filename: string; uploaded_at: string; uploaded_by: string }; timesheet: Timesheet | null; invoices: Invoice[] }>(`/documents/${id}`),
+  docSourceUrl: (id: string) => `${API_BASE}/documents/${id}/source`,
 
   approve: (tsId: string, corrections: { row_idx: number; chosen_emp_id: string }[] = [], byUser = "finops") =>
     req<{ timesheet_id: string; status: string; invoice_id: string; amount: number }>(

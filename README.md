@@ -57,8 +57,23 @@ docs/               brief + 8-slide deck
 
 ## Quickstart
 
-See `CONTRACTS.md` for the API/queue/model contracts. Setup steps land in this section
-as each layer is wired.
+```bash
+# one-time
+make install         # uv sync (python 3.12) + bun install
+cp .env.example .env # add your GLM_OCR_API_KEY for the handwritten case
+make seed            # 10 clients, 200 employees, 200 payroll rows
+make synth           # generates all 7 sample inputs + gold ground truth
+
+# verify
+make eval            # 7/7 PASS, F1 + ECE printed
+
+# run
+make api             # FastAPI on http://127.0.0.1:8000
+make web             # Vite on http://127.0.0.1:5173
+```
+
+The eval workflow at `.github/workflows/eval.yml` enforces a CI gate: PRs fail if any of the
+6 non-vision cases regress (vision case 4 is gated locally because Modal requires credentials).
 
 ## Package manager policy
 
