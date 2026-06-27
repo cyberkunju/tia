@@ -123,8 +123,12 @@ def ingest_file(
     mime: str | None = None,
     uploaded_by: str | None = None,
     idempotency_key: str | None = None,
+    parent_doc_id: str | None = None,
 ) -> DocAsset:
-    """Stage the file (NVMe staging dir) + content-hash dedupe + audit-log."""
+    """Stage the file (NVMe staging dir) + content-hash dedupe + audit-log.
+
+    `parent_doc_id` links an attachment back to its parent email DocAsset
+    (used by the E3 .eml attachment extractor)."""
     src_path = Path(src_path)
     content_hash = _hash_file(src_path)
     existing = session.query(DocAsset).filter_by(content_hash=content_hash).first()
@@ -149,7 +153,9 @@ def ingest_file(
         source_channel=channel,
         mime=mime,
         staging_path=str(staged),
+        filename=src_path.name,
         uploaded_by=uploaded_by,
+        parent_doc_id=parent_doc_id,
     )
     session.add(doc)
     session.flush()

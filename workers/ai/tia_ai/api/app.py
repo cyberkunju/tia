@@ -112,12 +112,80 @@ async def intake_upload(
         idempotency_key=idempotency_key,
     )
     ts = process_doc(s, doc)
+
+    # E3 — if this is an .eml message, extract attachments and run them through
+    # the pipeline as sibling docs (parent_doc_id linking back to the email).
+    attachments_processed: list[dict] = []
+    is_eml = (file.content_type == "message/rfc822") or (
+        (file.filename or "").lower().endswith(".eml")
+    )
+    if is_eml:
+        from ..extract.email_attachments import extract_attachments
+        from ..orchestrator import log_event
+
+        for name, mime, payload in extract_attachments(raw):
+            att_path = Path(STAGING_DIR) / f"_att_{uuid.uuid4().hex}_{name}"
+            att_path.write_bytes(payload)
+            try:
+                child = ingest_file(
+                    s,
+                    att_path,
+                    channel="email_attachment",
+                    mime=mime,
+                    uploaded_by=uploaded_by,
+                    parent_doc_id=doc.id,
+                )
+                log_event(
+                    s,
+                    "system",
+                    "doc",
+                    doc.id,
+                    "email.attachment_extracted",
+                    {
+                        "filename": name,
+                        "mime": mime,
+                        "child_doc_id": child.id,
+                        "bytes": len(payload),
+                    },
+                )
+                try:
+                    child_ts = process_doc(s, child)
+                    attachments_processed.append(
+                        {
+                            "doc_id": child.id,
+                            "filename": name,
+                            "mime": mime,
+                            "timesheet_id": child_ts.id,
+                            "routing": child_ts.routing,
+                        }
+                    )
+                except Exception as e:  # noqa: BLE001
+                    # never let a bad attachment crash the parent ingest
+                    attachments_processed.append(
+                        {
+                            "doc_id": child.id,
+                            "filename": name,
+                            "mime": mime,
+                            "error": str(e)[:200],
+                        }
+                    )
+            except Exception as e:  # noqa: BLE001
+                log_event(
+                    s,
+                    "system",
+                    "doc",
+                    doc.id,
+                    "email.attachment_extract_failed",
+                    {"filename": name, "mime": mime, "error": str(e)[:200]},
+                )
+
     return {
         "doc_id": doc.id,
         "timesheet_id": ts.id,
         "status": ts.status,
         "routing": ts.routing,
         "confidence": ts.confidence_calibrated,
+        "attachments": attachments_processed,
     }
 
 
@@ -191,24 +259,63 @@ def intake_email(
     # log the email-mode decision on the doc so the Review screen can show it
     from ..orchestrator import log_event
 
-    log_event(
-        s,
-        payload.from_addr or "email",
-        "doc",
-        doc.id,
-        "email.mode_detected",
-        {
+    # E10 — preserve the watched_address (set by the webhook adapter) into the event
+    mode_payload = {
+        "intake_mode": mode,
+        "to": payload.to_addrs,
+        "cc": payload.cc_addrs,
+        "from": payload.from_addr,
+    }
+    watched_addr = getattr(payload, "_watched_address", None)
+    if watched_addr:
+        mode_payload["watched_address"] = watched_addr
+
+    log_event(s, payload.from_addr or "email", "doc", doc.id, "email.mode_detected", mode_payload)
+
+    # E9 — orphan email: no TIA address found AND no watched-mailbox match.
+    # Don't try to process; route straight to escalate so FinOps can triage.
+    if mode == "unknown":
+        from ..models import Timesheet
+
+        ts = Timesheet(
+            id=str(uuid.uuid4()),
+            doc_id=doc.id,
+            client_code=None,
+            period=None,
+            status="awaiting_review",
+            routing="escalate",
+            hitl_reason="orphan email — no client identified (TIA not in To/Cc, no watched mailbox match)",
+            confidence_calibrated=0.0,
+            extraction={},
+            match_result={},
+            validations=[],
+            resolved_rows=[],
+        )
+        s.add(ts)
+        s.flush()
+        log_event(
+            s,
+            payload.from_addr or "email",
+            "doc",
+            doc.id,
+            "email.orphan_received",
+            {"to": payload.to_addrs, "cc": payload.cc_addrs, "from": payload.from_addr},
+        )
+        return {
+            "doc_id": doc.id,
+            "timesheet_id": ts.id,
+            "status": ts.status,
+            "routing": ts.routing,
+            "confidence": 0.0,
             "intake_mode": mode,
-            "to": payload.to_addrs,
-            "cc": payload.cc_addrs,
-            "from": payload.from_addr,
-        },
-    )
+            "reply_drafted": False,
+        }
+
     ts = process_doc(s, doc)
     # cc_silent: if processed cleanly, no reply; if any exception, draft a reply
     reply_drafted = False
     if mode == "cc_silent" and ts.routing in ("hitl", "escalate"):
-        reply_path = _draft_cc_silent_reply(payload, ts)
+        reply_path = _draft_cc_silent_reply(payload, ts, s)
         log_event(
             s,
             "smart_bot_sap",
@@ -229,26 +336,83 @@ def intake_email(
     }
 
 
-def _draft_cc_silent_reply(payload: "EmailIntake", ts) -> Path:
-    """Write a .eml reply draft to staging/outbox/ — TIA's polite 'we paused this' note."""
+def _draft_cc_silent_reply(payload: "EmailIntake", ts, s: Session | None = None) -> Path:
+    """Write a .eml reply draft to staging/outbox/ — TIA's polite 'we paused this' note.
+
+    Reads:
+      - Client.settings.tia_reply_from   → reply From: address (defaults to tia@tasc.test)
+      - rule_results on the latest invoice OR validations on the timesheet
+                                          → friendly client-facing rule explanation
+    Subject is enriched with client / period / reference so the client can
+    thread it back to the right invoice.
+    """
+    from ..validate.rules_v2 import friendly_message
+
+    # 1) configurable From: (E6)
+    sender = "tia@tasc.test"
+    client_name: str | None = None
+    period: str | None = None
+    if s is not None and ts.client_code:
+        c = s.get(Client, ts.client_code)
+        if c:
+            client_name = c.name
+            sender = (c.settings or {}).get("tia_reply_from") or sender
+        period = ts.period
+
+    # 2) friendly rule translation (E1)
+    friendly: str | None = None
+    if s is not None:
+        # find first blocking rule failure on the invoice (or on the timesheet's validations)
+        inv = (
+            s.query(Invoice)
+            .filter_by(timesheet_id=ts.id)
+            .order_by(Invoice.created_at.desc())
+            .first()
+        )
+        candidates = []
+        if inv and inv.rule_results:
+            candidates = inv.rule_results
+        elif ts.validations:
+            candidates = ts.validations
+        for r in candidates or []:
+            if not r.get("passed") and r.get("severity") != "warning":
+                friendly = friendly_message(r.get("rule_id"))
+                if friendly:
+                    break
+
+    reason_line = friendly or (ts.hitl_reason or "flagged for review by our FinOps team")
+
+    # 3) rich subject (E7)
+    subject_bits: list[str] = [f"Re: {payload.subject or 'Your timesheet submission'}"]
+    if client_name:
+        subject_bits.append(client_name)
+    if period:
+        subject_bits.append(period)
+    subject_bits.append(f"ref {ts.id[:8]}")
+    rich_subject = " · ".join(subject_bits)
+
     out = Path(STAGING_DIR) / "outbox" / f"reply_{ts.id[:8]}.eml"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(
-        f"""From: tia@tasc.test
+        f"""From: {sender}
 To: {payload.from_addr or "unknown"}
 Cc: {", ".join(payload.cc_addrs)}
-Subject: Re: {payload.subject or "Your timesheet submission"}
+Subject: {rich_subject}
 
 Hi,
 
-Thanks for the submission — TIA processed it but paused for human review.
+Thanks for the timesheet — we've received it and paused it for human review.
 
-Reason: {ts.hitl_reason or "flagged for review"}
+What happened: {reason_line}
+
 Reference: timesheet {ts.id[:8]} · routing {ts.routing} · confidence {ts.confidence_calibrated}
+Period: {period or "(not provided)"}
 
-A FinOps reviewer will follow up shortly. No action required from you.
+A FinOps reviewer at TASC Outsourcing will follow up shortly. No action required from
+you in the meantime — if you'd like to clarify anything, just reply to this thread.
 
-— TIA (Touchless Invoice Agent)
+— TIA · Touchless Invoice Agent
+   TASC Outsourcing FZ-LLC
 """,
         encoding="utf-8",
     )
@@ -273,26 +437,55 @@ class MailboxWebhook(BaseModel):
 
 @app.post("/intake/mailbox-webhook")
 def intake_mailbox_webhook(
+    request: Request,
     payload: MailboxWebhook,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    signature: str | None = Header(default=None, alias="X-Webhook-Signature"),
     s: Session = Depends(db_session),
 ) -> dict:
     """Watched-mailbox simulator. We adapt the Postmark shape to our internal
-    EmailIntake and force intake_mode='watched_mailbox'."""
+    EmailIntake and force intake_mode='watched_mailbox'.
+
+    E5 — HMAC-SHA256 webhook signature verification.
+    When `MAILBOX_WEBHOOK_SECRET` env var is set, requests must carry an
+    `X-Webhook-Signature` header containing the hex digest of
+    sha256(secret || raw_body). Postmark, SES, and Mandrill all use a variant
+    of this. When the secret is unset, the check is skipped (dev-friendly)."""
+    import hmac
+    import os
+
+    secret = os.getenv("MAILBOX_WEBHOOK_SECRET", "")
+    if secret:
+        if not signature:
+            raise HTTPException(401, "missing X-Webhook-Signature")
+        # Re-read raw body for signature verification (Pydantic parsed it but we need bytes)
+        # FastAPI doesn't expose raw bytes after model_validate; we re-derive from payload JSON.
+        # For real Postmark / SES, you'd hold the raw body in a middleware before parsing.
+        import json as _json
+
+        raw = _json.dumps(payload.model_dump(), separators=(",", ":"), sort_keys=True).encode()
+        expected = hmac.new(secret.encode(), raw, "sha256").hexdigest()
+        if not hmac.compare_digest(expected, signature):
+            raise HTTPException(401, "invalid X-Webhook-Signature")
+
     body = payload.TextBody or ""
     if not body and payload.HtmlBody:
         import re
 
         body = re.sub(r"<[^>]+>", "", payload.HtmlBody)
+    to_list = [a.strip() for a in (payload.To or "").split(",") if a.strip()]
+    cc_list = [a.strip() for a in (payload.Cc or "").split(",") if a.strip()]
     inner = EmailIntake(
         body=body,
         subject=payload.Subject,
         from_addr=payload.From,
-        to_addrs=[a.strip() for a in (payload.To or "").split(",") if a.strip()],
-        cc_addrs=[a.strip() for a in (payload.Cc or "").split(",") if a.strip()],
+        to_addrs=to_list,
+        cc_addrs=cc_list,
         intake_mode="watched_mailbox",
         uploaded_by=payload.From or "mailbox-watcher",
     )
+    # E10 — annotate which watched address actually triggered the webhook
+    inner._watched_address = to_list[0] if to_list else (cc_list[0] if cc_list else None)  # type: ignore[attr-defined]
     return intake_email(inner, idempotency_key=idempotency_key, s=s)
 
 

@@ -104,10 +104,16 @@ class DocAsset(Base):
     source_channel: Mapped[str] = mapped_column(String)  # upload|email|whatsapp
     mime: Mapped[str | None] = mapped_column(String, nullable=True)
     staging_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    filename: Mapped[str | None] = mapped_column(String, nullable=True)
     uploaded_by: Mapped[str | None] = mapped_column(String, nullable=True)
     uploaded_at: Mapped[dt.datetime] = mapped_column(default=_now)
     doc_class: Mapped[str | None] = mapped_column(String, nullable=True)
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # E3 — when this DocAsset is an attachment extracted from another email,
+    # link back to the parent email DocAsset. Null for top-level docs.
+    parent_doc_id: Mapped[str | None] = mapped_column(
+        ForeignKey("doc_assets.id"), nullable=True, index=True
+    )
 
 
 class Timesheet(Base):

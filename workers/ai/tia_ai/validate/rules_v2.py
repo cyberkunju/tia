@@ -478,6 +478,32 @@ RULES = (
 )
 
 
+# Friendly, client-facing translation of rule IDs.
+# Used by the cc_silent reply drafter (and any future client-visible surface)
+# so we don't leak internals like "rule R5 failed".
+FRIENDLY_RULE_MESSAGES: dict[str, str] = {
+    "R0": "We couldn't find an active contract for your account — please make sure your client code is up to date.",
+    "R1": "One or more employees on this timesheet aren't on your contract roster — we'll confirm with FinOps before billing.",
+    "R2": "The billing rate on this timesheet differs from your contract's rate card — we'll verify before invoicing.",
+    "R3": "This timesheet's period falls outside your contract's validity window — please double-check the dates.",
+    "R4": "Overtime hours on this timesheet exceed your contract's agreed cap — we're holding it for review.",
+    "R5": "Hours were billed against a deliverable that's already marked complete on your Statement of Work.",
+    "R6": "The line totals didn't reconcile against the contract markup — we're double-checking the math.",
+    "R7": "VAT didn't reconcile against the line total — we're verifying the tax calculation.",
+    "R8": "An invoice already exists for this employee in the same billing period — we want to confirm this isn't a duplicate.",
+    "R9": "Your timesheet didn't include a clear approver signature — we may need confirmation before invoicing.",
+    "R10": "Overtime amounts didn't reconcile to the statutory rate (1.25× standard / 1.5× night, rest day, holiday).",
+    "R14": "The billing period is currently closed for your account — please reach out to your TASC FinOps contact.",
+}
+
+
+def friendly_message(rule_id: str | None) -> str | None:
+    """Map a rule ID to a client-friendly explanation. Returns None when unknown."""
+    if not rule_id:
+        return None
+    return FRIENDLY_RULE_MESSAGES.get(rule_id)
+
+
 def find_active_contract(session: Session, client_code: str | None) -> Contract | None:
     if not client_code:
         return None
