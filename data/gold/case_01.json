@@ -1,0 +1,21 @@
+{
+  "case": "01",
+  "channel": "email",
+  "input": "case_01_email_no_empid.eml",
+  "expect": {
+    "client_code": "CL005",
+    "period": "June 2026",
+    "rows": [
+      {
+        "employee_name": "Fatima Khan",
+        "days_worked": 23,
+        "resolved": false,
+        "ambiguous": true,
+        "candidate_emp_ids": [
+          "EMP10083",
+          "EMP10093"
+        ]
+      }
+    ]
+  }
+}

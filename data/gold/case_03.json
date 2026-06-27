@@ -1,0 +1,30 @@
+{
+  "case": "03",
+  "channel": "email",
+  "input": "case_03_email_client_full.eml",
+  "expect": {
+    "client_code": "CL001",
+    "period": "June 2026",
+    "rows": [
+      {
+        "employee_name": "Carlos Smith",
+        "days_worked": 22,
+        "resolved": true,
+        "ambiguous": false
+      },
+      {
+        "employee_name": "Ahmed Khan",
+        "days_worked": 20,
+        "ot_hours": 4,
+        "resolved": true,
+        "ambiguous": false
+      },
+      {
+        "employee_name": "Meera Al Rashid",
+        "days_worked": 21,
+        "resolved": true,
+        "ambiguous": false
+      }
+    ]
+  }
+}

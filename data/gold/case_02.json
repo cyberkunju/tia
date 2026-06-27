@@ -1,0 +1,18 @@
+{
+  "case": "02",
+  "channel": "email",
+  "input": "case_02_email_employee.txt",
+  "expect": {
+    "period": "June 2026",
+    "rows": [
+      {
+        "emp_id": "EMP10001",
+        "employee_name": "Carlos Smith",
+        "days_worked": 22,
+        "ot_hours": 2,
+        "resolved": true,
+        "ambiguous": false
+      }
+    ]
+  }
+}

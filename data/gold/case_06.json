@@ -1,0 +1,30 @@
+{
+  "case": "06",
+  "channel": "email",
+  "input": "case_06_email_structured.txt",
+  "expect": {
+    "client_code": "CL001",
+    "period": "June 2026",
+    "rows": [
+      {
+        "emp_id": "EMP10001",
+        "employee_name": "Carlos Smith",
+        "days_worked": 20,
+        "leave_codes": [
+          "AL"
+        ],
+        "reimbursements": 1,
+        "resolved": true,
+        "ambiguous": false
+      },
+      {
+        "emp_id": "EMP10002",
+        "employee_name": "Ahmed Khan",
+        "days_worked": 22,
+        "reimbursements": 1,
+        "resolved": true,
+        "ambiguous": false
+      }
+    ]
+  }
+}

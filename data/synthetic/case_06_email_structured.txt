@@ -1,0 +1,10 @@
+Subject: Leave and reimbursements June 2026
+
+Client: Emirates Steel Industries LLC
+Period: June 2026
+
+EMP10001 Carlos Smith - 20 days, leave: AL, reimbursement AED 250 for taxi
+EMP10002 Ahmed Khan - 22 days, claim AED 120 for parking
+
+Regards,
+Finance
