@@ -105,8 +105,39 @@ class EmailIntake(BaseModel):
     body: str
     subject: str | None = None
     from_addr: str | None = None
+    to_addrs: list[str] = []
+    cc_addrs: list[str] = []
     client_hint: str | None = None
     uploaded_by: str = "client"
+    intake_mode: str | None = None  # if not provided we infer below
+
+
+# TIA's own email address — anything to/cc'd here is treated as an intake.
+TIA_EMAIL_ADDRESSES = {
+    "tia@cyberkunju.com",
+    "tia@tasc.test",
+    "timesheets@tia.test",
+    "billing@tia.test",
+}
+
+
+def _infer_intake_mode(payload: "EmailIntake", session: Session) -> str:
+    """Return one of: 'direct_forward' | 'cc_silent' | 'watched_mailbox' | 'unknown'."""
+    if payload.intake_mode:
+        return payload.intake_mode
+    to_l = [a.lower().strip() for a in (payload.to_addrs or [])]
+    cc_l = [a.lower().strip() for a in (payload.cc_addrs or [])]
+    if any(a in TIA_EMAIL_ADDRESSES for a in to_l):
+        return "direct_forward"
+    if any(a in TIA_EMAIL_ADDRESSES for a in cc_l):
+        return "cc_silent"
+    # watched mailbox: any address (to or cc) matches a per-client watched list
+    all_addrs = set(to_l + cc_l)
+    for c in session.query(Client).all():
+        watched = [a.lower() for a in (c.settings or {}).get("watched_mailboxes", []) or []]
+        if any(a in watched for a in all_addrs):
+            return "watched_mailbox"
+    return "unknown"
 
 
 @app.post("/intake/email")
@@ -115,10 +146,17 @@ def intake_email(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
+    mode = _infer_intake_mode(payload, s)
     tmp = Path(STAGING_DIR) / f"_inbox_{uuid.uuid4().hex}.eml"
     parts = []
     if payload.subject:
         parts.append(f"Subject: {payload.subject}")
+    if payload.from_addr:
+        parts.append(f"From: {payload.from_addr}")
+    if payload.to_addrs:
+        parts.append(f"To: {', '.join(payload.to_addrs)}")
+    if payload.cc_addrs:
+        parts.append(f"Cc: {', '.join(payload.cc_addrs)}")
     parts.append("")
     parts.append(payload.body)
     tmp.write_text("\n".join(parts), encoding="utf-8")
@@ -130,6 +168,175 @@ def intake_email(
         uploaded_by=payload.uploaded_by,
         idempotency_key=idempotency_key,
     )
+    # log the email-mode decision on the doc so the Review screen can show it
+    from ..orchestrator import log_event
+
+    log_event(
+        s,
+        payload.from_addr or "email",
+        "doc",
+        doc.id,
+        "email.mode_detected",
+        {
+            "intake_mode": mode,
+            "to": payload.to_addrs,
+            "cc": payload.cc_addrs,
+            "from": payload.from_addr,
+        },
+    )
+    ts = process_doc(s, doc)
+    # cc_silent: if processed cleanly, no reply; if any exception, draft a reply
+    reply_drafted = False
+    if mode == "cc_silent" and ts.routing in ("hitl", "escalate"):
+        reply_path = _draft_cc_silent_reply(payload, ts)
+        log_event(
+            s,
+            "smart_bot_sap",
+            "doc",
+            doc.id,
+            "email.cc_silent_reply_drafted",
+            {"path": str(reply_path), "routing": ts.routing, "reason": ts.hitl_reason},
+        )
+        reply_drafted = True
+    return {
+        "doc_id": doc.id,
+        "timesheet_id": ts.id,
+        "status": ts.status,
+        "routing": ts.routing,
+        "confidence": ts.confidence_calibrated,
+        "intake_mode": mode,
+        "reply_drafted": reply_drafted,
+    }
+
+
+def _draft_cc_silent_reply(payload: "EmailIntake", ts) -> Path:
+    """Write a .eml reply draft to staging/outbox/ — TIA's polite 'we paused this' note."""
+    out = Path(STAGING_DIR) / "outbox" / f"reply_{ts.id[:8]}.eml"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        f"""From: tia@tasc.test
+To: {payload.from_addr or "unknown"}
+Cc: {", ".join(payload.cc_addrs)}
+Subject: Re: {payload.subject or "Your timesheet submission"}
+
+Hi,
+
+Thanks for the submission — TIA processed it but paused for human review.
+
+Reason: {ts.hitl_reason or "flagged for review"}
+Reference: timesheet {ts.id[:8]} · routing {ts.routing} · confidence {ts.confidence_calibrated}
+
+A FinOps reviewer will follow up shortly. No action required from you.
+
+— TIA (Touchless Invoice Agent)
+""",
+        encoding="utf-8",
+    )
+    return out
+
+
+class MailboxWebhook(BaseModel):
+    """Postmark/SES-shape webhook for the watched-mailbox channel.
+
+    A real production setup forwards inbound mail through Postmark or SES into
+    this endpoint. For the demo any client can POST a payload and TIA will
+    treat it as if it had come from a monitored billing inbox.
+    """
+
+    From: str | None = None
+    To: str | None = None
+    Cc: str | None = None
+    Subject: str | None = None
+    TextBody: str | None = None
+    HtmlBody: str | None = None
+
+
+@app.post("/intake/mailbox-webhook")
+def intake_mailbox_webhook(
+    payload: MailboxWebhook,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    """Watched-mailbox simulator. We adapt the Postmark shape to our internal
+    EmailIntake and force intake_mode='watched_mailbox'."""
+    body = payload.TextBody or ""
+    if not body and payload.HtmlBody:
+        import re
+
+        body = re.sub(r"<[^>]+>", "", payload.HtmlBody)
+    inner = EmailIntake(
+        body=body,
+        subject=payload.Subject,
+        from_addr=payload.From,
+        to_addrs=[a.strip() for a in (payload.To or "").split(",") if a.strip()],
+        cc_addrs=[a.strip() for a in (payload.Cc or "").split(",") if a.strip()],
+        intake_mode="watched_mailbox",
+        uploaded_by=payload.From or "mailbox-watcher",
+    )
+    return intake_email(inner, idempotency_key=idempotency_key, s=s)
+
+
+# ---------- Online Timesheet App (4th channel, brief §4.2 stretch) ----------
+
+
+class OnlineFormSubmit(BaseModel):
+    period: str  # e.g. "June 2026"
+    rows: list[dict]  # [{emp_id?, employee_name?, days_worked, ot_hours?, leave_codes?}]
+    submitted_by: str | None = None
+    notes: str | None = None
+
+
+@app.post("/submit/{client_code}")
+def submit_online_form(
+    client_code: str,
+    payload: OnlineFormSubmit,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    """4th channel — Online Timesheet App. Client pre-bound by URL path.
+
+    Renders the form payload as a parseable email-style document so the existing
+    extractor pipeline handles it without a new format-specific path."""
+    client = s.get(Client, client_code)
+    if not client:
+        raise HTTPException(404, f"client {client_code} not found")
+    lines = [
+        f"Client: {client.name} ({client.code})",
+        f"Period: {payload.period}",
+        "",
+    ]
+    for r in payload.rows:
+        emp = r.get("emp_id")
+        name = r.get("employee_name") or ""
+        days = r.get("days_worked")
+        ot = r.get("ot_hours") or 0
+        leave = r.get("leave_codes") or []
+        leave_str = f", leave: {','.join(leave)}" if leave else ""
+        prefix = f"{emp} " if emp else ""
+        lines.append(f"{prefix}{name} - {days} days, {ot} OT hours{leave_str}".strip())
+    if payload.notes:
+        lines += ["", "Notes:", payload.notes]
+    body = "\n".join(lines)
+    tmp = Path(STAGING_DIR) / f"_form_{uuid.uuid4().hex}.txt"
+    tmp.write_text(body, encoding="utf-8")
+    doc = ingest_file(
+        s,
+        tmp,
+        channel="online_form",
+        mime="text/plain",
+        uploaded_by=payload.submitted_by or "client",
+        idempotency_key=idempotency_key,
+    )
+    from ..orchestrator import log_event
+
+    log_event(
+        s,
+        payload.submitted_by or "client",
+        "doc",
+        doc.id,
+        "online_form_submitted",
+        {"client_code": client_code, "row_count": len(payload.rows)},
+    )
     ts = process_doc(s, doc)
     return {
         "doc_id": doc.id,
@@ -137,6 +344,7 @@ def intake_email(
         "status": ts.status,
         "routing": ts.routing,
         "confidence": ts.confidence_calibrated,
+        "client_code": client_code,
     }
 
 
