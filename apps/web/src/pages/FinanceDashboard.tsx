@@ -6,6 +6,7 @@ import { PageHeader, Panel, Metric, StatusBadge, EmptyState } from "../ui";
 import { AuditChainCard } from "../components/AuditChainCard";
 import { DispatchPillars } from "../components/DispatchPillars";
 import { SlaAgingCard } from "../components/SlaAgingCard";
+import { LiveActivityRail } from "../components/LiveActivityRail";
 import type { StpMetricFull } from "../types";
 
 export function FinanceDashboard() {
@@ -47,6 +48,11 @@ export function FinanceDashboard() {
       {/* SLA aging — invoices over per-client SLA window. */}
       <div className="mb-4">
         <SlaAgingCard />
+      </div>
+
+      {/* Live event stream — SSE from /events/stream. */}
+      <div className="mb-4">
+        <LiveActivityRail max={25} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

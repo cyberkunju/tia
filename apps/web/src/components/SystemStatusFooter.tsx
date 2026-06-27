@@ -17,13 +17,13 @@ const DOT_CLASS: Record<DotTone, string> = {
   bad: "bg-red-400",
 };
 
-const SERVICES: { key: "api" | "db" | "openai" | "modal_ocr" | "zoho_mail" | "rust_dispatch"; label: string }[] = [
-  { key: "api", label: "api" },
-  { key: "db", label: "db" },
-  { key: "openai", label: "openai" },
-  { key: "modal_ocr", label: "ocr" },
-  { key: "zoho_mail", label: "mail" },
-  { key: "rust_dispatch", label: "dispatch" },
+const SERVICES: { key: "api" | "db" | "openai" | "modal_ocr" | "zoho_mail" | "rust_dispatch"; label: string; longLabel?: string }[] = [
+  { key: "api", label: "api", longLabel: "FastAPI backend" },
+  { key: "db", label: "db", longLabel: "Postgres" },
+  { key: "openai", label: "openai", longLabel: "OpenAI (extraction + AIDA QA)" },
+  { key: "modal_ocr", label: "ocr", longLabel: "GLM-OCR on Modal · warm ≈2s · cold up to ≈90s for handwriting" },
+  { key: "zoho_mail", label: "mail", longLabel: "Zoho IMAP mailbox poller" },
+  { key: "rust_dispatch", label: "dispatch", longLabel: "Rust dispatch worker" },
 ];
 
 /**
@@ -50,8 +50,9 @@ export function SystemStatusFooter({ tone = "light", compact = false }: { tone?:
         {SERVICES.map((s) => {
           const raw = data?.[s.key] as string | undefined;
           const klass = DOT_CLASS[classifyDot(raw)];
+          const title = `${s.longLabel ?? s.label}: ${raw ?? "—"}`;
           return (
-            <span key={s.key} title={`${s.label}: ${raw ?? "—"}`} className={cn("h-1.5 w-1.5 rounded-full", klass)} />
+            <span key={s.key} title={title} className={cn("h-1.5 w-1.5 rounded-full", klass)} />
           );
         })}
       </div>
@@ -66,7 +67,7 @@ export function SystemStatusFooter({ tone = "light", compact = false }: { tone?:
         return (
           <span
             key={s.key}
-            title={`${s.label}: ${raw ?? "—"}`}
+            title={`${s.longLabel ?? s.label}: ${raw ?? "—"}`}
             className={cn("inline-flex items-center gap-1 text-2xs", textCls)}
           >
             <span className={cn("h-1.5 w-1.5 rounded-full", klass)} />
