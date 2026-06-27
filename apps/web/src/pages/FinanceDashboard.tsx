@@ -4,6 +4,8 @@ import { api } from "../api";
 import { fmtAED, fmtPct } from "../lib";
 import { PageHeader, Panel, Metric, StatusBadge, EmptyState } from "../ui";
 import { AuditChainCard } from "../components/AuditChainCard";
+import { DispatchPillars } from "../components/DispatchPillars";
+import type { StpMetricFull } from "../types";
 
 export function FinanceDashboard() {
   const { data: stp } = useQuery({ queryKey: ["m-stp"], queryFn: api.metricsStp, refetchInterval: 6_000 });
@@ -34,6 +36,11 @@ export function FinanceDashboard() {
       {/* Tamper-evident audit chain — green dot when intact, red banner if broken. */}
       <div className="mb-4">
         <AuditChainCard />
+      </div>
+
+      {/* 3-pillar dispatch breakdown — auto / hitl / finance touchless story. */}
+      <div className="mb-4">
+        <DispatchPillars stp={stp as StpMetricFull | undefined} />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

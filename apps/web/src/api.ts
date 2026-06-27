@@ -226,4 +226,70 @@ export const api = {
   /* ── audit chain integrity (tamper-evident hash chain) ──────── */
 
   verifyAuditChain: () => req<import("./types").AuditChainReport>("/audit/verify"),
+
+  /* ── Phase α/β: payments, statement, audit bundle, SLA, notifications, multi-user, period lock ── */
+
+  payInvoice: (id: string, payload: {
+    amount: number; method?: string; reference?: string; notes?: string; paid_by?: string;
+  }) =>
+    req<{ id: string; receipt_number: string; status: string }>(
+      `/invoices/${id}/payments`, jsonInit("POST", payload),
+    ),
+  listPayments: (id: string) =>
+    req<import("./types").Payment[]>(`/invoices/${id}/payments`),
+
+  clientStatement: (clientCode: string, months = 12) =>
+    req<import("./types").ClientStatement>(`/client/${clientCode}/statement?months=${months}`),
+
+  clientAuditBundleUrl: (clientCode: string, quarter: string) =>
+    `${API_BASE}/client/${clientCode}/audit/${encodeURIComponent(quarter)}.zip`,
+
+  closePeriod: (clientCode: string, period: string) =>
+    req<{ client_code: string; period: string; closed: boolean }>(
+      `/clients/${clientCode}/periods/${encodeURIComponent(period)}/close`,
+      { method: "POST" },
+    ),
+  reopenPeriod: (clientCode: string, period: string) =>
+    req<{ client_code: string; period: string; closed: boolean }>(
+      `/clients/${clientCode}/periods/${encodeURIComponent(period)}/reopen`,
+      { method: "POST" },
+    ),
+
+  notifications: (persona: "client" | "finops" | "finance" = "client", clientCode?: string, limit = 30) =>
+    req<import("./types").NotificationRow[]>(
+      `/notifications?persona=${persona}${clientCode ? `&client_code=${clientCode}` : ""}&limit=${limit}`,
+    ),
+
+  listClientUsers: (clientCode: string) =>
+    req<import("./types").ClientUser[]>(`/clients/${clientCode}/users`),
+  setClientUsers: (clientCode: string, users: import("./types").ClientUser[]) =>
+    req<{ code: string; users: import("./types").ClientUser[] }>(
+      `/clients/${clientCode}/users`,
+      { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(users) },
+    ),
+
+  metricsSla: () => req<import("./types").SlaMetric>("/metrics/sla"),
+
+  /* ── Per-client dispatch ordering queue ─────────────────────── */
+
+  dispatchQueue: (clientCode: string) =>
+    req<{ client_code: string; entries: import("./types").DispatchQueueEntry[]; rule?: string }>(
+      `/dispatch/${clientCode}/queue`,
+    ),
+
+  /* ── WhatsApp / mailbox webhook + invoice audit chain ─────── */
+
+  invoiceAudit: (id: string) =>
+    req<{ invoice_id: string; events: import("./types").EventRow[] }>(`/invoices/${id}/audit`),
+
+  /* ── Clawback (void / credit-note / partial) ───────────────── */
+
+  clawbackEligibility: (id: string) =>
+    req<import("./types").ClawbackEligibility>(`/invoices/${id}/clawback-eligibility`),
+
+  clawback: (id: string, payload: import("./types").ClawbackRequest, key?: string) =>
+    req<import("./types").ClawbackResponse>(
+      `/invoices/${id}/clawback`,
+      jsonInit("POST", payload, key),
+    ),
 };

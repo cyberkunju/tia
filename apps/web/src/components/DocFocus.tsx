@@ -1,12 +1,17 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ExternalLink, Info, X, FileText, Check, FileSpreadsheet } from "lucide-react";
+import { ExternalLink, Info, X, FileText, Check, FileSpreadsheet, RotateCcw, Sparkles } from "lucide-react";
 import { api, API_BASE } from "../api";
-import { cn, fmtAED, fmtPct, vatBreakdown, TASC_ENTITY } from "../lib";
+import { cn, fmtAED, fmtPct, isAutoDispatched, vatBreakdown, TASC_ENTITY } from "../lib";
 import { StatusBadge, RoutingBadge, ConfidenceBadge, Badge, Spinner, EmptyState } from "../ui";
 import { useTabAvoidance } from "../hooks";
-import type { Candidate, ExtractedRow, RowMatch } from "../types";
+import type { Candidate, ExtractedRow, Invoice, RowMatch } from "../types";
+import { RuleChip, RuleSummary } from "./RuleChip";
+import { ContractPanel } from "./ContractPanel";
+import { EventTimeline } from "./EventTimeline";
+import { TouchlessRationale } from "./TouchlessRationale";
+import { ClawbackModal } from "./ClawbackModal";
 
 export function DocFocus({ docId }: { docId: string }) {
   const qc = useQueryClient();
@@ -20,7 +25,18 @@ export function DocFocus({ docId }: { docId: string }) {
 
   const [picks, setPicks] = useState<Record<number, string>>({});
   const [whyOpen, setWhyOpen] = useState(false);
+  const [touchlessFor, setTouchlessFor] = useState<Invoice | null>(null);
+  const [clawbackFor, setClawbackFor] = useState<Invoice | null>(null);
   const bar = useTabAvoidance<HTMLDivElement>();
+
+  // Live audit feed for whichever invoice (or timesheet) is in focus.
+  const auditEntityId = invoices[0]?.id ?? ts?.id ?? null;
+  const { data: events } = useQuery({
+    queryKey: ["events", auditEntityId],
+    queryFn: () => api.listEvents(auditEntityId ?? undefined, 50),
+    enabled: !!auditEntityId,
+    refetchInterval: 5_000,
+  });
 
   const approve = useMutation({
     mutationFn: () => api.approve(ts!.id, Object.entries(picks).map(([k, v]) => ({ row_idx: Number(k), chosen_emp_id: v }))),
@@ -98,15 +114,22 @@ export function DocFocus({ docId }: { docId: string }) {
         </div>
       )}
 
+      {ts.client_code && (
+        <div className="p-4">
+          <span className="eyebrow">Contract context</span>
+          <div className="mt-2"><ContractPanel clientCode={ts.client_code} /></div>
+        </div>
+      )}
+
       {(ts.validations?.length ?? 0) > 0 && (
         <div className="p-4">
-          <span className="eyebrow">BTP validations</span>
+          <div className="flex items-center justify-between mb-2">
+            <span className="eyebrow">BTP validations</span>
+            <RuleSummary results={ts.validations} />
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2">
             {ts.validations.map((v, i) => (
-              <div key={i} className="flex items-start gap-2">
-                <Badge tone={v.passed ? "green" : "red"} dot={false}>{v.passed ? "Pass" : "Fail"}</Badge>
-                <div className="min-w-0"><div className="text-sm font-medium text-ink-800">{v.rule}{v.emp_id && <span className="text-ink-400 font-normal"> · {v.emp_id}</span>}</div><div className="text-xs text-ink-500">{v.message}</div></div>
-              </div>
+              <RuleChip key={i} result={v} />
             ))}
           </div>
         </div>
@@ -127,14 +150,26 @@ export function DocFocus({ docId }: { docId: string }) {
         const vat = inv.vat_amount ?? vatBreakdown(inv.amount).vat;
         const tot = inv.total_incl_vat ?? vatBreakdown(inv.amount).total;
         const trn = inv.supplier_trn ?? TASC_ENTITY.trn;
+        const auto = isAutoDispatched(inv.status) && !inv.client_approval_status;
+        const canClawback = inv.status === "dispatched" || inv.status === "generated" || inv.status === "finance_approved";
         return (
           <div key={inv.id} className="p-4">
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
               <span className="eyebrow">Tax invoice {inv.invoice_sequence_no ? `· ${inv.invoice_sequence_no}` : ""}</span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <StatusBadge status={inv.status} />
+                {auto && (
+                  <button onClick={() => setTouchlessFor(inv)} className="inline-flex items-center gap-1 rounded-md bg-brand-500 hover:bg-brand-400 text-teal-950 text-2xs font-semibold px-2 py-0.5 shadow-xs" title="Why was this touchless?">
+                    <Sparkles size={10} /> ⚡ AUTO · Why?
+                  </button>
+                )}
                 {inv.pdf_available && <a className="btn-outline btn-sm" href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer"><ExternalLink size={12} /> PDF</a>}
                 {inv.status === "generated" && <button className="btn-primary btn-sm" disabled={dispatchInv.isPending} onClick={() => dispatchInv.mutate(inv.id)}>{dispatchInv.isPending ? <Spinner /> : null} Dispatch</button>}
+                {canClawback && (
+                  <button onClick={() => setClawbackFor(inv)} className="btn-outline btn-sm" title="Void or issue credit note (UAE FTA Art. 60)">
+                    <RotateCcw size={12} /> Clawback
+                  </button>
+                )}
               </div>
             </div>
             <div className="rounded-lg border border-ink-200 overflow-hidden">
@@ -154,6 +189,20 @@ export function DocFocus({ docId }: { docId: string }) {
                   {inv.due_date && <span>Due {inv.due_date}</span>}
                 </div>
               )}
+              {/* Clawback breadcrumb: if voided / credit-noted, surface it. */}
+              {inv.voided_at && (
+                <div className="px-3 py-1.5 bg-red-50 text-2xs text-red-800 border-t border-red-100">
+                  Voided by {inv.voided_by ?? "system"} at {inv.voided_at.slice(0, 19).replace("T", " ")}
+                  {inv.voided_reason_code && <> · {inv.voided_reason_code}</>}
+                </div>
+              )}
+              {inv.credit_note_sequence_no && (
+                <div className="px-3 py-1.5 bg-amber-50 text-2xs text-amber-900 border-t border-amber-100">
+                  Tax Credit Note <span className="font-mono">{inv.credit_note_sequence_no}</span>
+                  {inv.credit_note_amount && <> · AED {inv.credit_note_amount.toFixed(2)}</>}
+                  {inv.credit_note_article_refs && inv.credit_note_article_refs.length > 0 && <> · {inv.credit_note_article_refs.join(", ")}</>}
+                </div>
+              )}
             </div>
           </div>
         );
@@ -167,7 +216,22 @@ export function DocFocus({ docId }: { docId: string }) {
         </div>
       )}
 
+      {events && events.length > 0 && (
+        <div className="p-4">
+          <span className="eyebrow">Audit timeline</span>
+          <div className="mt-2"><EventTimeline events={events} max={15} /></div>
+        </div>
+      )}
+
       <AnimatePresence>{whyOpen && <WhyDrawer invoiceId={invoices[0]?.id ?? null} onClose={() => setWhyOpen(false)} />}</AnimatePresence>
+      {touchlessFor && <TouchlessRationale invoice={touchlessFor} onClose={() => setTouchlessFor(null)} />}
+      {clawbackFor && (
+        <ClawbackModal
+          invoice={clawbackFor}
+          onClose={() => setClawbackFor(null)}
+          onDone={() => { setClawbackFor(null); refetch(); }}
+        />
+      )}
     </div>
   );
 }

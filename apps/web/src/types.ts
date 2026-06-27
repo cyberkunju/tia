@@ -148,6 +148,24 @@ export interface Invoice {
   client_approval_status?: "pending" | "approved" | "rejected" | null;
   client_approval_reason?: string | null;
   rule_results?: ValidationResult[];
+  // Clawback — void path
+  voided_at?: string | null;
+  voided_by?: string | null;
+  voided_reason_code?: string | null;
+  voided_reason?: string | null;
+  // Clawback — credit-note path
+  credit_note_sequence_no?: string | null;
+  credit_note_issued_at?: string | null;
+  credit_note_issued_by?: string | null;
+  credit_note_reason_code?: string | null;
+  credit_note_reason_text?: string | null;
+  credit_note_article_refs?: string[] | null;
+  credit_note_amount?: number | null;
+  credit_note_disputed_hours?: number | null;
+  adjustment_type?: string | null;
+  // Reissue chain
+  replaces_invoice_id?: string | null;
+  superseded_by_invoice_id?: string | null;
 }
 
 export interface ApiClient {
@@ -233,6 +251,18 @@ export interface QueryThread {
 export interface StpMetric {
   total: number; auto: number; hitl: number; escalate: number;
   touchless_rate: number; target: number;
+}
+
+export interface StpBreakdown {
+  auto_dispatched: number;
+  hitl_dispatched: number;
+  finance_dispatched: number;
+  total_dispatched: number;
+}
+
+/** Backend response from /metrics/stp — includes optional dispatched_breakdown. */
+export interface StpMetricFull extends StpMetric {
+  dispatched_breakdown?: StpBreakdown;
 }
 
 export interface TimeMetric {
@@ -359,4 +389,148 @@ export interface FinanceQueueRow {
   status: string;
   threshold: number;
   rule_failures: ValidationResult[];
+}
+
+/* ── Phase α/β: payments, statement, audit bundle, SLA, notifications, multi-user ── */
+
+export interface Payment {
+  id: string;
+  amount: number;
+  currency: string;
+  method: "bank_transfer" | "wire" | "card" | "cheque" | "ach" | string;
+  reference: string | null;
+  paid_at: string | null;
+  paid_by: string | null;
+  status: "received" | "reconciled" | "disputed" | "refunded";
+  receipt_number: string | null;
+}
+
+export interface StatementPeriod {
+  period: string;
+  invoices: number;
+  billed_excl_vat: number;
+  vat: number;
+  billed_incl_vat: number;
+  paid: number;
+  outstanding: number;
+}
+
+export interface ClientStatement {
+  client_code: string;
+  client_name: string;
+  currency: string;
+  generated_at: string;
+  periods: StatementPeriod[];
+  summary: {
+    invoices: number;
+    total_billed_incl_vat: number;
+    total_paid: number;
+    outstanding: number;
+  };
+}
+
+export interface NotificationRow {
+  id: string;
+  at: string | null;
+  actor: string | null;
+  kind: string;
+  entity_id: string;
+  action: string;
+  summary: string;
+  read: boolean;
+}
+
+export interface ClientUser {
+  email: string;
+  name: string;
+  role: "viewer" | "approver" | "admin";
+}
+
+export interface SlaByStatus {
+  count: number;
+  mean_min: number;
+  max_min: number;
+}
+
+export interface SlaMetric {
+  by_status: Record<string, SlaByStatus>;
+  over_sla_count: number;
+  over_sla: { id: string; status: string; age_min: number; limit_min: number }[];
+  checked_at: string;
+}
+
+/* ── Clawback (UAE FTA Art. 60 — void / credit-note / partial) ────────── */
+
+export type ClawbackReasonCode =
+  | "PRICING_ERROR" | "GOODS_RETURNED" | "DISCOUNT" | "DUPLICATE" | "OTHER";
+
+export type AdjustmentType =
+  | "CREDIT_TO_CLIENT"
+  | "DEDUCT_FROM_NEXT_INVOICE"
+  | "DEDUCT_FROM_PAYROLL"
+  | "INTERNAL_WRITE_OFF"
+  | "MANUAL_REVIEW";
+
+export type ClawbackAction =
+  | "void"
+  | "credit_note"
+  | "credit_note_with_refund_pending";
+
+export interface ClawbackEligibility {
+  current_state: string;
+  amount_aed?: number;
+  currency?: string;
+  action_when_clawed_back: ClawbackAction | null;
+  reason?: string;
+  dispatched_at?: string;
+  days_since_dispatch?: number;
+  fta_14_day_deadline?: string;
+  days_remaining?: number;
+  urgency?: "normal" | "warning" | "urgent";
+  explanation?: string;
+  valid_reason_codes?: ClawbackReasonCode[];
+  valid_adjustment_types?: AdjustmentType[];
+  adjustment_type_labels?: Record<AdjustmentType, string>;
+}
+
+export interface ClawbackRequest {
+  by_user?: string;
+  reason_code: ClawbackReasonCode;
+  reason_text?: string;
+  partial_amount?: number;
+  disputed_hours?: number;
+  adjustment_type?: AdjustmentType;
+}
+
+export interface ClawbackResponse {
+  action_taken: ClawbackAction | "already_settled" | "already_credit_noted";
+  status: string;
+  invoice_id: string;
+  voided_at?: string;
+  credit_note_sequence_no?: string;
+  credit_note_issued_at?: string;
+  article_refs?: string[];
+  source_timesheet_id?: string;
+  auto_query_id?: string;
+  refund_required?: boolean;
+  is_partial?: boolean;
+  credit_note_amount?: number;
+  invoice_amount?: number;
+  disputed_hours?: number;
+  adjustment_type?: AdjustmentType;
+  adjustment_friendly?: string;
+  reason?: string;
+}
+
+/* ── Per-client dispatch queue ─────────────────────────────────────────── */
+
+export interface DispatchQueueEntry {
+  id: string;
+  invoice_sequence_no: string | null;
+  client_code: string;
+  period: string | null;
+  amount: number;
+  total_incl_vat: number | null;
+  status: string;
+  dispatch_order_rank?: number;
 }
