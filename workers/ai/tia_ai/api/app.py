@@ -25,9 +25,9 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..config import STAGING_DIR
+from ..config import DATA_DIR, STAGING_DIR
 from ..db import SessionLocal, init_db
-from ..models import Client, DocAsset, Event, Invoice, Timesheet
+from ..models import Client, DocAsset, Event, Invoice, Query, Timesheet
 from ..orchestrator import (
     approve_timesheet,
     dispatch_invoice,
@@ -744,10 +744,74 @@ def list_clients(s: Session = Depends(db_session)) -> list[dict]:
     ]
 
 
+class NewClient(BaseModel):
+    code: str
+    name: str
+    city: str | None = None
+    industry: str | None = None
+    contact_email: str | None = None
+    currency: str = "AED"
+    jurisdiction: str = "UAE"
+    customer_trn: str | None = None
+    billing_entity: str | None = None
+    validation_threshold_aed: float = 50000
+    dispatch_order_rule: str = "asc_by_amount"  # asc/desc_by_amount, asc/desc_by_salary, by_emp_id
+    dispatch_grouping_mode: str = "by_client_period"  # none, by_client_period
+    sla_days_to_invoice: int = 5
+    payment_terms_days: int = 30
+    watched_mailboxes: list[str] = []
+    whatsapp_number: str | None = None
+
+
+@app.post("/clients", status_code=201)
+def create_client(
+    payload: NewClient,
+    by_user: str = Header(default="finops", alias="X-User"),
+    s: Session = Depends(db_session),
+) -> dict:
+    """Onboard a new client — brief §4.1 'setup screen to onboard a client'."""
+    if s.get(Client, payload.code):
+        raise HTTPException(409, f"client {payload.code} already exists")
+    settings = {
+        "customer_trn": payload.customer_trn,
+        "jurisdiction": payload.jurisdiction,
+        "billing_entity": payload.billing_entity or payload.name,
+        "validation_threshold_aed": payload.validation_threshold_aed,
+        "dispatch_order_rule": payload.dispatch_order_rule,
+        "dispatch_grouping_mode": payload.dispatch_grouping_mode,
+        "sla_days_to_invoice": payload.sla_days_to_invoice,
+        "payment_terms_days": payload.payment_terms_days,
+        "watched_mailboxes": payload.watched_mailboxes,
+        "whatsapp_number": payload.whatsapp_number,
+    }
+    c = Client(
+        code=payload.code,
+        name=payload.name,
+        city=payload.city,
+        industry=payload.industry,
+        contact_email=payload.contact_email,
+        currency_default=payload.currency,
+        settings=settings,
+    )
+    s.add(c)
+    log_event(s, by_user, "client", c.code, "client.onboarded", {"name": c.name})
+    return {"code": c.code, "name": c.name, "settings": settings}
+
+
 class ClientSettings(BaseModel):
     dispatch_rule: str | None = None
     threshold_aed: float | None = None
     markup_pct: float | None = None
+    customer_trn: str | None = None
+    jurisdiction: str | None = None
+    billing_entity: str | None = None
+    validation_threshold_aed: float | None = None
+    dispatch_order_rule: str | None = None
+    dispatch_grouping_mode: str | None = None
+    sla_days_to_invoice: int | None = None
+    payment_terms_days: int | None = None
+    watched_mailboxes: list[str] | None = None
+    whatsapp_number: str | None = None
 
 
 @app.put("/clients/{code}/settings")
@@ -766,6 +830,500 @@ def update_client_settings(
     c.settings = settings
     log_event(s, by_user, "client", code, "settings.updated", settings)
     return {"code": code, "settings": settings}
+
+
+# ---------- client approval flow (brief §4.7) ----------
+
+
+class ClientApprovalPayload(BaseModel):
+    by_user: str = "client"
+    reason: str | None = None
+
+
+@app.post("/invoices/{inv_id}/client-approve")
+def client_approve_invoice(
+    inv_id: str,
+    payload: ClientApprovalPayload,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    if i.client_approval_status == "approved":
+        return {"status": "already_approved", "invoice_id": inv_id}
+    import datetime as dt
+
+    i.client_approval_status = "approved"
+    i.client_approved_at = dt.datetime.now(dt.timezone.utc)
+    log_event(
+        s,
+        payload.by_user,
+        "invoice",
+        inv_id,
+        "client_approved",
+        {"invoice_sequence_no": i.invoice_sequence_no},
+        idempotency_key=idempotency_key,
+    )
+    return {"status": "approved", "invoice_id": inv_id}
+
+
+@app.post("/invoices/{inv_id}/client-reject")
+def client_reject_invoice(
+    inv_id: str,
+    payload: ClientApprovalPayload,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    import datetime as dt
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    i.client_approval_status = "rejected"
+    i.client_approval_reason = payload.reason or "no reason given"
+    log_event(
+        s,
+        payload.by_user,
+        "invoice",
+        inv_id,
+        "client_rejected",
+        {"reason": i.client_approval_reason},
+        idempotency_key=idempotency_key,
+    )
+    # rejection auto-opens a query thread
+    q = Query(
+        client_code=i.client_code,
+        invoice_id=inv_id,
+        subject=f"Client rejected invoice {i.invoice_sequence_no or inv_id[:8]}",
+        body=payload.reason,
+        raised_by=payload.by_user,
+        thread=[
+            {
+                "by": payload.by_user,
+                "role": "client",
+                "body": payload.reason or "",
+                "at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            }
+        ],
+    )
+    s.add(q)
+    return {"status": "rejected", "invoice_id": inv_id, "query_id": q.id}
+
+
+# ---------- finance approval queue ----------
+
+
+@app.get("/finance/queue")
+def finance_queue(s: Session = Depends(db_session)) -> list[dict]:
+    """Invoices over per-client validation_threshold_aed — Finance must sign off."""
+    out = []
+    for inv in s.query(Invoice).order_by(Invoice.created_at.desc()).limit(200).all():
+        c = s.get(Client, inv.client_code)
+        threshold = float((c.settings or {}).get("validation_threshold_aed", 50000)) if c else 50000
+        if (inv.amount or 0) >= threshold and inv.status not in ("dispatched", "rejected"):
+            out.append(
+                {
+                    "id": inv.id,
+                    "invoice_sequence_no": inv.invoice_sequence_no,
+                    "client_code": inv.client_code,
+                    "client_name": c.name if c else None,
+                    "period": inv.period,
+                    "amount": inv.amount,
+                    "total_incl_vat": inv.total_incl_vat,
+                    "currency": inv.currency,
+                    "status": inv.status,
+                    "threshold": threshold,
+                    "rule_failures": [
+                        r
+                        for r in (inv.rule_results or [])
+                        if not r.get("passed") and r.get("severity") != "warning"
+                    ],
+                }
+            )
+    return out
+
+
+@app.post("/invoices/{inv_id}/finance-approve")
+def finance_approve(
+    inv_id: str,
+    payload: ClientApprovalPayload,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    if i.status == "dispatched":
+        return {"status": "already_dispatched", "invoice_id": inv_id}
+    i.status = "finance_approved"
+    log_event(
+        s,
+        payload.by_user,
+        "invoice",
+        inv_id,
+        "finance_approved",
+        {"invoice_sequence_no": i.invoice_sequence_no},
+        idempotency_key=idempotency_key,
+    )
+    return {"status": "finance_approved", "invoice_id": inv_id}
+
+
+@app.post("/invoices/{inv_id}/finance-reject")
+def finance_reject(
+    inv_id: str,
+    payload: ClientApprovalPayload,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    i.status = "rejected"
+    log_event(
+        s,
+        payload.by_user,
+        "invoice",
+        inv_id,
+        "finance_rejected",
+        {"reason": payload.reason},
+        idempotency_key=idempotency_key,
+    )
+    return {"status": "rejected", "invoice_id": inv_id, "reason": payload.reason}
+
+
+# ---------- raise-query thread (brief §4.7) ----------
+
+
+class NewQuery(BaseModel):
+    invoice_id: str | None = None
+    subject: str
+    body: str | None = None
+    raised_by: str | None = None
+
+
+@app.post("/clients/{code}/queries", status_code=201)
+def raise_query(
+    code: str,
+    payload: NewQuery,
+    s: Session = Depends(db_session),
+) -> dict:
+    import datetime as dt
+
+    if not s.get(Client, code):
+        raise HTTPException(404, "client not found")
+    q = Query(
+        client_code=code,
+        invoice_id=payload.invoice_id,
+        subject=payload.subject,
+        body=payload.body,
+        raised_by=payload.raised_by or "client",
+        thread=[
+            {
+                "by": payload.raised_by or "client",
+                "role": "client",
+                "body": payload.body or "",
+                "at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            }
+        ],
+    )
+    s.add(q)
+    s.flush()
+    log_event(
+        s,
+        payload.raised_by or "client",
+        "client",
+        code,
+        "query.raised",
+        {"query_id": q.id, "subject": payload.subject, "invoice_id": payload.invoice_id},
+    )
+    return {"id": q.id, "status": "open", "client_code": code}
+
+
+@app.get("/clients/{code}/queries")
+def list_queries(code: str, s: Session = Depends(db_session)) -> list[dict]:
+    rows = s.query(Query).filter(Query.client_code == code).order_by(Query.raised_at.desc()).all()
+    return [
+        {
+            "id": q.id,
+            "subject": q.subject,
+            "body": q.body,
+            "status": q.status,
+            "invoice_id": q.invoice_id,
+            "raised_by": q.raised_by,
+            "raised_at": q.raised_at.isoformat() if q.raised_at else None,
+            "thread": q.thread or [],
+        }
+        for q in rows
+    ]
+
+
+class QueryReply(BaseModel):
+    body: str
+    by_user: str = "finops"
+    close: bool = False
+
+
+@app.post("/queries/{query_id}/reply")
+def reply_to_query(
+    query_id: str,
+    payload: QueryReply,
+    s: Session = Depends(db_session),
+) -> dict:
+    import datetime as dt
+
+    q = s.get(Query, query_id)
+    if not q:
+        raise HTTPException(404, "query not found")
+    thread = list(q.thread or [])
+    thread.append(
+        {
+            "by": payload.by_user,
+            "role": "finops",
+            "body": payload.body,
+            "at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        }
+    )
+    q.thread = thread
+    if payload.close:
+        q.status = "closed"
+        q.answered_at = dt.datetime.now(dt.timezone.utc)
+    log_event(
+        s,
+        payload.by_user,
+        "client",
+        q.client_code,
+        "query.replied",
+        {"query_id": q.id, "closed": payload.close},
+    )
+    return {"id": q.id, "status": q.status, "thread": q.thread}
+
+
+# ---------- brief's 3 success-measure KPIs (§ success measures slide) ----------
+
+
+@app.get("/metrics/stp")
+def metric_stp(s: Session = Depends(db_session)) -> dict:
+    """Straight-through processing rate — the brief's '80%+ touchless' headline."""
+    rows = s.query(Timesheet).all()
+    total = len(rows)
+    auto = sum(1 for t in rows if t.routing == "auto")
+    hitl = sum(1 for t in rows if t.routing == "hitl")
+    escalate = sum(1 for t in rows if t.routing == "escalate")
+    rate = (auto / total) if total else 0.0
+    return {
+        "total": total,
+        "auto": auto,
+        "hitl": hitl,
+        "escalate": escalate,
+        "touchless_rate": round(rate, 4),
+        "target": 0.80,
+    }
+
+
+@app.get("/metrics/time-to-invoice")
+def metric_time_to_invoice(s: Session = Depends(db_session)) -> dict:
+    """Mean minutes from doc ingestion to invoice generation."""
+    import datetime as dt
+
+    invoices = s.query(Invoice).filter(Invoice.created_at.is_not(None)).all()
+    deltas: list[float] = []
+    for inv in invoices:
+        ts = s.get(Timesheet, inv.timesheet_id) if inv.timesheet_id else None
+        if not ts or not ts.created_at or not inv.created_at:
+            continue
+        delta = (inv.created_at - ts.created_at).total_seconds() / 60.0
+        if delta >= 0:
+            deltas.append(delta)
+    mean_min = sum(deltas) / len(deltas) if deltas else 0.0
+    return {
+        "invoices": len(invoices),
+        "samples": len(deltas),
+        "mean_minutes": round(mean_min, 3),
+        "target_max_minutes": 5.0,
+    }
+
+
+@app.get("/metrics/accuracy")
+def metric_accuracy() -> dict:
+    """Extraction accuracy from the eval harness — the brief's '99%+' target."""
+    last_run = DATA_DIR / "gold" / "_last_run.json"
+    if not last_run.exists():
+        return {"target": 0.99, "passed": None, "macro_f1": None, "note": "no eval yet"}
+    import json
+
+    data = json.loads(last_run.read_text())
+    macro = data.get("macro_f1") or {}
+    overall = sum(macro.values()) / len(macro) if macro else None
+    return {
+        "target": 0.99,
+        "macro_f1": macro,
+        "overall_macro_f1": round(overall, 4) if overall is not None else None,
+        "passed": data.get("passed"),
+        "runnable": data.get("runnable"),
+        "ece": data.get("ece"),
+    }
+
+
+@app.get("/metrics/headcount")
+def metric_headcount(s: Session = Depends(db_session)) -> dict:
+    """TASC's HC reporting KPI — count of unique billed employees per period."""
+    from .. import models as m
+
+    rows = (
+        s.query(m.Invoice)
+        .filter(m.Invoice.status.in_(("dispatched", "generated", "finance_approved")))
+        .all()
+    )
+    by_period: dict[str, set] = {}
+    for inv in rows:
+        for li in inv.line_items or []:
+            if li.get("emp_id"):
+                by_period.setdefault(inv.period or "—", set()).add(li["emp_id"])
+    return {
+        "by_period": {p: len(emps) for p, emps in sorted(by_period.items())},
+        "total_unique_emps": len({eid for emps in by_period.values() for eid in emps}),
+    }
+
+
+# ---------- /status + dispatch tracking ----------
+
+
+@app.get("/status")
+def system_status(s: Session = Depends(db_session)) -> dict:
+    """Green-dot system status: api / openai / modal-ocr / rust-dispatch / db / last-eval."""
+    import os
+
+    out: dict = {"api": "ok"}
+    # db
+    try:
+        s.query(Client).count()
+        out["db"] = "ok"
+    except Exception:  # noqa: BLE001
+        out["db"] = "down"
+    # openai
+    out["openai"] = "configured" if os.getenv("OPENAI_API_KEY") else "missing_key"
+    # modal-ocr
+    out["modal_ocr"] = "configured" if os.getenv("GLM_OCR_API_KEY") else "missing_key"
+    # rust-dispatch (best-effort, swallows errors so /status is never down)
+    rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
+    if rust_url:
+        try:
+            import httpx
+
+            r = httpx.get(f"{rust_url}/health", timeout=1.0)
+            out["rust_dispatch"] = "ok" if r.status_code == 200 else f"http_{r.status_code}"
+        except Exception:  # noqa: BLE001
+            out["rust_dispatch"] = "unreachable"
+    else:
+        out["rust_dispatch"] = "in_process"
+    # last eval
+    last = DATA_DIR / "gold" / "_last_run.json"
+    if last.exists():
+        import json
+
+        d = json.loads(last.read_text())
+        out["last_eval"] = {
+            "passed": d.get("passed"),
+            "runnable": d.get("runnable"),
+            "macro_f1": d.get("macro_f1"),
+        }
+    return out
+
+
+@app.get("/dispatch/tracking")
+def dispatch_tracking(s: Session = Depends(db_session)) -> list[dict]:
+    """Brief diagram block 'TIA Dashboard: Dispatch Tracking, Analytics & Reporting'.
+
+    Returns dispatch queue: invoices ready to send, recently sent, with status
+    + idempotency-key + outbox path."""
+    rows = (
+        s.query(Invoice)
+        .filter(Invoice.status.in_(("generated", "finance_approved", "dispatched")))
+        .order_by(Invoice.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    return [
+        {
+            "id": inv.id,
+            "invoice_sequence_no": inv.invoice_sequence_no,
+            "client_code": inv.client_code,
+            "period": inv.period,
+            "amount": inv.amount,
+            "total_incl_vat": inv.total_incl_vat,
+            "status": inv.status,
+            "client_approval_status": inv.client_approval_status,
+            "dispatch_idempotency_key": inv.dispatch_idempotency_key,
+            "dispatch_attempted_at": (
+                inv.dispatch_attempted_at.isoformat() if inv.dispatch_attempted_at else None
+            ),
+            "confidence": next(
+                (r.get("confidence") for r in (inv.line_items or []) if r.get("confidence")),
+                None,
+            ),
+            "rule_results_failed": [
+                r
+                for r in (inv.rule_results or [])
+                if not r.get("passed") and r.get("severity") != "warning"
+            ],
+        }
+        for inv in rows
+    ]
+
+
+@app.get("/dispatch/{client_code}/queue")
+def client_dispatch_queue(client_code: str, s: Session = Depends(db_session)) -> dict:
+    """Per-client dispatch queue honoring `Client.settings.dispatch_order_rule` +
+    `dispatch_grouping_mode` (brief §4.6: 'ordering / grouping')."""
+    c = s.get(Client, client_code)
+    if not c:
+        raise HTTPException(404, "client not found")
+    settings = c.settings or {}
+    order_rule = settings.get("dispatch_order_rule", "asc_by_amount")
+    grouping = settings.get("dispatch_grouping_mode", "by_client_period")
+
+    invoices = (
+        s.query(Invoice)
+        .filter(
+            Invoice.client_code == client_code,
+            Invoice.status.in_(("generated", "finance_approved")),
+        )
+        .all()
+    )
+    # apply ordering
+    if order_rule == "asc_by_amount":
+        invoices.sort(key=lambda i: i.amount or 0)
+    elif order_rule == "desc_by_amount":
+        invoices.sort(key=lambda i: -(i.amount or 0))
+    elif order_rule == "by_emp_id":
+        invoices.sort(key=lambda i: (i.line_items or [{}])[0].get("emp_id") or "")
+    # grouping payload
+    if grouping == "by_client_period":
+        grouped: dict[str, list[dict]] = {}
+        for inv in invoices:
+            grouped.setdefault(inv.period or "—", []).append(
+                {
+                    "id": inv.id,
+                    "amount": inv.amount,
+                    "sequence_no": inv.invoice_sequence_no,
+                }
+            )
+        return {
+            "client_code": client_code,
+            "order_rule": order_rule,
+            "grouping_mode": grouping,
+            "groups": grouped,
+        }
+    return {
+        "client_code": client_code,
+        "order_rule": order_rule,
+        "grouping_mode": grouping,
+        "queue": [
+            {"id": inv.id, "amount": inv.amount, "sequence_no": inv.invoice_sequence_no}
+            for inv in invoices
+        ],
+    }
 
 
 # ---------------------------------------------------------------- events / SSE
