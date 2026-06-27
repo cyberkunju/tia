@@ -7,5 +7,7 @@ Wants=network-online.target
 Type=oneshot
 # docker lives in /usr/bin; the user-level compose plugin is found via $HOME/.docker.
 Environment=PATH=/usr/local/bin:/usr/bin:/bin
-ExecStart=%h/Deploy/tia/deploy/update.sh
+# Invoke via bash so a missing +x bit (e.g. after a Windows-authored checkout) can't
+# break the timer with status=203/EXEC.
+ExecStart=/bin/bash %h/Deploy/tia/deploy/update.sh
 TimeoutStartSec=1800
