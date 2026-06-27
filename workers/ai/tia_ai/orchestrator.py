@@ -8,6 +8,7 @@ events table is the durable log.
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import uuid
 from pathlib import Path
@@ -38,6 +39,34 @@ def _hash_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _event_hash(
+    prev_hash: str | None,
+    actor: str | None,
+    kind: str,
+    entity_id: str,
+    action: str,
+    payload: dict,
+    before: dict | None,
+    after: dict | None,
+) -> str:
+    """sha256(prev_hash || canonical_json(event_body)). Tamper-evident chain."""
+    body = json.dumps(
+        {
+            "prev": prev_hash or "",
+            "actor": actor or "",
+            "kind": kind,
+            "entity_id": entity_id,
+            "action": action,
+            "payload": payload or {},
+            "before": before or None,
+            "after": after or None,
+        },
+        sort_keys=True,
+        default=str,
+    ).encode()
+    return hashlib.sha256(body).hexdigest()
+
+
 def log_event(
     session: Session,
     actor: str | None,
@@ -46,21 +75,41 @@ def log_event(
     action: str,
     payload: dict | None = None,
     idempotency_key: str | None = None,
+    before: dict | None = None,
+    after: dict | None = None,
 ) -> Event:
-    """Append an audit event. Idempotent on `idempotency_key` — replays return the
-    original row without raising, so the same retried HTTP request observes the
-    same outcome (the prod-correct semantic for Idempotency-Key)."""
+    """Append a tamper-evident audit event.
+
+    Each event records:
+      - payload  (the action's parameters)
+      - before / after  (state diff for mutations — optional but recommended)
+      - prev_hash + hash  (chain — a break in the chain is detectable
+        by re-walking `verify_audit_chain()` in tia_ai/audit.py)
+
+    Idempotent on `idempotency_key`: replays return the original row.
+    """
     if idempotency_key:
         existing = session.query(Event).filter_by(idempotency_key=idempotency_key).first()
         if existing:
             return existing
+
+    # find chain tip: last event in the table (cheap on indexed PK + ordered insert)
+    tip = session.query(Event).order_by(Event.at.desc()).first()
+    prev_hash = tip.hash if tip else None
+    payload = payload or {}
+    h = _event_hash(prev_hash, actor, kind, entity_id, action, payload, before, after)
+
     ev = Event(
         actor=actor,
         entity_kind=kind,
         entity_id=entity_id,
         action=action,
-        payload=payload or {},
+        payload=payload,
         idempotency_key=idempotency_key,
+        prev_hash=prev_hash,
+        hash=h,
+        before=before,
+        after=after,
     )
     session.add(ev)
     session.flush()

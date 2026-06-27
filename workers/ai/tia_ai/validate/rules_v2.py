@@ -433,6 +433,36 @@ def r10_holiday_weekend_multiplier_check(
 # --- orchestration ------------------------------------------------------
 
 
+def r14_period_not_closed(
+    invoice: dict, contract: Contract, ctx: dict, session: Session
+) -> list[RuleResult]:
+    """R14: don't generate invoices for a (client, period) that's been closed.
+
+    Real AP / payroll products lock periods after the close to prevent late
+    adjustments slipping in. We honor `Client.settings.closed_periods[]`.
+    """
+    from ..models import Client
+
+    client_code = invoice.get("client_code")
+    period = invoice.get("period")
+    if not (client_code and period):
+        return [_ok("R14", "period_not_closed")]
+    c = session.get(Client, client_code)
+    closed = (c.settings or {}).get("closed_periods", []) if c else []
+    if period in closed:
+        return [
+            _fail(
+                "R14",
+                "period_not_closed",
+                expected=f"period '{period}' open",
+                actual="CLOSED",
+                message=f"period '{period}' is locked for client {client_code}; "
+                f"reopen explicitly before invoicing",
+            )
+        ]
+    return [_ok("R14", "period_not_closed")]
+
+
 RULES = (
     ("R1", r1_employee_in_contract_scope),
     ("R2", r2_rate_compliance_per_category),
@@ -444,6 +474,7 @@ RULES = (
     ("R8", r8_duplicate_invoice_extended),
     ("R9", r9_approver_signature_present),
     ("R10", r10_holiday_weekend_multiplier_check),
+    ("R14", r14_period_not_closed),
 )
 
 

@@ -273,6 +273,37 @@ class Query(Base):
     thread: Mapped[list] = mapped_column(JSON, default=list)
 
 
+# --------------------------- payments (brief §4.7 client pays the invoice) -----
+
+
+class Payment(Base):
+    """Client payment against an invoice.
+
+    Mock for the demo (no real Stripe/Tap/bank gateway in scope); the schema
+    matches what a real production setup would carry — method, reference,
+    amount, currency, reconciliation status — so the path to real payment
+    is a one-adapter swap (lettre/stripe/tap-payments)."""
+
+    __tablename__ = "payments"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    invoice_id: Mapped[str] = mapped_column(ForeignKey("invoices.id"), index=True)
+    client_code: Mapped[str] = mapped_column(ForeignKey("clients.code"), index=True)
+    amount: Mapped[float] = mapped_column(Float, default=0)
+    currency: Mapped[str] = mapped_column(String, default="AED")
+    method: Mapped[str] = mapped_column(
+        String, default="bank_transfer"
+    )  # bank_transfer|wire|card|cheque|ach
+    reference: Mapped[str | None] = mapped_column(String, nullable=True)  # bank ref, last-4, etc
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    paid_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    paid_at: Mapped[dt.datetime] = mapped_column(default=_now, index=True)
+    # reconciliation
+    status: Mapped[str] = mapped_column(
+        String, default="received"
+    )  # received|reconciled|disputed|refunded
+    receipt_number: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
+
+
 class Correction(Base):
     __tablename__ = "corrections"
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
@@ -286,7 +317,13 @@ class Correction(Base):
 
 
 class Event(Base):
-    """Append-only audit spine."""
+    """Append-only audit spine — tamper-evident via hash chain.
+
+    Each event's `hash` = sha256(prev_hash + actor + entity_id + action + payload).
+    A break in the chain (any historical event modified) is detectable by re-walking
+    the chain. Sufficient for SOC2/ISO27001-style audit, FTA tax-record retention,
+    and dispute defence — close to what production-grade financial systems expect.
+    """
 
     __tablename__ = "events"
     __table_args__ = (UniqueConstraint("idempotency_key", name="uq_events_idem"),)
@@ -298,3 +335,9 @@ class Event(Base):
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     idempotency_key: Mapped[str | None] = mapped_column(String, nullable=True)
     at: Mapped[dt.datetime] = mapped_column(default=_now)
+    # tamper-evidence
+    prev_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    hash: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    # before/after diff for mutations — null for create-only events
+    before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after: Mapped[dict | None] = mapped_column(JSON, nullable=True)

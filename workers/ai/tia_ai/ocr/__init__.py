@@ -104,6 +104,7 @@ def _call(image_bytes: bytes, prompt: str, mime: str = "image/png", timeout: flo
             }
         ],
         "temperature": 0.0,
+        "max_tokens": 2048,  # cap the response; one transcription is well under this
         "max_tokens": 2048,  # cap the loop; one transcription is well under this
     }
     r = httpx.post(_completions_url(), json=payload, headers=_headers(), timeout=timeout)
