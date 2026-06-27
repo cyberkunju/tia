@@ -145,14 +145,14 @@ export function AppShell() {
       {!aidaOpen && (
         <button
           onClick={() => setAidaOpen(true)}
-          aria-label="Open AIDA assistant"
+          aria-label="Open TIA chat"
           className="fixed right-0 bottom-0 z-40 flex flex-col items-center gap-2.5
                      w-10 pt-3.5 pb-5 brand-band text-white shadow-md hover:shadow-lg
                      rounded-tl-xl ring-1 ring-brand-700/30 transition-shadow"
         >
           <Logo className="h-3 text-white" accent="fill-[#ffd9c7]" />
           <span className="h-px w-4 bg-white/25" />
-          <span className="[writing-mode:vertical-rl] text-[13px] font-medium">AI chat</span>
+          <span className="[writing-mode:vertical-rl] text-[13px] font-medium">Chat</span>
         </button>
       )}
 

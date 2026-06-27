@@ -20,7 +20,7 @@ const DOT_CLASS: Record<DotTone, string> = {
 const SERVICES: { key: "api" | "db" | "openai" | "modal_ocr" | "zoho_mail" | "rust_dispatch"; label: string; longLabel?: string }[] = [
   { key: "api", label: "api", longLabel: "FastAPI backend" },
   { key: "db", label: "db", longLabel: "Postgres" },
-  { key: "openai", label: "openai", longLabel: "OpenAI (extraction + AIDA QA)" },
+  { key: "openai", label: "openai", longLabel: "OpenAI (extraction + TIA chat)" },
   { key: "modal_ocr", label: "ocr", longLabel: "GLM-OCR on Modal · warm ≈2s · cold up to ≈90s for handwriting" },
   { key: "zoho_mail", label: "mail", longLabel: "Zoho IMAP mailbox poller" },
   { key: "rust_dispatch", label: "dispatch", longLabel: "Rust dispatch worker" },

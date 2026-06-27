@@ -33,15 +33,10 @@ function entityContext(): { kind: string; id: string } | undefined {
   return doc ? { kind: "document", id: doc } : undefined;
 }
 
-/** AIDA's brand mark — the TIA glyph in a gradient tile. Replaces the generic sparkle. */
+/** The TIA mark — the wordmark glyph in brand orange, no background tile. */
 function AidaMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
-  const box = size === "lg" ? "h-14 w-14 rounded-2xl" : size === "sm" ? "h-7 w-7 rounded-lg" : "h-8 w-8 rounded-lg";
-  const glyph = size === "lg" ? "h-5" : size === "sm" ? "h-2.5" : "h-3";
-  return (
-    <span className={`grid place-items-center ${box} brand-band shadow-sm ring-1 ring-brand-700/20 shrink-0`}>
-      <Logo className={`${glyph} text-white`} accent="fill-[#ffd9c7]" />
-    </span>
-  );
+  const glyph = size === "lg" ? "h-10" : size === "sm" ? "h-4" : "h-5";
+  return <Logo className={`${glyph} text-brand-600 shrink-0`} accent="fill-brand-400" />;
 }
 
 function CiteChip({ kind, id }: { kind: string; id: string }) {
@@ -130,21 +125,18 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
             initial={{ opacity: 0, scale: 0.98, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.98, y: 10 }}
             transition={{ type: "spring", stiffness: 340, damping: 32 }}
           >
-            {/* Brand hairline */}
-            <div className="h-[3px] brand-band shrink-0" />
-
             {/* Header */}
             <header className="flex items-center justify-between gap-3 px-4 h-14 border-b border-ink-100 shrink-0">
               <div className="flex items-center gap-2.5 min-w-0">
                 <AidaMark />
                 <div className="leading-tight min-w-0">
-                  <div className="text-sm font-semibold text-ink-900 tracking-tight">AIDA</div>
+                  <div className="text-sm font-semibold text-ink-900 tracking-tight">TIA</div>
                   <div className="text-2xs text-ink-400 truncate">
-                    {clientScoped ? <>Scoped to <span className="font-mono text-brand-600">{currentClientCode}</span> · live data</> : "TIA intelligence · grounded in live data"}
+                    {clientScoped ? <>Scoped to <span className="font-mono text-brand-600">{currentClientCode}</span> · live data</> : "Grounded in live data"}
                   </div>
                 </div>
               </div>
-              <button onClick={onClose} aria-label="Close assistant" className="grid place-items-center h-8 w-8 rounded-lg text-ink-400 hover:text-ink-700 hover:bg-ink-100 transition-colors shrink-0">
+              <button onClick={onClose} aria-label="Close chat" className="grid place-items-center h-8 w-8 rounded-lg text-ink-400 hover:text-ink-700 hover:bg-ink-100 transition-colors shrink-0">
                 <X size={16} />
               </button>
             </header>
@@ -152,7 +144,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
             {clientScoped && (
               <div className="flex items-center gap-1.5 px-4 py-1.5 bg-brand-50/70 border-b border-brand-100 text-2xs text-brand-800">
                 <Lock size={11} className="text-brand-500 shrink-0" />
-                Data isolation active — AIDA only reads <span className="font-mono">{currentClientCode}</span>'s records.
+                Data isolation active — TIA only reads <span className="font-mono">{currentClientCode}</span>'s records.
               </div>
             )}
 
@@ -162,7 +154,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                 <div className="h-full flex flex-col">
                   <div className="flex-1 flex flex-col items-center justify-center text-center px-2">
                     <AidaMark size="lg" />
-                    <h3 className="mt-4 text-base font-semibold text-ink-900">Ask AIDA anything</h3>
+                    <h3 className="mt-4 text-base font-semibold text-ink-900">Ask TIA anything</h3>
                     <p className="mt-1.5 text-sm text-ink-500 max-w-[19rem] leading-relaxed">
                       Grounded answers from the live pipeline — review queue, touchless rate, invoices, dispatch, and the tamper-evident audit chain.
                     </p>
@@ -229,7 +221,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); send(input); } }}
-                  placeholder="Ask AIDA…"
+                  placeholder="Ask TIA…"
                   className="flex-1 min-w-0 bg-transparent py-1.5 text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none"
                 />
                 <button
