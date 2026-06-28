@@ -6,7 +6,7 @@ import {
   Inbox, ScanText, Users, ShieldCheck, ReceiptText, Send,
   Layers, MessageSquareText, BadgeCheck, Scale, Link2, Gauge,
   LayoutDashboard, Building2, LineChart, ArrowRight, ArrowUpRight, Check, ImagePlus,
-  Mail, UploadCloud, Code2, MessagesSquare,
+  Mail, UploadCloud, Code2, MessagesSquare, FileSpreadsheet,
 } from "lucide-react";
 import { api } from "../api";
 import { fmtPct, cn } from "../lib";
@@ -158,7 +158,7 @@ function Hero() {
           </div>
 
           <Reveal delay={0.12}>
-            <HeroInvoiceCard />
+            <HeroFlow />
           </Reveal>
         </div>
       </Container>
@@ -166,47 +166,121 @@ function Hero() {
   );
 }
 
-/* A calm product glance: the generated tax invoice TIA sends back. */
-function HeroInvoiceCard() {
+/* The hero's signature visual: a live "timesheet in -> engine -> invoice out"
+ * loop. One animated progress drives a scan over the raw sheet, an engine bar
+ * stepping through the six stages, and a count-up invoice with a Touchless stamp. */
+const FLOW = [
+  { label: "Ingesting", icon: Inbox },
+  { label: "Extracting", icon: ScanText },
+  { label: "Resolving", icon: Users },
+  { label: "Validating", icon: ShieldCheck },
+  { label: "Invoicing", icon: ReceiptText },
+  { label: "Dispatching", icon: Send },
+];
+
+function HeroFlow() {
+  const reduce = useReducedMotion();
+  const [p, setP] = useState(reduce ? 100 : 0);
+
+  useEffect(() => {
+    if (reduce) { setP(100); return; }
+    let raf = 0; let start = 0;
+    const DUR = 3600, HOLD = 1500;
+    const loop = (ts: number) => {
+      if (!start) start = ts;
+      const e = ts - start;
+      if (e <= DUR) setP((e / DUR) * 100);
+      else if (e <= DUR + HOLD) setP(100);
+      else { start = ts; setP(0); }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [reduce]);
+
+  const frac = p / 100;
+  const active = Math.min(5, Math.floor(frac * 6));
+  const stage = FLOW[active];
+  const total = Math.round(48720 * Math.min(1, frac * 1.05));
+  const totalStr = total.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const billed = frac > 0.6;
+  const dispatched = p >= 99;
+
   return (
     <div className="relative">
-      <div className="absolute -inset-5 brand-band rounded-[1.8rem] opacity-[0.08] blur-2xl" aria-hidden />
+      <div className="absolute -inset-6 brand-band rounded-[2rem] opacity-[0.08] blur-2xl" aria-hidden />
       <div className="relative rounded-2xl border border-ink-200 bg-white shadow-lg overflow-hidden">
         <div className="h-1.5 brand-band" />
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-ink-100">
-          <div className="flex items-center gap-2">
-            <Logo className="h-3.5 text-brand-500" accent="fill-brand-500" />
-            <span className="text-xs font-medium text-ink-500">Tax invoice</span>
+
+        {/* IN */}
+        <div className="px-5 pt-4 pb-3">
+          <div className="flex items-center justify-between">
+            <div className="eyebrow">Timesheet in</div>
+            <span className="text-2xs text-ink-400 font-mono">WhatsApp · CL001</span>
           </div>
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-2xs font-semibold">
-            <Check size={11} /> Touchless
-          </span>
+          <div className="relative mt-2 overflow-hidden rounded-xl border border-ink-200 bg-ink-50/60 p-3">
+            <div className="flex items-center gap-2.5">
+              <span className="grid place-items-center h-8 w-8 rounded-lg bg-emerald-50 text-emerald-600 shrink-0"><FileSpreadsheet size={17} /></span>
+              <span className="text-xs font-medium text-ink-600">Timesheet_June2026.xlsx</span>
+            </div>
+            <div className="mt-2.5 space-y-1.5">
+              {[["Carlos Smith", "20 days"], ["Ahmed Khan", "20 days · 2 OT"]].map(([n, d]) => (
+                <div key={n} className="flex items-center justify-between text-[13px]">
+                  <span className="text-ink-700">{n}</span>
+                  <span className="text-ink-400 tnum">{d}</span>
+                </div>
+              ))}
+            </div>
+            {/* scan beam while extracting */}
+            {!reduce && active <= 1 && (
+              <div
+                className="pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-brand-400/25 to-transparent"
+                style={{ top: `${(frac / 0.34) * 100 - 20}%`, transition: "top 80ms linear" }}
+              />
+            )}
+          </div>
         </div>
-        <div className="px-5 py-4 space-y-3">
-          <div className="flex items-center justify-between gap-3">
+
+        {/* ENGINE */}
+        <div className="px-5 py-3 border-y border-ink-100 bg-ink-50/40">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="grid place-items-center h-7 w-7 rounded-lg bg-brand-50 ring-1 ring-brand-100 text-brand-600 shrink-0">
+                <stage.icon size={15} />
+              </span>
+              <span className="text-sm font-medium text-ink-800 truncate">{dispatched ? "Dispatched" : `${stage.label}…`}</span>
+            </div>
+            <span className="text-2xs font-semibold tnum text-brand-600">{Math.round(p)}%</span>
+          </div>
+          <div className="mt-2 h-1.5 rounded-full bg-ink-200/70 overflow-hidden">
+            <div className="h-full rounded-full brand-band" style={{ width: `${p}%`, transition: "width 80ms linear" }} />
+          </div>
+        </div>
+
+        {/* OUT */}
+        <div className="px-5 pt-3.5 pb-4">
+          <div className="flex items-center justify-between">
+            <div className="eyebrow">Tax invoice out</div>
+            <span
+              className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-2xs font-semibold transition-all duration-500"
+              style={{ opacity: dispatched ? 1 : 0, transform: dispatched ? "rotate(-3deg) scale(1)" : "scale(0.9)" }}
+            >
+              <Check size={11} /> Touchless
+            </span>
+          </div>
+          <div className="mt-1 flex items-end justify-between gap-3">
             <div className="min-w-0">
               <div className="font-semibold text-ink-900 truncate">Emirates Steel Industries LLC</div>
-              <div className="text-2xs text-ink-400 font-mono truncate">CL001 · June 2026 · TRN 100312345600003</div>
+              <div className="text-2xs text-ink-400 font-mono">June 2026 · TRN 100312345600003</div>
             </div>
             <div className="text-right shrink-0">
-              <div className="eyebrow">Total incl. VAT</div>
-              <div className="text-lg font-semibold tnum text-ink-900">AED 48,720.00</div>
+              <div className="text-xl font-semibold tnum text-ink-900">AED {totalStr}</div>
+              <div className="text-2xs text-ink-400">incl. 5% VAT</div>
             </div>
           </div>
-          <div className="rounded-lg border border-ink-100 divide-y divide-ink-100">
-            {[["Carlos Smith", "20 days", "AED 21,600.00"], ["Ahmed Khan", "20 days · 2 OT", "AED 22,840.00"]].map(([n, m, a]) => (
-              <div key={n} className="flex items-center justify-between px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <div className="font-medium text-ink-800 truncate">{n}</div>
-                  <div className="text-2xs text-ink-400">{m}</div>
-                </div>
-                <span className="tnum text-ink-700 shrink-0">{a}</span>
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center justify-between text-2xs text-ink-500">
-            <span className="inline-flex items-center gap-1"><ShieldCheck size={12} className="text-brand-500" /> R1 to R15 passed</span>
-            <span className="font-mono">SAC 998515 · VAT 5%</span>
+          <div className="mt-3 flex items-center gap-1.5 text-2xs text-ink-500" style={{ opacity: billed ? 1 : 0.35, transition: "opacity 300ms" }}>
+            <ShieldCheck size={12} className="text-brand-500" /> R1 to R15 passed
+            <span className="ml-auto font-mono">SAC 998515</span>
           </div>
         </div>
       </div>
