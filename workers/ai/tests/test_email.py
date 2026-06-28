@@ -39,7 +39,9 @@ def reset_state():
 
 
 def test_e1_friendly_message_table_covers_all_rules():
-    for rid in ("R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R14"):
+    # R9 (approver_signature_present) was retired - was a warning-severity rule
+    # that fired on every clean demo invoice and added no signal.
+    for rid in ("R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R10", "R14"):
         msg = friendly_message(rid)
         assert msg, f"{rid} has no friendly message"
         assert len(msg) > 10

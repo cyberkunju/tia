@@ -51,8 +51,27 @@ async def _lifespan(_app: FastAPI):
     The MCP session manager keeps per-session state for streamable HTTP clients.
     Without entering its `run()` context, requests to `/mcp/*` hit `RuntimeError:
     Task group is not initialized. Make sure to use run().`
+
+    Also kick off the Zoho IMAP poller in a daemon thread - it pulls real email
+    sent to `tia@cyberkunju.com` into the pipeline every ZOHO_POLL_INTERVAL_SEC.
+    No-op if ZOHO_IMAP_USER / ZOHO_IMAP_PASSWORD aren't set.
     """
+    import logging
+    import threading
+
+    from ..mailbox import ZohoPoller
+
+    log = logging.getLogger("tia.api.lifespan")
     init_db()
+
+    poller = ZohoPoller()
+    if poller.configured():
+        t = threading.Thread(target=poller.run_forever, name="zoho-poller", daemon=True)
+        t.start()
+        log.info("zoho poller started in background thread")
+    else:
+        log.info("zoho poller skipped (ZOHO_IMAP_USER / ZOHO_IMAP_PASSWORD not set)")
+
     async with mcp.session_manager.run():
         yield
 

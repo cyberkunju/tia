@@ -59,6 +59,57 @@ def _addrs_from_header(raw: str | None) -> list[str]:
     return [a.strip() for _name, a in parsed if a and a.strip()]
 
 
+def _is_bounce_or_autoreply(msg: Message) -> bool:
+    """Detect bounces / DSNs / auto-replies / mail loops.
+
+    Standard signals (RFC 3464 + RFC 3834 + everyday spam-control conventions):
+      1. `Auto-Submitted` header set to anything other than "no"
+      2. `Content-Type: multipart/report` (DSN format)
+      3. `Precedence: bulk|junk|list`
+      4. From address is mailer-daemon / postmaster / noreply / bounce
+      5. Subject indicates undeliverable / out-of-office / auto-reply
+      6. Null Return-Path (`<>`)
+    """
+    auto = (msg.get("Auto-Submitted") or "").lower().strip()
+    if auto and auto != "no":
+        return True
+    ctype = (msg.get_content_type() or "").lower()
+    if "multipart/report" in ctype:
+        return True
+    precedence = (msg.get("Precedence") or "").lower().strip()
+    if precedence in ("bulk", "junk", "list", "auto_reply"):
+        return True
+    from_raw = (msg.get("From") or "").lower()
+    bounce_markers = (
+        "mailer-daemon",
+        "postmaster",
+        "noreply",
+        "no-reply",
+        "bounce",
+        "do-not-reply",
+        "donotreply",
+    )
+    if any(m in from_raw for m in bounce_markers):
+        return True
+    return_path = (msg.get("Return-Path") or "").strip()
+    if return_path == "<>":
+        return True
+    subj = _decode(msg.get("Subject", "")).lower()
+    subj_markers = (
+        "undelivered",
+        "delivery status",
+        "delivery failure",
+        "mail delivery failed",
+        "returned mail",
+        "out of office",
+        "auto-reply",
+        "automatic reply",
+    )
+    if any(m in subj for m in subj_markers):
+        return True
+    return False
+
+
 def _walk_body(msg: Message) -> tuple[str, list[tuple[str, str, bytes]]]:
     """Return `(body_text, [(filename, mime, bytes)])`."""
     body_chunks: list[str] = []
@@ -154,7 +205,19 @@ class ZohoPoller:
 
         Attachments go through `/intake/upload` separately (one DocAsset each)
         - the body itself goes through `/intake/email`.
+
+        Bounces / auto-replies / mail loops are filtered upfront — replying to
+        a bounce just creates another bounce, and TIA's outbound reply path
+        would create a doom-loop.
         """
+        if _is_bounce_or_autoreply(msg):
+            log.info(
+                "zoho-poll skipping bounce/auto-reply: subj=%r from=%s",
+                _decode(msg.get("Subject", "")),
+                msg.get("From"),
+            )
+            return {"skipped": "bounce_or_autoreply"}
+
         from_addr_list = _addrs_from_header(msg.get("From"))
         to_addrs = _addrs_from_header(msg.get("To"))
         cc_addrs = _addrs_from_header(msg.get("Cc"))
