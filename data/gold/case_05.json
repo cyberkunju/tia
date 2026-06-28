@@ -35,28 +35,6 @@
         ],
         "resolved": true,
         "ambiguous": false
-      },
-      {
-        "emp_id": "EMP10004",
-        "employee_name": "Hana Al Farsi",
-        "days_worked": 4,
-        "hours": 32.0,
-        "leave_codes": [
-          "AL"
-        ],
-        "resolved": true,
-        "ambiguous": false
-      },
-      {
-        "emp_id": "EMP10005",
-        "employee_name": "Michael Al Farsi",
-        "days_worked": 4,
-        "hours": 32.0,
-        "leave_codes": [
-          "AL"
-        ],
-        "resolved": true,
-        "ambiguous": false
       }
     ]
   }
