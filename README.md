@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="TIA — Touchless Invoice Agent · TASC Outsourcing UAE" width="100%">
+</p>
+
 # TIA - Touchless Invoice Agent
 
 [![ci](https://github.com/cyberkunju/tia/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberkunju/tia/actions/workflows/ci.yml)
