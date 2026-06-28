@@ -98,8 +98,20 @@ class Payroll(Base):
 
 class DocAsset(Base):
     __tablename__ = "doc_assets"
+    # Dedup is per (content, channel, sender) — NOT global content. Two different
+    # WhatsApp senders (or an email vs a WhatsApp submission) of the SAME file are
+    # SEPARATE submissions and each invoice must route back to ITS OWN sender. A
+    # global unique-on-content_hash collapsed them onto the first uploader, which
+    # mis-delivered invoices to whoever sent the file first (and leaked email
+    # submissions onto that person's WhatsApp). Same sender re-sending identical
+    # content still dedups (idempotent on retries/redelivery).
+    __table_args__ = (
+        UniqueConstraint(
+            "content_hash", "source_channel", "uploaded_by", name="uq_doc_content_per_sender"
+        ),
+    )
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    content_hash: Mapped[str] = mapped_column(String, unique=True, index=True)
+    content_hash: Mapped[str] = mapped_column(String, index=True)
     phash: Mapped[str | None] = mapped_column(String, nullable=True)
     source_channel: Mapped[str] = mapped_column(String)  # upload|email|whatsapp
     mime: Mapped[str | None] = mapped_column(String, nullable=True)

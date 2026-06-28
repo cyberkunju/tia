@@ -39,9 +39,41 @@ def _ensure_columns() -> None:
                 conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{col.name}" {ddl_type}'))
 
 
+def _ensure_doc_dedup_constraint() -> None:
+    """Migrate doc_assets dedup from GLOBAL content_hash uniqueness to a
+    per-(content, channel, sender) unique key. Idempotent; Postgres only (dev
+    SQLite is recreated fresh from the model).
+
+    Why: a global UNIQUE(content_hash) collapsed identical content from different
+    senders/channels onto the FIRST uploader — so a timesheet someone else sent (or
+    an email submission) had its invoice mis-delivered to whoever first sent that
+    exact file, and leaked email submissions onto that person's WhatsApp. Scoping
+    the unique key by (content_hash, source_channel, uploaded_by) gives each sender
+    their own doc + correctly-routed invoice, while same-sender re-delivery still
+    dedups (idempotent on retries)."""
+    if not str(engine.url).startswith("postgresql"):
+        return
+    statements = (
+        # the legacy global unique was an index (unique=True, index=True)
+        "DROP INDEX IF EXISTS ix_doc_assets_content_hash",
+        # keep a non-unique index for fast content lookups
+        "CREATE INDEX IF NOT EXISTS ix_doc_assets_content_hash ON doc_assets (content_hash)",
+        # the new per-sender composite unique (existing rows already satisfy it)
+        "ALTER TABLE doc_assets ADD CONSTRAINT uq_doc_content_per_sender "
+        "UNIQUE (content_hash, source_channel, uploaded_by)",
+    )
+    for sql in statements:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text(sql))
+        except Exception:  # noqa: BLE001 — already applied / not present: idempotent
+            pass
+
+
 def init_db() -> None:
     Base.metadata.create_all(engine)
     _ensure_columns()
+    _ensure_doc_dedup_constraint()
 
 
 @contextmanager
