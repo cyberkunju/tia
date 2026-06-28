@@ -13,6 +13,7 @@ import shutil
 import uuid
 from pathlib import Path
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .config import STAGING_DIR
@@ -135,10 +136,11 @@ def ingest_file(
     DocAsset so the email reply path can thread back without re-parsing."""
     src_path = Path(src_path)
     content_hash = _hash_file(src_path)
-    existing = session.query(DocAsset).filter_by(content_hash=content_hash).first()
-    if existing:
-        # If this is a re-ingest with fresh meta (e.g. same .eml re-delivered via
-        # IMAP after a transient), merge so the latest from_addr / message_id wins.
+
+    def _dedup_hit(existing: DocAsset) -> DocAsset:
+        # Same content already ingested. Merge fresh per-channel meta (e.g. same
+        # .eml re-delivered via IMAP) so the latest from_addr / message_id wins,
+        # then audit-log the dedup so the chain still records the re-delivery.
         if meta:
             merged = dict(existing.meta or {})
             merged.update(meta)
@@ -154,6 +156,14 @@ def ingest_file(
         )
         return existing
 
+    existing = (
+        session.query(DocAsset)
+        .filter_by(content_hash=content_hash, source_channel=channel, uploaded_by=uploaded_by)
+        .first()
+    )
+    if existing:
+        return _dedup_hit(existing)
+
     doc_id = str(uuid.uuid4())
     staged = Path(STAGING_DIR) / f"{doc_id}_{src_path.name}"
     shutil.copy2(src_path, staged)
@@ -168,8 +178,26 @@ def ingest_file(
         parent_doc_id=parent_doc_id,
         meta=meta or {},
     )
-    session.add(doc)
-    session.flush()
+    # SAVEPOINT around the insert: we run 2 uvicorn workers and the Zoho poller
+    # retries UIDs, so two requests can both pass the dedup SELECT above and then
+    # race to INSERT the same content_hash. The unique index lets exactly one win;
+    # the loser's IntegrityError rolls back only to this savepoint (the outer
+    # request transaction stays usable) and we treat it as a dedup hit. This makes
+    # ingest idempotent under concurrency instead of 500-ing / silently dropping
+    # the background WhatsApp task.
+    try:
+        with session.begin_nested():
+            session.add(doc)
+            session.flush()
+    except IntegrityError:
+        staged.unlink(missing_ok=True)  # orphan copy from the lost race
+        winner = (
+            session.query(DocAsset)
+            .filter_by(content_hash=content_hash, source_channel=channel, uploaded_by=uploaded_by)
+            .one()
+        )
+        return _dedup_hit(winner)
+
     log_event(
         session,
         uploaded_by,
@@ -237,6 +265,25 @@ def process_doc(session: Session, doc: DocAsset, client_hint: str | None = None)
             "period": extraction.period,
         },
     )
+
+    # OCR engines misread the client code's digits (e.g. Mistral reads the printed
+    # "CL001" as "CLO01"). Snap it back onto a real client code BEFORE resolution and
+    # the contract lookup, so a clean sheet isn't forced to review by a phantom
+    # "unknown client / rule R0" failure. No-op when the code is already valid.
+    if extraction.client_code:
+        from .match.resolver import canonical_client_code
+
+        corrected = canonical_client_code(extraction.client_code, session)
+        if corrected != extraction.client_code:
+            log_event(
+                session,
+                "system",
+                "doc",
+                doc.id,
+                "client_code_normalized",
+                {"from": extraction.client_code, "to": corrected},
+            )
+            extraction.client_code = corrected
 
     match = resolve(extraction, session)
     log_event(
