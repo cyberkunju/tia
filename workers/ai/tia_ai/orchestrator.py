@@ -206,6 +206,25 @@ def process_doc(session: Session, doc: DocAsset, client_hint: str | None = None)
             "client_bound",
             {"client_code": client_hint, "via": doc.source_channel},
         )
+
+    # When this attachment came from an email and the OCR/vision extractor
+    # didn't pull period / client_hint, fall back to the email body text
+    # (forwarded by the Zoho poller in `DocAsset.meta["email_body"]`). OCR
+    # always wins — we only fill nulls.
+    body_ctx = (doc.meta or {}).get("email_body")
+    if body_ctx and (not extraction.client_hint or not extraction.period):
+        try:
+            from .extract.email import extract_email
+
+            body_extract = extract_email(body_ctx)
+            if not extraction.client_hint and body_extract.client_hint:
+                extraction.client_hint = body_extract.client_hint
+            if not extraction.period and body_extract.period:
+                extraction.period = body_extract.period
+        except Exception:  # noqa: BLE001
+            # Body parsing is best-effort context — never block the main pipeline.
+            pass
+
     log_event(
         session,
         "system",

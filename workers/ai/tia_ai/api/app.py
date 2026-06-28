@@ -180,6 +180,11 @@ async def intake_upload(
     from_addr: str | None = Form(None),
     message_id: str | None = Form(None),
     subject: str | None = Form(None),
+    # Email body text as context — when the inbound email had attachments, the
+    # poller skips the body intake and forwards the body here instead, so the
+    # extractor can still mine it for period/client hints when the OCR/vision
+    # pass missed them. Capped at 4 KB upstream.
+    email_body: str | None = Form(None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
@@ -193,11 +198,12 @@ async def intake_upload(
     tmp = Path(STAGING_DIR) / f"_inbox_{uuid.uuid4().hex}_{file.filename}"
     tmp.write_bytes(raw)
     upload_meta: dict = {}
-    if from_addr or message_id or subject:
+    if from_addr or message_id or subject or email_body:
         upload_meta = {
             "from_addr": from_addr,
             "message_id": message_id,
             "subject": subject,
+            "email_body": email_body,
         }
     doc = ingest_file(
         s,
