@@ -17,6 +17,38 @@ from ..config import STAGING_DIR
 
 BRAND_HEX = "#d9531e"  # TASC orange-red
 
+# ── TIA brand mark ──────────────────────────────────────────────────────────
+# The logo is three straight-edged glyphs (T, the central I bar, the wide A),
+# vector-traced from the master TIA_logo.svg. We draw them natively as Typst
+# polygons (rather than embedding an external asset) so the PDF stays fully
+# self-contained and deterministic. Coordinate space matches the SVG viewBox.
+_LOGO_VIEWBOX = (1680, 769)
+_LOGO_PATHS = (
+    ((0, 0), (631, 0), (631, 177), (426, 177), (426, 767), (236, 767), (236, 177), (0, 177)),
+    ((676, 0), (862, 0), (862, 557), (739, 767), (675, 767)),
+    ((1233, 1), (1287, 90), (1680, 769), (1052, 769), (1153, 592), (1367, 591),
+     (1235, 352), (1232, 352), (1162, 481), (1001, 767), (792, 768), (791, 765), (815, 723)),
+)
+
+
+def _logo_box(height_pt: float, color_expr: str = "brand") -> str:
+    """Return a Typst `box[...]` expression that draws the TIA logo at the
+    given height (pt). `color_expr` is a Typst color expression (e.g. a `#let`
+    name like `brand`, or `rgb("#fff")`)."""
+    vw, vh = _LOGO_VIEWBOX
+    s = height_pt / vh
+    width = vw * s
+    polys = []
+    for path in _LOGO_PATHS:
+        pts = ", ".join(f"({x * s:.2f}pt, {y * s:.2f}pt)" for x, y in path)
+        polys.append(f"  #place(top + left, polygon(fill: {color_expr}, stroke: none, {pts}))")
+    body = "\n".join(polys)
+    return f"box(width: {width:.2f}pt, height: {height_pt:.2f}pt)[\n{body}\n]"
+
+
+_LOGO = _logo_box(22.0)
+_LOGO_SM = _logo_box(8.5)  # footer mark, drawn at true size (no visual scaling)
+
 # ponytail: emitting Typst source by string templating - safer than ad-hoc DSL,
 # upgrade path is a sidecar .typ template file if the layout grows.
 
@@ -45,87 +77,121 @@ def _audit_hash(invoice: dict) -> str:
 
 _TEMPLATE = r"""
 #set document(title: "Tax Invoice " + "{seq_no}")
-#set page(paper: "a4", margin: (x: 1.6cm, y: 1.6cm))
-#set text(size: 10pt, font: ("DejaVu Sans", "Liberation Sans", "Arial"))
+#set text(size: 9.5pt, font: ("DejaVu Sans", "Liberation Sans", "Arial"), fill: rgb("#0f172a"))
+
 #let brand = rgb("{brand}")
-#let muted = rgb("#666666")
-#let row_fill = (_, row) => if row == 0 {{ rgb("#ececec") }} else {{ none }}
+#let ink = rgb("#0f172a")
+#let ink600 = rgb("#475569")
+#let ink500 = rgb("#64748b")
+#let ink400 = rgb("#94a3b8")
+#let line200 = rgb("#e7ecf2")
+#let fill50 = rgb("#f8fafc")
+#let fill100 = rgb("#f1f5f9")
+#let brand50 = rgb("#fef4ef")
+#let tialogo = {logo}
+#let tialogosm = {logo_sm}
+#let eyebrow(s) = text(size: 6.5pt, weight: "bold", fill: ink400, tracking: 1.2pt, upper(s))
+#let hcell(s) = text(size: 6.5pt, weight: "bold", fill: ink500, tracking: 0.7pt, upper(s))
+#let hfill = (_, row) => if row == 0 {{ fill100 }} else {{ none }}
 
-#block(fill: brand, inset: (x: 14pt, y: 12pt), width: 100%, radius: 2pt)[
-  #set text(fill: white)
-  #text(size: 22pt, weight: "bold")[Tax Invoice]
-  #h(10pt) #text(size: 11pt)[TASC Outsourcing FZ-LLC]
-]
+#set page(paper: "a4", margin: (x: 1.5cm, top: 1.35cm, bottom: 1.65cm), footer: [
+  #line(length: 100%, stroke: 0.6pt + line200)
+  #v(4pt)
+  #grid(columns: (auto, 1fr), column-gutter: 9pt, align: (left + horizon, left + horizon),
+    tialogosm,
+    text(size: 6pt, fill: ink400)[Issued under UAE Federal Decree-Law No. 8 of 2017 on VAT  ·  All amounts in AED  ·  Audit hash #text(fill: ink500, weight: "medium")[{hash}]],
+  )
+])
 
-#v(8pt)
-
-#grid(columns: (1fr, 1fr), gutter: 10pt,
+// ── Masthead ──────────────────────────────────────────────────────────────
+#grid(columns: (1fr, auto), align: (left + horizon, right + horizon),
+  [ #tialogo ],
   [
-    *Supplier* \
-    TASC Outsourcing FZ-LLC \
-    Dubai, UAE \
-    TRN: {supplier_trn}
-  ],
-  [
-    *Bill to* \
-    {client} \
-    {place_of_supply} \
-    TRN: {customer_trn}
+    #text(size: 16pt, weight: "bold", tracking: 3pt, fill: ink)[TAX INVOICE]
+    #linebreak() #v(1pt)
+    #text(size: 8.5pt, fill: ink500)[No. ]
+    #text(size: 8.5pt, weight: "medium", fill: ink600)[{seq_no}]
   ],
 )
+#v(7pt)
+#line(length: 100%, stroke: 1.2pt + brand)
+#v(13pt)
 
+// ── Parties ───────────────────────────────────────────────────────────────
+#grid(columns: (1fr, 1fr), gutter: 18pt,
+  [
+    #eyebrow("From") #v(4pt)
+    #text(weight: "bold", size: 10.5pt)[TASC Outsourcing FZ-LLC] #linebreak()
+    #text(fill: ink600)[Dubai, United Arab Emirates] #linebreak()
+    #text(fill: ink500)[TRN ] #text(weight: "medium", fill: ink)[{supplier_trn}]
+  ],
+  [
+    #eyebrow("Bill To") #v(4pt)
+    #text(weight: "bold", size: 10.5pt)[{client}] #linebreak()
+    #text(fill: ink600)[{place_of_supply}] #linebreak()
+    #text(fill: ink500)[TRN ] #text(weight: "medium", fill: ink)[{customer_trn}]
+  ],
+)
+#v(13pt)
+
+// ── Invoice meta ──────────────────────────────────────────────────────────
+#grid(columns: (1fr, 1fr, 1fr, 1fr), stroke: 0.6pt + line200, inset: (x: 10pt, y: 7pt),
+  [#eyebrow("Invoice No.")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{seq_no}]],
+  [#eyebrow("Issue Date")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{issue_date}]],
+  [#eyebrow("Billing Period")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{period}]],
+  [#eyebrow("Due Date")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{due_date}]],
+)
 #v(8pt)
 
-#grid(columns: (1fr, 1fr, 1fr, 1fr), gutter: 6pt,
-  [*Invoice No* \ {seq_no}],
-  [*Issue Date* \ {issue_date}],
-  [*Period* \ {period}],
-  [*Due Date* \ {due_date}],
-)
-
-#v(6pt)
-
-#block(fill: rgb("#fafafa"), inset: (x: 10pt, y: 6pt), radius: 2pt)[
-  *Service Code:* {service_code}  ·  *Description:* {service_desc}
+// ── Service classification ────────────────────────────────────────────────
+#block(width: 100%, fill: fill50, inset: (x: 10pt, y: 7pt), radius: 3pt)[
+  #grid(columns: (auto, 1fr), column-gutter: 16pt,
+    [#eyebrow("Service")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{service_code}]],
+    [#eyebrow("Description")#linebreak()#v(2pt)#text(size: 9pt)[{service_desc}]],
+  )
 ]
+#v(13pt)
 
-#v(10pt)
-
+// ── Line items ────────────────────────────────────────────────────────────
 #table(
-  columns: (2.2cm, 1fr, 1cm, 2cm, 1.6cm, 1.8cm, 2.3cm),
+  columns: (2.1cm, 1fr, 1cm, 2.1cm, 1.6cm, 1.9cm, 2.4cm),
   align: (left, left, right, right, right, right, right),
-  stroke: 0.4pt + rgb("#cccccc"),
-  fill: row_fill,
+  inset: (x: 7pt, y: 6.5pt),
+  stroke: (x: none, y: 0.6pt + line200),
+  fill: hfill,
   table.header(
-    [*Emp ID*], [*Employee - Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Line Total*],
+    hcell("Emp ID"), hcell("Employee - manpower supply"), hcell("Days"),
+    hcell("Prorated"), hcell("OT"), hcell("Reimb"), hcell("Line Total"),
   ),
   {rows}
 )
+#v(13pt)
 
-#v(8pt)
-
-#align(right)[
-  #table(
-    columns: (4cm, 3cm),
-    align: (left, right),
-    stroke: none,
-    [Subtotal (excl VAT)], [AED {amount}],
-    [VAT @ {vat_pct}%], [AED {vat_amount}],
-    [#text(weight: "bold")[Total (incl VAT)]], [#text(weight: "bold")[AED {total_incl}]],
-  )
-]
+// ── Totals ────────────────────────────────────────────────────────────────
+#grid(columns: (1fr, auto), gutter: 16pt, align: (left + bottom, right),
+  [
+    #eyebrow("Payment") #v(3pt)
+    #text(size: 8.5pt, fill: ink600)[Payable within 30 days to TASC Outsourcing FZ-LLC.] #linebreak()
+    #text(size: 8.5pt, fill: ink600)[Bank details on request  ·  quote the invoice number above.]
+  ],
+  box(width: 7.8cm)[
+    #grid(columns: (1fr, auto), row-gutter: 6pt, align: (left, right),
+      text(fill: ink600)[Subtotal (excl. VAT)], [AED {amount}],
+      text(fill: ink600)[VAT @ {vat_pct}%], [AED {vat_amount}],
+    )
+    #v(7pt)
+    #block(width: 100%, fill: brand50, inset: (x: 11pt, y: 9pt), radius: 4pt)[
+      #grid(columns: (1fr, auto), align: (left + horizon, right + horizon),
+        text(weight: "bold", size: 10.5pt)[Total (incl. VAT)],
+        text(weight: "bold", size: 13pt, fill: brand)[AED {total_incl}],
+      )
+    ]
+  ],
+)
 
 {warning}
 {exceptions}
-
-#v(14pt)
-#line(length: 100%, stroke: 0.3pt + muted)
-#v(4pt)
-#text(size: 7.5pt, fill: muted)[
-  Issued under UAE Federal Decree-Law No. 8 of 2017 on VAT. All amounts in AED.
-  This is a digital tax invoice; the integrity is guaranteed by the audit hash below.
-  Audit hash: {hash}  ·  Generated by TIA (Touchless Invoice Agent)
-]
+{qr_block}
 """
 
 
@@ -142,30 +208,60 @@ def _row_line(li: dict) -> str:
     return ", ".join(f"[{c}]" for c in cells) + ","
 
 
+def _qr_panel(qr_filename: str, seq_disp: str) -> str:
+    """Typst block: branded WhatsApp QR + call-to-action. References lets
+    (fill50/line200/ink/ink600/eyebrow) defined in the main template."""
+    return (
+        "\n#v(13pt)\n"
+        '#block(width: 100%, fill: fill50, radius: 5pt, inset: 13pt, stroke: 0.6pt + line200)[\n'
+        "  #grid(columns: (auto, 1fr), column-gutter: 15pt, align: (left + horizon, left + horizon),\n"
+        f'    image("{qr_filename}", width: 3.1cm),\n'
+        "    [\n"
+        '      #eyebrow("Questions about this invoice?")\n'
+        "      #v(5pt)\n"
+        '      #text(size: 10.5pt, weight: "bold", fill: ink)[Scan to chat with TIA on WhatsApp]\n'
+        "      #v(3pt)\n"
+        '      #text(size: 8.5pt, fill: ink600)[Point your phone camera at the code to open a pre-filled '
+        f'WhatsApp chat about Invoice #text(weight: "medium", fill: ink)[{seq_disp}]. Just hit send, and TIA '
+        "replies with the live status, amounts, and full audit history, pulled straight from the system.]\n"
+        "    ],\n"
+        "  )\n"
+        "]\n"
+    )
+
+
 def _warning_block(invoice: dict) -> str:
     if not invoice.get("requires_finance_approval"):
         return ""
     return (
-        "#v(8pt)\n"
-        '#block(fill: rgb("#fff4ec"), stroke: 0.6pt + rgb("{brand}"), '
-        "inset: 10pt, radius: 2pt, width: 100%)[\n"
-        '  #text(fill: rgb("{brand}"), weight: "bold")[⚠ Above client threshold] - '
-        "requires Finance approval before dispatch.\n"
+        "\n#v(11pt)\n"
+        f'#block(width: 100%, fill: rgb("#fef4ef"), stroke: (left: 2.5pt + rgb("{BRAND_HEX}")), '
+        "inset: (x: 11pt, y: 9pt), radius: 2pt)[\n"
+        f'  #text(fill: rgb("{BRAND_HEX}"), weight: "bold")[Above client threshold]'
+        '#text(fill: rgb("#475569"))[ - requires Finance approval before dispatch.]\n'
         "]\n"
-    ).replace("{brand}", BRAND_HEX)
+    )
 
 
 def _exceptions_block(invoice: dict) -> str:
     exs = invoice.get("exceptions") or []
     if not exs:
         return ""
+    n = len(exs)
+    label = f"Held for review · {n} row" + ("s" if n != 1 else "")
     lines = "\n".join(
-        f"  - {_esc(ex.get('employee_name'))}: {_esc(ex.get('reason'))}" for ex in exs
+        f"  - #text(weight: \"medium\")[{_esc(ex.get('employee_name'))}]: "
+        f"#text(fill: rgb(\"#475569\"))[{_esc(ex.get('reason'))}]"
+        for ex in exs
     )
     return (
-        f"\n#v(8pt)\n"
-        f"*Held for review ({len(exs)} row" + ("s" if len(exs) != 1 else "") + ")*\n"
+        "\n#v(11pt)\n"
+        '#block(width: 100%, fill: rgb("#f8fafc"), stroke: (left: 2.5pt + rgb("#94a3b8")), '
+        "inset: (x: 11pt, y: 9pt), radius: 2pt)[\n"
+        f'  #text(size: 6.5pt, weight: "bold", fill: rgb("#64748b"), tracking: 1.2pt)[{label.upper()}]\n'
+        "  #v(4pt)\n"
         f"{lines}\n"
+        "]\n"
     )
 
 
@@ -214,9 +310,22 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
     due_date = invoice.get("due_date") or (dt.date.today() + dt.timedelta(days=30)).isoformat()
     service_code, service_desc = _service_code_for(invoice)
 
+    # Branded WhatsApp QR (deep link pre-filled with this invoice number).
+    qr_block = ""
+    try:
+        from .qr import make_whatsapp_qr
+
+        qr_name = f"qr_{invoice_id}.png"
+        make_whatsapp_qr(seq_no, Path(STAGING_DIR) / qr_name)
+        qr_block = _qr_panel(qr_name, _esc(seq_no))
+    except Exception:  # noqa: BLE001 - QR is enhancement-only, never block the invoice
+        qr_block = ""
+
     source = _TEMPLATE.format(
         seq_no=_esc(seq_no),
         brand=BRAND_HEX,
+        logo=_LOGO,
+        logo_sm=_LOGO_SM,
         client=_esc(invoice.get("client_name") or invoice.get("client_code") or "-"),
         period=_esc(invoice.get("period") or "-"),
         amount=_num(amount),
@@ -233,6 +342,7 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
         rows=rows or "[-], [no line items], [], [], [], [], [],",
         warning=_warning_block(invoice),
         exceptions=_exceptions_block(invoice),
+        qr_block=qr_block,
         hash=audit,
     )
     typ_path = Path(STAGING_DIR) / f"invoice_{invoice_id}.typ"
@@ -299,96 +409,109 @@ _CREDIT_NOTE_REASON_FRIENDLY: dict[str, str] = {
 _CREDIT_NOTE_TEMPLATE = r"""
 #pagebreak()
 
-#set page(paper: "a4", margin: (x: 1.6cm, y: 1.6cm))
-#set text(size: 10pt, font: ("DejaVu Sans", "Liberation Sans", "Arial"))
-#let brand = rgb("{brand}")
-#let muted = rgb("#666666")
-#let row_fill = (_, row) => if row == 0 {{ rgb("#ececec") }} else {{ none }}
+#let cnred = rgb("#b42318")
+#let cnred50 = rgb("#fef3f2")
+#let eyebrow_r(s) = text(size: 6.5pt, weight: "bold", fill: rgb("#94a3b8"), tracking: 1.2pt, upper(s))
 
-#block(fill: rgb("#a31313"), inset: (x: 14pt, y: 12pt), width: 100%, radius: 2pt)[
-  #set text(fill: white)
-  #text(size: 22pt, weight: "bold")[Tax Credit Note]
-  #h(8pt) #text(size: 11pt)[TASC Outsourcing FZ-LLC]
-]
-
-#v(6pt)
-
-#block(fill: rgb("#fff4ec"), inset: 8pt, radius: 2pt)[
-  *Reference:* This Tax Credit Note adjusts Tax Invoice *{orig_seq}* dated *{orig_date}*.
-  Combined Tax Invoice / Tax Credit Note document - issued under FTA Decision No. 7 of 2019.
-]
-
-#v(8pt)
-
-#grid(columns: (1fr, 1fr), gutter: 10pt,
+// ── Masthead ──────────────────────────────────────────────────────────────
+#grid(columns: (1fr, auto), align: (left + horizon, right + horizon),
+  [ #tialogo ],
   [
-    *Supplier* \
-    TASC Outsourcing FZ-LLC \
-    Dubai, UAE \
-    TRN: {supplier_trn}
-  ],
-  [
-    *Bill to* \
-    {client} \
-    {place_of_supply} \
-    TRN: {customer_trn}
+    #text(size: 16pt, weight: "bold", tracking: 2.5pt, fill: cnred)[TAX CREDIT NOTE]
+    #linebreak() #v(1pt)
+    #text(size: 8.5pt, fill: ink500)[No. ]
+    #text(size: 8.5pt, weight: "medium", fill: ink600)[{cn_seq}]
   ],
 )
+#v(7pt)
+#line(length: 100%, stroke: 1.2pt + cnred)
+#v(11pt)
 
+#block(width: 100%, fill: cnred50, stroke: (left: 2.5pt + cnred), inset: (x: 11pt, y: 9pt), radius: 2pt)[
+  #text(fill: cnred, weight: "bold")[Adjusts Tax Invoice {orig_seq}] #text(fill: ink600)[ dated {orig_date}. Combined Tax Invoice / Tax Credit Note document, issued under FTA Decision No. 7 of 2019.]
+]
+#v(13pt)
+
+// ── Parties ───────────────────────────────────────────────────────────────
+#grid(columns: (1fr, 1fr), gutter: 18pt,
+  [
+    #eyebrow_r("From") #v(4pt)
+    #text(weight: "bold", size: 10.5pt)[TASC Outsourcing FZ-LLC] #linebreak()
+    #text(fill: ink600)[Dubai, United Arab Emirates] #linebreak()
+    #text(fill: ink500)[TRN ] #text(weight: "medium", fill: ink)[{supplier_trn}]
+  ],
+  [
+    #eyebrow_r("Bill To") #v(4pt)
+    #text(weight: "bold", size: 10.5pt)[{client}] #linebreak()
+    #text(fill: ink600)[{place_of_supply}] #linebreak()
+    #text(fill: ink500)[TRN ] #text(weight: "medium", fill: ink)[{customer_trn}]
+  ],
+)
+#v(13pt)
+
+// ── Credit note meta ──────────────────────────────────────────────────────
+#grid(columns: (1fr, 1fr, 1fr, 1fr), stroke: 0.6pt + line200, inset: (x: 10pt, y: 7pt),
+  [#eyebrow_r("Credit Note No.")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{cn_seq}]],
+  [#eyebrow_r("Issue Date")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{cn_date}]],
+  [#eyebrow_r("Period")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{period}]],
+  [#eyebrow_r("Currency")#linebreak()#v(2pt)#text(size: 9pt, weight: "medium")[{currency}]],
+)
 #v(8pt)
 
-#grid(columns: (1fr, 1fr, 1fr, 1fr), gutter: 6pt,
-  [*Credit Note No* \ {cn_seq}],
-  [*Issue Date* \ {cn_date}],
-  [*Period* \ {period}],
-  [*Currency* \ {currency}],
-)
-
-#v(6pt)
-
-#block(fill: rgb("#fafafa"), inset: (x: 10pt, y: 6pt), radius: 2pt)[
-  *Reason ({reason_code}):* {reason_friendly}
+// ── Reason ────────────────────────────────────────────────────────────────
+#block(width: 100%, fill: fill50, inset: (x: 10pt, y: 8pt), radius: 3pt)[
+  #eyebrow_r("Reason") #h(5pt) #text(size: 6.5pt, weight: "bold", fill: cnred, tracking: 1pt)[{reason_code}]
+  #v(3pt)
+  #text(size: 9pt)[{reason_friendly}]
   {reason_text_block}
 ]
+#v(13pt)
 
-#v(10pt)
+#text(size: 7pt, weight: "bold", fill: cnred, tracking: 1.2pt)[REVERSAL OF CHARGES]
+#v(5pt)
 
-#text(size: 11pt, weight: "bold")[Reversal of charges]
-
+// ── Reversed line items ───────────────────────────────────────────────────
 #table(
-  columns: (2.2cm, 1fr, 1cm, 2cm, 1.6cm, 1.8cm, 2.3cm),
+  columns: (2.1cm, 1fr, 1cm, 2.1cm, 1.6cm, 1.9cm, 2.4cm),
   align: (left, left, right, right, right, right, right),
-  stroke: 0.4pt + rgb("#cccccc"),
-  fill: row_fill,
+  inset: (x: 7pt, y: 6.5pt),
+  stroke: (x: none, y: 0.6pt + line200),
+  fill: hfill,
   table.header(
-    [*Emp ID*], [*Employee - Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Reversed*],
+    hcell("Emp ID"), hcell("Employee - manpower supply"), hcell("Days"),
+    hcell("Prorated"), hcell("OT"), hcell("Reimb"), hcell("Reversed"),
   ),
   {rows}
 )
+#v(13pt)
 
-#v(8pt)
+// ── Totals (negative) ─────────────────────────────────────────────────────
+#grid(columns: (1fr, auto), gutter: 16pt, align: (left + bottom, right),
+  [
+    #eyebrow_r("Note") #v(3pt)
+    #text(size: 8.5pt, fill: ink600)[This credit note reverses the charges shown on the referenced invoice.]
+  ],
+  box(width: 7.8cm)[
+    #grid(columns: (1fr, auto), row-gutter: 6pt, align: (left, right),
+      text(fill: ink600)[Subtotal reversal (excl. VAT)], [AED -{amount}],
+      text(fill: ink600)[VAT @ {vat_pct}% reversal], [AED -{vat_amount}],
+    )
+    #v(7pt)
+    #block(width: 100%, fill: cnred50, inset: (x: 11pt, y: 9pt), radius: 4pt)[
+      #grid(columns: (1fr, auto), align: (left + horizon, right + horizon),
+        text(weight: "bold", size: 10.5pt)[Total credit (incl. VAT)],
+        text(weight: "bold", size: 13pt, fill: cnred)[AED -{total_incl}],
+      )
+    ]
+  ],
+)
 
-#align(right)[
-  #table(
-    columns: (4cm, 3cm),
-    align: (left, right),
-    stroke: none,
-    [Subtotal reversal (excl VAT)], [AED -{amount}],
-    [VAT @ {vat_pct}% reversal], [AED -{vat_amount}],
-    [#text(weight: "bold", fill: rgb("#a31313"))[Total credit (incl VAT)]],
-    [#text(weight: "bold", fill: rgb("#a31313"))[AED -{total_incl}]],
-  )
+#v(13pt)
+#text(size: 7pt, fill: ink400)[
+  Issued under UAE VAT Law Article 60 (tax credit notes) and Article 62 (VAT adjustments),
+  and FTA Decision No. 7 of 2019. Retain for 5 years (FTA tax records retention).
 ]
-
-#v(14pt)
-#line(length: 100%, stroke: 0.3pt + muted)
-#v(4pt)
-#text(size: 7.5pt, fill: muted)[
-  Issued under UAE VAT Law Article 60 (tax credit notes), Article 62 (VAT adjustments),
-  and FTA Decision No. 7 of 2019 (combined Tax Invoice / Tax Credit Note document).
-  This credit note must be retained for 5 years (FTA tax records retention).
-  Audit hash: {hash}  ·  Generated by TIA (Touchless Invoice Agent).
-]
+{qr_block}
 """
 
 
@@ -418,6 +541,18 @@ def _credit_note_source(invoice_dict: dict, audit_hash: str) -> str:
 
     rows = "\n  ".join(_row_line(li) for li in invoice_dict.get("line_items", []))
 
+    # WhatsApp QR references the original invoice number (what the client asks about).
+    qr_block = ""
+    try:
+        from .qr import make_whatsapp_qr
+
+        orig_no = invoice_dict.get("invoice_sequence_no") or "-"
+        qr_name = f"qr_{(invoice_dict.get('id') or 'cn')[:8]}_cn.png"
+        make_whatsapp_qr(orig_no, Path(STAGING_DIR) / qr_name)
+        qr_block = _qr_panel(qr_name, _esc(orig_no))
+    except Exception:  # noqa: BLE001
+        qr_block = ""
+
     return _CREDIT_NOTE_TEMPLATE.format(
         brand=BRAND_HEX,
         orig_seq=_esc(invoice_dict.get("invoice_sequence_no") or "-"),
@@ -442,6 +577,7 @@ def _credit_note_source(invoice_dict: dict, audit_hash: str) -> str:
         vat_pct=_num(vat_rate * 100),
         vat_amount=_num(vat_amount),
         total_incl=_num(total_incl),
+        qr_block=qr_block,
         hash=audit_hash,
     )
 
@@ -498,6 +634,8 @@ def render_invoice_with_credit_note(invoice_obj) -> str:
     page1 = _TEMPLATE.format(
         seq_no=_esc(seq_no),
         brand=BRAND_HEX,
+        logo=_LOGO,
+        logo_sm=_LOGO_SM,
         client=_esc(inv.get("client_name") or inv.get("client_code") or "-"),
         period=_esc(inv.get("period") or "-"),
         amount=_num(amount),
@@ -514,6 +652,7 @@ def render_invoice_with_credit_note(invoice_obj) -> str:
         rows=rows or "[-], [no line items], [], [], [], [], [],",
         warning="",  # the credit note supersedes any approval warning
         exceptions="",
+        qr_block="",  # QR lives on the last page (the credit note)
         hash=audit,
     )
     # 2) append the credit note as page 2
