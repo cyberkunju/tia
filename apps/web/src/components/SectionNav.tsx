@@ -5,6 +5,7 @@ import { cn } from "../lib";
 const LINKS: Record<Persona, { to: string; label: string; end?: boolean }[]> = {
   finops: [
     { to: "/console", label: "Pipeline" },
+    { to: "/console?stage=review", label: "Approvals" },
     { to: "/console/settings/clients", label: "Clients" },
     { to: "/console/settings/rules", label: "Rules" },
     { to: "/console/dispatch", label: "Dispatch", end: true },
