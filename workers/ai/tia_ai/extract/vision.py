@@ -139,12 +139,21 @@ def _sum_overtime_from_markdown_table(text: str) -> float | None:
     return total if seen else None
 
 
+def _find_total(text: str, label: str) -> float | None:
+    """Find a labelled total anywhere in the text, including inside a markdown table
+    cell. GLM-OCR emits these as standalone `Total Working Days: 22` lines; Mistral
+    Document AI puts them inside a summary table row (`| Total Working Days: 22 | ... |`).
+    Anchoring to line-start (as _field does) misses the table form, so search loosely."""
+    m = re.search(rf"(?i){re.escape(label)}\s*:?\s*\|?\s*([0-9]+(?:\.[0-9]+)?)", text)
+    return _num(m.group(1)) if m else None
+
+
 def _extract_monthly_timesheet_markdown(text: str) -> TimesheetExtraction:
     employee_name = _field(text, "Employee Name")
     client_code = _field(text, "Client Code")
     month = _field(text, "Month")
-    days_worked = _num(_field(text, "Total Working Days"))
-    hours = _num(_field(text, "Total Hours"))
+    days_worked = _find_total(text, "Total Working Days")
+    hours = _find_total(text, "Total Hours")
     signed_by = _field(text, "Approved By") or _field(text, "Signed")
     ot_hours = _sum_overtime_from_markdown_table(text)
 
@@ -166,12 +175,52 @@ def _extract_monthly_timesheet_markdown(text: str) -> TimesheetExtraction:
     )
 
 
+_LLM_EXTRACT_PROMPT = (
+    "You extract a staffing timesheet from OCR'd document text. Return ONLY a JSON "
+    "object (no prose, no code fences) matching exactly this schema:\n"
+    '{"client_code": string|null, "client_hint": string|null, "period": string|null, '
+    '"signed_by": string|null, "rows": [{"employee_name": string, "emp_id": string|null, '
+    '"days_worked": number|null, "hours": number|null, "ot_hours": number|null}]}\n'
+    "Rules: transcribe faithfully, never invent values, use null when unsure. For a "
+    "monthly per-day grid, set days_worked to the stated total working days (or count of "
+    "worked days) and hours to the total hours. One row per employee.\n\nDOCUMENT:\n"
+)
+
+
+def _llm_extract_markdown(md: str) -> TimesheetExtraction:
+    """Last-resort, format-agnostic extraction: hand the OCR'd markdown to the chat LLM
+    (Azure gpt-5.4-nano) with the timesheet schema. Used only when the deterministic
+    markdown parsers AND the schema-OCR (KIE) path yield nothing — e.g. GLM-OCR is down
+    (so KIE is unavailable) and the Mistral-OCR markdown uses a layout the parsers don't
+    recognise. Reuses the already-configured chat client; best-effort, never raises up."""
+    import json
+
+    from ..qa.agent import _chat_configured, _client_and_model
+
+    if not _chat_configured() or not md.strip():
+        return TimesheetExtraction()
+    client, model = _client_and_model()
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": _LLM_EXTRACT_PROMPT + md[:12000]}],
+        # gpt-5.4-nano is a reasoning model: max_completion_tokens (not max_tokens),
+        # sized for hidden reasoning + the JSON answer.
+        max_completion_tokens=4000,
+    )
+    content = resp.choices[0].message.content or ""
+    m = re.search(r"\{.*\}", content, re.DOTALL)
+    if not m:
+        return TimesheetExtraction()
+    return TimesheetExtraction.model_validate(json.loads(m.group(0)))
+
+
 def extract_image(path: str | Path, mime: str = "image/png") -> TimesheetExtraction:
     data = Path(path).read_bytes()
     from ..ocr import glm_kie, glm_layout, glm_markdown
 
-    # Primary: markdown then text parser
+    # Primary: markdown (GLM-OCR, or Mistral Document AI on failover) → text parser
     result = TimesheetExtraction()
+    md = ""
     try:
         md = glm_markdown(data, mime=mime)
         result = email_ex.extract_email(md)
@@ -180,10 +229,18 @@ def extract_image(path: str | Path, mime: str = "image/png") -> TimesheetExtract
     except Exception:  # noqa: BLE001
         pass
 
-    # Fallback: schema-constrained KIE JSON
+    # Fallback: schema-constrained KIE JSON (GLM-OCR only)
     if not result.rows:
         try:
             result = glm_kie(data, mime=mime)
+        except Exception:  # noqa: BLE001
+            pass
+
+    # Last resort: LLM extraction from the OCR markdown — format-agnostic, and the
+    # safety net when GLM (hence KIE) is down and Mistral markdown is all we have.
+    if not result.rows and md.strip():
+        try:
+            result = _llm_extract_markdown(md)
         except Exception:  # noqa: BLE001
             pass
 
