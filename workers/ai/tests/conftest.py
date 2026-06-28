@@ -27,6 +27,11 @@ for _k in ("GLM_OCR_API_KEY", "OPENAI_API_KEY", "AZURE_AI_ENDPOINT", "AZURE_AI_K
     os.environ[_k] = ""
 # Background WhatsApp delivery must not reach a live bridge/Meta during tests.
 os.environ["WHATSAPP_BRIDGE_URL"] = "http://127.0.0.1:9"
+# Hermetic routing: pin the touchless auto-approval path ON regardless of the
+# local/deploy .env (which may set TIA_AUTO_APPROVE=false for the demo). The
+# suite asserts auto-routing/auto-dispatch behaviour, so it must not depend on
+# whatever the developer's .env happens to contain.
+os.environ["TIA_AUTO_APPROVE"] = "true"
 
 
 @pytest.fixture(scope="session", autouse=True)

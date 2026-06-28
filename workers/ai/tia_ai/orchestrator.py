@@ -16,6 +16,7 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from .config import STAGING_DIR
+from .config import TIA_AUTO_APPROVE
 from .erp.mock import build_invoice
 from .erp.smart_bot_sap import (
     build_consolidated_excel,
@@ -336,10 +337,20 @@ def process_doc(session: Session, doc: DocAsset, client_hint: str | None = None)
         ts.hitl_reason = "validation failed"
         ts.confidence_calibrated = 0.5
     else:
-        ts.routing = "auto"
-        ts.status = "approved"
         confs = [m.confidence for m in match.matches if m.chosen_emp_id] or [0.9]
-        ts.confidence_calibrated = round(sum(confs) / len(confs), 4)
+        conf = round(sum(confs) / len(confs), 4)
+        if TIA_AUTO_APPROVE:
+            ts.routing = "auto"
+            ts.status = "approved"
+            ts.confidence_calibrated = conf
+        else:
+            # Auto-approval disabled (demo/operational policy): a clean timesheet
+            # still requires an explicit human approve/reject in the web console
+            # before an invoice is generated and dispatched.
+            ts.routing = "hitl"
+            ts.status = "awaiting_review"
+            ts.hitl_reason = "manual approval required (auto-approval disabled)"
+            ts.confidence_calibrated = conf
 
     log_event(
         session,

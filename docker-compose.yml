@@ -57,6 +57,9 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TIA_SEED_ON_START: ${TIA_SEED_ON_START:-true}
       TIA_SYNTH_ON_START: ${TIA_SYNTH_ON_START:-true}
+      # Demo policy: require explicit human approval for every timesheet (no
+      # touchless auto-approval). Set true to re-enable the touchless path.
+      TIA_AUTO_APPROVE: ${TIA_AUTO_APPROVE:-false}
       # WhatsApp loop: where the core pushes the approved invoice, and how the bridge
       # fetches the PDF back from the core. INTERNAL_SECRET must match the bridge.
       WHATSAPP_BRIDGE_URL: http://whatsapp:8088

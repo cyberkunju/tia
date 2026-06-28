@@ -59,6 +59,14 @@ WHATSAPP_BRIDGE_URL = os.getenv("WHATSAPP_BRIDGE_URL", "http://localhost:8088")
 TIA_SELF_URL = os.getenv("TIA_SELF_URL", "http://localhost:8000")
 INTERNAL_SECRET = os.getenv("INTERNAL_SECRET", "tia-internal-dev")
 
+# Auto-approval toggle. When TRUE (default) a clean, fully-resolved, rule-passing
+# timesheet is approved + invoiced + dispatched with no human step (the "touchless"
+# path). When FALSE, NOTHING auto-approves: every validated timesheet waits in the
+# web review queue for an explicit human approve/reject before an invoice is made.
+# The deploy sets this FALSE for the demo so the human-in-the-loop approval flow is
+# always exercised; tests/CI run with the default TRUE to exercise the touchless path.
+TIA_AUTO_APPROVE = os.getenv("TIA_AUTO_APPROVE", "true").lower() in ("1", "true", "yes")
+
 # ─── Zoho Mail (tia@cyberkunju.com) - real-email ingestion + reply send ───
 #
 # IMAP: TIA polls the Zoho inbox for unseen messages and ingests each one
