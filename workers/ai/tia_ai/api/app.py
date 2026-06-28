@@ -289,7 +289,22 @@ async def intake_upload(
         "routing": ts.routing,
         "confidence": ts.confidence_calibrated,
         "attachments": attachments_processed,
+        "email_reply": _email_reply_for_upload(s, ts),
     }
+
+
+def _email_reply_for_upload(s: Session, ts) -> dict | None:
+    """If this upload came in over email (the Zoho poller fans attachments through
+    /intake/upload with the sender's from_addr in doc.meta), email the outcome back:
+    the invoice PDF when auto-approved, otherwise a review-hold notice. No-op for
+    plain web uploads. Best-effort — never fails the intake."""
+    try:
+        from ..mailbox.sender import deliver_email_outcome
+
+        return deliver_email_outcome(s, ts)
+    except Exception as e:  # noqa: BLE001
+        log.warning("email reply for upload failed: %s", e)
+        return {"sent": False, "reason": str(e)[:200]}
 
 
 class EmailIntake(BaseModel):
@@ -493,6 +508,31 @@ def intake_email(
                 "doc",
                 doc.id,
                 "email.hold_reply_send_failed",
+                {"reason": str(e)[:200]},
+            )
+    elif ts.routing == "auto":
+        # Touchless email timesheet — email the finished invoice PDF straight back
+        # to the sender (mirrors the WhatsApp auto path). send_invoice_email is
+        # idempotent and no-ops for non-email docs, so this is safe to always call.
+        try:
+            from ..mailbox.sender import send_invoice_email
+
+            _inv = (
+                s.query(Invoice)
+                .filter_by(timesheet_id=ts.id)
+                .order_by(Invoice.created_at.desc())
+                .first()
+            )
+            if _inv is not None:
+                res = send_invoice_email(s, _inv, by_user="system")
+                reply_sent = bool(res.get("sent"))
+        except Exception as e:  # noqa: BLE001
+            log_event(
+                s,
+                "zoho-smtp",
+                "doc",
+                doc.id,
+                "email.invoice_send_failed",
                 {"reason": str(e)[:200]},
             )
     return {
@@ -1016,6 +1056,12 @@ def approve(
     inv = approve_timesheet(
         s, ts, payload.by_user, payload.corrections, idempotency_key=idempotency_key
     )
+    # Commit before pushing: the push calls the bridge, which immediately fetches the
+    # invoice PDF back from GET /invoices/{id}/pdf on a *separate* request/session. If we
+    # haven't committed yet, that row isn't visible and the fetch 404s (the invoice never
+    # reaches the sender). The async intake path already commits before notifying for the
+    # same reason; the HITL approve path must too.
+    s.commit()
     # If this timesheet came in over WhatsApp, push the finished invoice back to the
     # sender automatically (best-effort; never fails the approval).
     from ..whatsapp import push_invoice_to_sender
@@ -2346,6 +2392,12 @@ def system_status(s: Session = Depends(db_session)) -> dict:
     out["openai"] = "configured" if (azure_ok or os.getenv("OPENAI_API_KEY")) else "missing_key"
     # modal-ocr
     out["modal_ocr"] = "configured" if os.getenv("GLM_OCR_API_KEY") else "missing_key"
+    # mistral document-ai — instant OCR fallback when GLM is unreachable
+    out["mistral_ocr_fallback"] = (
+        "configured"
+        if (os.getenv("MISTRAL_OCR_ENDPOINT") and os.getenv("MISTRAL_OCR_API_KEY"))
+        else "missing_key"
+    )
     # zoho mailbox — real (cached) IMAP login probe, not just env presence.
     try:
         from ..mailbox.poller import imap_health
