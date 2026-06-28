@@ -209,9 +209,7 @@ function HeroFlow() {
   return (
     <div className="relative">
       <div className="absolute -inset-6 brand-band rounded-[2rem] opacity-[0.08] blur-2xl" aria-hidden />
-      <div className="relative rounded-2xl border border-ink-200 bg-white shadow-lg overflow-hidden">
-        <div className="h-1.5 brand-band" />
-
+      <div className="relative rounded-2xl border border-brand-200/80 bg-white shadow-lg overflow-hidden">
         {/* IN */}
         <div className="px-5 pt-4 pb-3">
           <div className="flex items-center justify-between">
@@ -231,13 +229,6 @@ function HeroFlow() {
                 </div>
               ))}
             </div>
-            {/* scan beam while extracting */}
-            {!reduce && active <= 1 && (
-              <div
-                className="pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-brand-400/25 to-transparent"
-                style={{ top: `${(frac / 0.34) * 100 - 20}%`, transition: "top 80ms linear" }}
-              />
-            )}
           </div>
         </div>
 
