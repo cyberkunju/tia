@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { CheckCircle2, Loader2, FileText, ExternalLink, Sparkles, ArrowRight } from "lucide-react";
+import { CheckCircle2, Loader2, FileText, ExternalLink, Sparkles, ArrowRight, Mail } from "lucide-react";
 import { api, API_BASE } from "../api";
 import { cn, fmtAED } from "../lib";
 import { usePersona } from "../store";
@@ -46,6 +46,9 @@ export function UploadReceipt({ docId }: { docId: string }) {
   // demos start at stage 1; if the backend jumps ahead the cursor catches up
   // at the next tick, so we never overshoot.
   const [visibleStage, setVisibleStage] = useState(1);
+  // Demo-only: "Email to client" button confirmation state. In prod this
+  // would fire the outbound webhook in TIA Connect after Finance verifies.
+  const [emailQueued, setEmailQueued] = useState(false);
   useEffect(() => {
     // Reset when a new doc lands.
     setVisibleStage(1);
@@ -149,11 +152,35 @@ export function UploadReceipt({ docId }: { docId: string }) {
             </a>
           )}
           {showFinal && (
+            <button
+              type="button"
+              onClick={() => setEmailQueued(true)}
+              disabled={emailQueued}
+              className={cn(
+                "btn-outline btn-sm justify-center",
+                emailQueued && "opacity-70 cursor-default",
+              )}
+              title="Queue this invoice to be emailed to the client after Finance verification"
+            >
+              {emailQueued ? (
+                <><CheckCircle2 size={13} className="text-emerald-600" /> Queued for client</>
+              ) : (
+                <><Mail size={13} /> Email to client</>
+              )}
+            </button>
+          )}
+          {showFinal && (
             <button onClick={trackInPipeline} className={cn("btn-outline btn-sm justify-center", !inv?.pdf_available && "flex-1")}>
               Track in pipeline <ArrowRight size={13} />
             </button>
           )}
         </div>
+
+        {showFinal && emailQueued && (
+          <p className="text-2xs text-emerald-700 leading-snug bg-emerald-50 border border-emerald-200 rounded-md px-2.5 py-1.5">
+            Queued for client delivery. Once a Finance reviewer verifies, TIA will email the PDF to the client's billing address on file (TIA Connect → outbound webhook).
+          </p>
+        )}
 
         {showFinal && (
           <p className="text-2xs text-ink-400 leading-snug">
