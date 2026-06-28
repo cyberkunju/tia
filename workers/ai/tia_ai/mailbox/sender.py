@@ -476,3 +476,51 @@ def send_hold_reply(
             {"to": payload_from_addr, "reason": res.get("reason")},
         )
     return res
+
+
+def deliver_email_outcome(session: Session, ts, by_user: str = "zoho-poller") -> dict | None:
+    """Send the right email reply for an email-sourced timesheet — the email
+    analogue of `notify_whatsapp_result`.
+
+      - routing == "auto"            → email the finished invoice PDF
+      - routing == "hitl"/"escalate" → email a "received, holding for review" notice
+
+    No-op (returns None) for non-email docs or when no reply address was captured.
+
+    Why this exists: previously only the email-BODY path replied, and only on HITL.
+    An emailed *attachment* (the common case) went through /intake/upload which sent
+    nothing, and an auto-approved email never got its invoice. So emailed timesheets
+    silently got no reply. This closes that gap for every email routing outcome."""
+    from ..models import DocAsset, Invoice
+
+    if ts is None or not ts.doc_id:
+        return None
+    doc = session.get(DocAsset, ts.doc_id)
+    if doc is None or doc.source_channel != "email":
+        return None
+    from_addr, message_id, subject, cc = _email_meta_for_timesheet(session, ts)
+    if not from_addr:
+        return None
+
+    if ts.routing == "auto":
+        inv = (
+            session.query(Invoice)
+            .filter_by(timesheet_id=ts.id)
+            .order_by(Invoice.created_at.desc())
+            .first()
+        )
+        if inv is None:
+            return None
+        return send_invoice_email(session, inv, by_user=by_user)
+
+    # hitl / escalate / anything not auto-approved → received-and-holding notice
+    return send_hold_reply(
+        session,
+        ts,
+        doc,
+        payload_subject=subject,
+        payload_from_addr=from_addr,
+        payload_message_id=message_id,
+        cc_addrs=cc or None,
+        by_user=by_user,
+    )
