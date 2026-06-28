@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Inbox, ScanText, Users, ShieldCheck, ReceiptText, Send,
   Layers, MessageSquareText, BadgeCheck, Scale, Link2, Gauge,
-  LayoutDashboard, Building2, LineChart, ArrowRight, ArrowUpRight,
+  LayoutDashboard, Building2, LineChart, ArrowRight, ArrowUpRight, Check, ImagePlus,
   Mail, UploadCloud, Code2, MessagesSquare,
 } from "lucide-react";
 import { api } from "../api";
@@ -158,10 +158,115 @@ function Hero() {
           </div>
 
           <Reveal delay={0.12}>
-            <div id="whatsapp" className="scroll-mt-24">
-              <WhatsAppDemo />
-              <p className="mt-4 text-center text-2xs text-ink-400">Live demo · talks to the real pipeline</p>
+            <HeroInvoiceCard />
+          </Reveal>
+        </div>
+      </Container>
+    </section>
+  );
+}
+
+/* A calm product glance: the generated tax invoice TIA sends back. */
+function HeroInvoiceCard() {
+  return (
+    <div className="relative">
+      <div className="absolute -inset-5 brand-band rounded-[1.8rem] opacity-[0.08] blur-2xl" aria-hidden />
+      <div className="relative rounded-2xl border border-ink-200 bg-white shadow-lg overflow-hidden">
+        <div className="h-1.5 brand-band" />
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-ink-100">
+          <div className="flex items-center gap-2">
+            <Logo className="h-3.5 text-brand-500" accent="fill-brand-500" />
+            <span className="text-xs font-medium text-ink-500">Tax invoice</span>
+          </div>
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 text-emerald-700 px-2 py-0.5 text-2xs font-semibold">
+            <Check size={11} /> Touchless
+          </span>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="font-semibold text-ink-900 truncate">Emirates Steel Industries LLC</div>
+              <div className="text-2xs text-ink-400 font-mono truncate">CL001 · June 2026 · TRN 100312345600003</div>
             </div>
+            <div className="text-right shrink-0">
+              <div className="eyebrow">Total incl. VAT</div>
+              <div className="text-lg font-semibold tnum text-ink-900">AED 48,720.00</div>
+            </div>
+          </div>
+          <div className="rounded-lg border border-ink-100 divide-y divide-ink-100">
+            {[["Carlos Smith", "20 days", "AED 21,600.00"], ["Ahmed Khan", "20 days · 2 OT", "AED 22,840.00"]].map(([n, m, a]) => (
+              <div key={n} className="flex items-center justify-between px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium text-ink-800 truncate">{n}</div>
+                  <div className="text-2xs text-ink-400">{m}</div>
+                </div>
+                <span className="tnum text-ink-700 shrink-0">{a}</span>
+              </div>
+            ))}
+          </div>
+          <div className="flex items-center justify-between text-2xs text-ink-500">
+            <span className="inline-flex items-center gap-1"><ShieldCheck size={12} className="text-brand-500" /> R1 to R15 passed</span>
+            <span className="font-mono">SAC 998515 · VAT 5%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ────────────────────────────── whatsapp ────────────────────────────── */
+
+const WA_FEATURES: { icon: typeof ImagePlus; title: string; body: string }[] = [
+  { icon: ImagePlus, title: "Send anything", body: "A photo of a signed sheet, an Excel export, or just type the days into a message." },
+  { icon: ReceiptText, title: "Get the invoice back", body: "A compliant tax invoice in seconds, validated against the contract and UAE VAT." },
+  { icon: MessageSquareText, title: "Ask in plain language", body: "Question the VAT, the total, or any line. Answers are read straight from the record." },
+  { icon: BadgeCheck, title: "Approve in the thread", body: "Reply to approve or raise a query. Every step is written to the audit chain." },
+];
+
+function WhatsAppSection() {
+  return (
+    <section id="whatsapp" className="relative scroll-mt-20 bg-dotgrid">
+      <Container className="py-20 lg:py-28">
+        <div className="grid items-center gap-12 lg:gap-20 lg:grid-cols-[1fr_minmax(320px,380px)]">
+          <div>
+            <Reveal>
+              <div className="inline-flex items-center gap-1.5 rounded-full bg-[#25D366]/10 text-[#0f7a43] px-3 py-1 text-2xs font-semibold">
+                <MessagesSquare size={13} /> On WhatsApp
+              </div>
+              <h2 className="mt-4 text-3xl sm:text-4xl xl:text-5xl font-semibold tracking-tight text-ink-900 max-w-2xl leading-[1.05]">
+                Bill straight from a WhatsApp chat.
+              </h2>
+              <p className="mt-4 text-base sm:text-lg text-ink-600 leading-relaxed max-w-2xl">
+                No app to learn and no portal to open. A site manager forwards the timesheet to
+                TIA's number, and the invoice comes back in the same thread, ready to question or
+                approve.
+              </p>
+            </Reveal>
+            <div className="mt-10 grid sm:grid-cols-2 gap-x-8 gap-y-7">
+              {WA_FEATURES.map((f, i) => (
+                <Reveal key={f.title} delay={(i % 2) * 0.06}>
+                  <div className="flex gap-3.5">
+                    <span className="grid place-items-center h-10 w-10 rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100 shrink-0">
+                      <f.icon size={18} strokeWidth={2} />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-ink-900">{f.title}</h3>
+                      <p className="mt-0.5 text-sm text-ink-500 leading-relaxed">{f.body}</p>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+            <Reveal delay={0.1}>
+              <p className="mt-9 text-2xs text-ink-400 max-w-xl">
+                Powered by the WhatsApp Cloud API. The conversation on the right plays automatically
+                and runs against the live TIA pipeline; names are demo data.
+              </p>
+            </Reveal>
+          </div>
+
+          <Reveal delay={0.12}>
+            <WhatsAppDemo />
           </Reveal>
         </div>
       </Container>
@@ -366,6 +471,7 @@ export function Landing() {
       <main>
         <Hero />
         <MetricsStrip />
+        <WhatsAppSection />
         <PipelineSection />
         <CapabilitiesSection />
         <PersonasSection />
