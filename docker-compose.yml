@@ -38,6 +38,10 @@ services:
       GLM_OCR_BASE_URL: ${GLM_OCR_BASE_URL:-https://ocr.cyberkunju.com/v1}
       GLM_OCR_API_KEY: ${GLM_OCR_API_KEY:-}
       GLM_OCR_MODEL: ${GLM_OCR_MODEL:-glm-ocr:q8_0}
+      # Mistral Document AI (Azure) — instant OCR fallback when GLM-OCR is unreachable.
+      MISTRAL_OCR_ENDPOINT: ${MISTRAL_OCR_ENDPOINT:-}
+      MISTRAL_OCR_API_KEY: ${MISTRAL_OCR_API_KEY:-}
+      MISTRAL_OCR_MODEL: ${MISTRAL_OCR_MODEL:-mistral-document-ai-2512}
       # Chat agent: Azure OpenAI (gpt-5.4-nano). No direct OpenAI key in the deploy env.
       AZURE_AI_ENDPOINT: ${AZURE_AI_ENDPOINT:-}
       AZURE_AI_KEY: ${AZURE_AI_KEY:-}

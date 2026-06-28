@@ -1,10 +1,12 @@
-"""OCR client: GLM-OCR on Modal (OpenAI-compatible vLLM endpoint).
+"""OCR client: GLM-OCR on Modal (OpenAI-compatible vLLM endpoint), with an instant
+Mistral Document AI (Azure) fallback when GLM is unreachable.
 
-GLM-OCR is the sole OCR. Two prompt modes:
+Two prompt modes:
   - markdown: faithful page-to-markdown (best for our handwritten/printed timesheets)
   - kie: image + JSON schema → filled JSON (fallback when markdown is too unstructured)
 
-Teammate owns the Modal serving.
+The markdown path fails over to Mistral Document AI automatically when GLM-OCR can't be
+reached, so OCR keeps working even when the self-hosted GLM endpoint is down.
 """
 
 from __future__ import annotations
@@ -15,7 +17,15 @@ import re
 
 import httpx
 
-from ..config import GLM_OCR_API_KEY, GLM_OCR_BASE_URL, GLM_OCR_MODEL
+from ..config import (
+    GLM_OCR_API_KEY,
+    GLM_OCR_BASE_URL,
+    GLM_OCR_CONNECT_TIMEOUT,
+    GLM_OCR_MODEL,
+    MISTRAL_OCR_API_KEY,
+    MISTRAL_OCR_ENDPOINT,
+    MISTRAL_OCR_MODEL,
+)
 from ..schema import TimesheetExtraction
 
 # Proven on the live glm-ocr endpoint: the terse prompt transcribes faithfully,
@@ -104,17 +114,56 @@ def _call(image_bytes: bytes, prompt: str, mime: str = "image/png", timeout: flo
             }
         ],
         "temperature": 0.0,
-        "max_tokens": 2048,  # cap the response; one transcription is well under this
         "max_tokens": 2048,  # cap the loop; one transcription is well under this
     }
-    r = httpx.post(_completions_url(), json=payload, headers=_headers(), timeout=timeout)
+    # Short connect timeout so an unreachable GLM fails fast (→ Mistral fallback);
+    # generous read timeout so a healthy-but-slow transcription still completes.
+    to = httpx.Timeout(connect=GLM_OCR_CONNECT_TIMEOUT, read=timeout, write=15.0, pool=GLM_OCR_CONNECT_TIMEOUT)
+    r = httpx.post(_completions_url(), json=payload, headers=_headers(), timeout=to)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"]
 
 
+def _mistral_configured() -> bool:
+    return bool(MISTRAL_OCR_ENDPOINT and MISTRAL_OCR_API_KEY)
+
+
+def mistral_markdown(image_bytes: bytes, mime: str = "image/png", timeout: float = 120.0) -> str:
+    """Fallback OCR via Mistral Document AI (Azure). Native /ocr endpoint → per-page
+    markdown, joined into one document. PDFs use `document_url`; images use `image_url`."""
+    if not _mistral_configured():
+        raise RuntimeError("mistral OCR fallback not configured")
+    data_url = _b64_data_url(image_bytes, mime)
+    if mime == "application/pdf":
+        document = {"type": "document_url", "document_url": data_url}
+    else:
+        document = {"type": "image_url", "image_url": data_url}
+    r = httpx.post(
+        MISTRAL_OCR_ENDPOINT,
+        json={"model": MISTRAL_OCR_MODEL, "document": document},
+        headers={
+            "Authorization": f"Bearer {MISTRAL_OCR_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        timeout=httpx.Timeout(connect=10.0, read=timeout, write=20.0, pool=10.0),
+    )
+    r.raise_for_status()
+    pages = r.json().get("pages") or []
+    return "\n\n".join(str(p.get("markdown") or "").strip() for p in pages).strip()
+
+
 def glm_markdown(image_bytes: bytes, mime: str = "image/png", timeout: float = 180.0) -> str:
-    """Primary path: page → markdown, de-looped to a single clean transcription."""
-    return _dedupe_looped(_call(image_bytes, MARKDOWN_PROMPT, mime=mime, timeout=timeout))
+    """Primary path: page → markdown, de-looped to a single clean transcription.
+
+    Instant failover: if GLM-OCR is unreachable/erroring and Mistral Document AI is
+    configured, transcribe via Mistral instead. Mistral returns clean markdown the same
+    timesheet parser consumes, so the rest of the pipeline is unaffected."""
+    try:
+        return _dedupe_looped(_call(image_bytes, MARKDOWN_PROMPT, mime=mime, timeout=timeout))
+    except Exception:  # noqa: BLE001 — any GLM failure (down, timeout, 5xx) → fail over
+        if _mistral_configured():
+            return mistral_markdown(image_bytes, mime=mime)
+        raise
 
 
 def glm_kie(

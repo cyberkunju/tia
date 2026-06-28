@@ -37,6 +37,18 @@ DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{REPO_ROOT / 'tia.db'}")
 GLM_OCR_BASE_URL = os.getenv("GLM_OCR_BASE_URL", "https://ocr.cyberkunju.com/v1")
 GLM_OCR_API_KEY = os.getenv("GLM_OCR_API_KEY", "")
 GLM_OCR_MODEL = os.getenv("GLM_OCR_MODEL", "glm-ocr:q8_0")
+# How long to wait for GLM-OCR to *connect* before giving up and failing over to
+# the Mistral fallback. Kept short so a down/unreachable GLM fails fast (the read
+# timeout below still allows a healthy-but-slow GLM to finish a real transcription).
+GLM_OCR_CONNECT_TIMEOUT = float(os.getenv("GLM_OCR_CONNECT_TIMEOUT", "6"))
+
+# Mistral Document AI on Azure AI Foundry — instant OCR fallback. When GLM-OCR is
+# unreachable/erroring, the markdown OCR path fails over to this automatically (no
+# code change, no restart). Native /ocr endpoint: returns per-page markdown that our
+# existing markdown timesheet parser consumes directly. Auth: `Authorization: Bearer`.
+MISTRAL_OCR_ENDPOINT = os.getenv("MISTRAL_OCR_ENDPOINT", "")
+MISTRAL_OCR_API_KEY = os.getenv("MISTRAL_OCR_API_KEY", "")
+MISTRAL_OCR_MODEL = os.getenv("MISTRAL_OCR_MODEL", "mistral-document-ai-2512")
 
 # Chat agent - OpenAI-compatible. Swap to a local model for demo by overriding
 # OPENAI_BASE_URL (e.g. a Modal-served vLLM) + OPENAI_MODEL (e.g. "qwen2.5-7b").
