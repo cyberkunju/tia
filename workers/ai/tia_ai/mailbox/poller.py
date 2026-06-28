@@ -201,10 +201,17 @@ class ZohoPoller:
             c.logout()
 
     def process_message(self, msg: Message) -> dict:
-        """Adapt a parsed email Message into our `/intake/email` shape and POST it.
+        """Adapt a parsed email Message into our intake shape and POST it.
 
-        Attachments go through `/intake/upload` separately (one DocAsset each)
-        - the body itself goes through `/intake/email`.
+        Behaviour:
+          - If the message has NO attachments, the body goes through `/intake/email`
+            (legacy path — case_02/03/06 etc, plain-text rosters in the body).
+          - If the message HAS attachments, the body intake is skipped: the
+            attachment IS the timesheet, the body is just context. The body
+            text is forwarded as an `email_body` form field on `/intake/upload`
+            so the extractor can still mine it for period/client hints when
+            the OCR didn't pick them up (orchestrator.process_doc fills those
+            null-only — OCR always wins).
 
         Bounces / auto-replies / mail loops are filtered upfront — replying to
         a bounce just creates another bounce, and TIA's outbound reply path
@@ -225,50 +232,70 @@ class ZohoPoller:
         message_id = (msg.get("Message-ID") or "").strip().strip("<>") or None
 
         body, attachments = _walk_body(msg)
+        from_addr = from_addr_list[0] if from_addr_list else None
 
-        # 1) ingest the body via /intake/email
-        payload = {
-            "body": body or "(empty)",
-            "subject": subject,
-            "from_addr": from_addr_list[0] if from_addr_list else None,
-            "to_addrs": to_addrs,
-            "cc_addrs": cc_addrs,
-            "uploaded_by": from_addr_list[0] if from_addr_list else "zoho-poller",
-            "message_id": message_id,
-        }
-        headers = {}
-        if message_id:
-            headers["Idempotency-Key"] = f"zoho:{message_id}"
-        r = httpx.post(
-            f"{self.api_base}/intake/email", json=payload, headers=headers, timeout=120.0
-        )
-        r.raise_for_status()
-        result = r.json()
-        log.info(
-            "zoho-poll → /intake/email  from=%s subj=%r → ts=%s routing=%s mode=%s",
-            payload["from_addr"],
-            subject,
-            result.get("timesheet_id", "")[:8],
-            result.get("routing"),
-            result.get("intake_mode"),
-        )
+        # 1) Body intake — skipped when attachments are present (the attachment
+        #    is the timesheet; one logical email = one timesheet = one reply).
+        result: dict
+        if attachments:
+            log.info(
+                "zoho-poll: %d attachment(s) present, skipping body intake "
+                "(body forwarded as context to /intake/upload)",
+                len(attachments),
+            )
+            result = {"skipped": "has_attachments", "attachment_count": len(attachments)}
+        else:
+            payload = {
+                "body": body or "(empty)",
+                "subject": subject,
+                "from_addr": from_addr,
+                "to_addrs": to_addrs,
+                "cc_addrs": cc_addrs,
+                "uploaded_by": from_addr or "zoho-poller",
+                "message_id": message_id,
+            }
+            headers = {}
+            if message_id:
+                headers["Idempotency-Key"] = f"zoho:{message_id}"
+            r = httpx.post(
+                f"{self.api_base}/intake/email",
+                json=payload,
+                headers=headers,
+                timeout=120.0,
+            )
+            r.raise_for_status()
+            result = r.json()
+            log.info(
+                "zoho-poll → /intake/email  from=%s subj=%r → ts=%s routing=%s mode=%s",
+                from_addr,
+                subject,
+                result.get("timesheet_id", "")[:8],
+                result.get("routing"),
+                result.get("intake_mode"),
+            )
 
         # 2) for each attachment, push it through /intake/upload as a separate
         #    DocAsset. We pass from_addr/message_id/subject so the eventual
         #    invoice email or hold reply can thread back to the original sender
-        #    (the attachment DocAsset is the timesheet's parent doc).
+        #    (the attachment DocAsset is the timesheet's parent doc). The body
+        #    is forwarded as `email_body` so the extractor can pull period /
+        #    client_hint from it when the OCR didn't.
         att_results: list[dict] = []
+        body_for_meta = (body or "").strip()
         for i, (name, mime, payload_bytes) in enumerate(attachments):
             files = {"file": (name, payload_bytes, mime)}
-            data = {
-                "uploaded_by": payload["from_addr"] or "zoho-poller",
+            data: dict[str, str] = {
+                "uploaded_by": from_addr or "zoho-poller",
             }
-            if payload["from_addr"]:
-                data["from_addr"] = payload["from_addr"]
+            if from_addr:
+                data["from_addr"] = from_addr
             if message_id:
                 data["message_id"] = message_id
             if subject:
                 data["subject"] = subject
+            if body_for_meta:
+                # Cap at 4 KB to keep DocAsset.meta JSON small.
+                data["email_body"] = body_for_meta[:4000]
             ahdr = {}
             if message_id:
                 ahdr["Idempotency-Key"] = f"zoho:{message_id}:att:{i}"
@@ -283,7 +310,9 @@ class ZohoPoller:
                 ar.raise_for_status()
                 att_results.append({"filename": name, "result": ar.json()})
                 log.info(
-                    "zoho-poll → /intake/upload attachment %r → %s", name, ar.json().get("routing")
+                    "zoho-poll → /intake/upload attachment %r → %s",
+                    name,
+                    ar.json().get("routing"),
                 )
             except httpx.HTTPError as e:
                 log.warning("zoho-poll: attachment %r failed: %s", name, e)

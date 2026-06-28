@@ -2,66 +2,569 @@
 
 [![ci](https://github.com/cyberkunju/tia/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberkunju/tia/actions/workflows/ci.yml)
 
-> Built for **TASC Outsourcing** - UAE manpower-supply, 10,500+ associates, 750+ clients.
-> Submitted to **HackArena 2.0** by team Cyberkunju.
+> **Timesheet in. Contract-validated tax invoice out. Humans only by exception.**
 
-TIA takes a client's timesheet - in **any format from any channel** (clean Excel,
-handwritten photo, scanned PDF, plain email, online form) - and carries it all the
-way to a **validated UAE Tax Invoice**, dispatched in the client's preferred order.
-Humans only step in when a contract rule or a confidence threshold fires.
+TIA is an end-to-end invoice automation system built for the **TASC Outsourcing
+HackArena 2.0 challenge**. It ingests staffing timesheets from messy real-world
+channels, extracts attendance data, reconciles employees against master data,
+validates the generated invoice against the client contract, dispatches the
+invoice, and gives Client, FinOps, and Finance teams a shared operating console.
 
-The trick: **TIA reconciles the invoice against the contract**, not just the
-timesheet. That's the gap most AP automation misses - and the gap TASC's mentors
-called out as the one that matters.
+The core idea is simple: most automation tools read invoices. **TIA reads the
+source timesheet and validates the invoice against the contract before it leaves
+the building.**
 
-## AIDA - TASC's autonomous operator (the agentic chat)
+---
 
-> **AI that doesn't just answer - it does the work, and proves it on the audit chain.**
+## Why This Exists
 
-AIDA is the side-panel chat that turned TIA from "AP automation" into an autonomous
-finance operator. Five things make it different:
+Staffing invoices are not born as invoices. They start as timesheets:
 
-- **Streams structured events**, not bulk text. Each user turn renders a live
-  tool-call strip (Cursor-style) - `find_revenue_leakage ✓ · recover_leakage ✓ ·
-  verify_audit_chain ✓` - then the prose answer streams token-by-token. The UI
-  shows the agent thinking, not just the result.
-- **17 grounded tools**: 12 reads (invoices, timesheets, contracts, audit chain,
-  leakage scan, SAP B1 payload generator, employee history, touchless rate, clients)
-  and 5 writes (`recover_leakage`, `dispatch_invoice`, `clawback_invoice`,
-  `approve_timesheet`, `resend_invoice_email`). Every write fires
-  `agent.<tool>_invoked` on the audit chain - so the agentic-mutation trail is
-  provable.
-- **Revenue leakage sentinel** - the new card on the Finance dashboard. Walks the
-  period's payroll, classifies each unbilled associate into one of 5 reasons
-  (`no_timesheet`, `partial_timesheet`, `missing_overtime`, `rate_undercharge`,
-  `late_period`), and exposes one-click recovery. The agent can drive this end-to-end.
-- **SAP Business One bridge** - any invoice surfaces a `POST /b1s/v2/Invoices`
-  OData v4 payload, copy-paste ready, with a `U_TIA_AuditHash` user-defined field
-  carrying our chain head so a downstream auditor can verify line-of-custody.
-- **Connect from anywhere via MCP**. TIA exposes the same 17 tools as a Model
-  Context Protocol server over two transports: **streamable HTTP at `/mcp`** and
-  **stdio via the `tia-mcp` console script**. Claude Desktop, Cursor, or any
-  MCP-aware host can drive TASC's month-close.
+- clean Excel files from some clients
+- punch-clock spreadsheets from others
+- email bodies and quoted reply threads
+- typed PDFs
+- photos of handwritten registers
+- ad hoc online submissions
+- WhatsApp/media attachments
 
-### 90-second demo script
+Finance teams then re-key rows, match names to employees, check contract terms,
+generate invoices, sort them per client dispatch rules, and email them out. The
+brief target was explicit: **80%+ touchless**, **within minutes**, **99%+
+accuracy with low-confidence routing to people**.
 
-1. Finance dashboard - hero metrics + the new **Leakage Sentinel** card: "AED
-   47,820 silently lost · 12 associates."
-2. Click the **sparkle** on the top leakage row → AIDA opens, scoped: "Focused on
-   Carlos Smith · CL004". Two icebreaker cards visible.
-3. Tap *"Recover this and walk me through it"* → live tool strip streams
-   `get_employee_history ✓ · get_contract ✓ · recover_leakage ✓ ·
-   verify_audit_chain ✓` while the prose ends with "chain advanced to 0xa7b3…
-   leakage dropped to AED 42,640."
-4. Switch to ClientInvoices, click the invoice sparkle → panel re-scopes.
-   Ask *"Show me the SAP B1 payload"* → JSON streams in with a copy button.
-5. Switch persona to FinOps → icebreakers change. Ask *"What needs my attention?"*
-   → live answer from real DB.
+TIA implements that as a deterministic workflow with model-assisted document
+reading at the edges.
 
-### Hook TIA into Claude Desktop
+---
 
-Drop this into `claude_desktop_config.json` (path depends on OS; on Linux it's
-`~/.config/Claude/claude_desktop_config.json`):
+## Product Walkthrough
+
+### 1. Capture
+
+Clients submit timesheets through portal upload, email, watched mailbox webhook,
+online form, WhatsApp bridge, or OCR image/PDF upload.
+
+### 2. Extract
+
+Structured files are parsed directly. Images and handwritten forms go through
+GLM-OCR using an OpenAI-compatible vLLM endpoint. The model output is normalized
+into the canonical `TimesheetExtraction` schema.
+
+### 3. Resolve
+
+Rows are matched to TASC master employees using scoped candidate retrieval,
+rapidfuzz similarity, jellyfish phonetics, and scipy Hungarian assignment. The
+cost matrix is exposed in the UI so reviewers can see why a match was made.
+
+### 4. Validate
+
+Generated invoice lines are checked by deterministic contract-bound rules:
+contract roster, rate card, period validity, OT cap, SOW completion, markup,
+VAT, statutory OT multiplier, closed period, and anomaly-vs-history.
+
+### 5. Generate
+
+The Smart Bot/SAP mock emits payroll artifacts, a Ramco-shaped consolidated
+Excel workbook, WPS SIF bank file, and a Typst-rendered UAE Tax Invoice PDF with
+TRN, VAT, sequence number, audit hash, and compliance metadata.
+
+### 6. Dispatch
+
+Clean invoices under threshold are auto-dispatched. Exceptions route to FinOps
+or Finance. The Rust dispatch service owns the side-effect boundary and writes
+an idempotent outbox.
+
+### 7. Operate
+
+Client, FinOps, and Finance personas get different dashboards, review screens,
+queries, approval flows, audit timelines, and an AIDA agentic chat surface with
+grounded DB tools.
+
+---
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph Channels
+    Portal[Portal Upload]
+    Email[Email / Mailbox Webhook]
+    Form[Online Timesheet Form]
+    WhatsApp[WhatsApp Bridge]
+    OCR[Image / PDF OCR]
+  end
+
+  subgraph Core[Python FastAPI Core]
+    Intake[Intake API]
+    Extract[Extractors]
+    Match[Entity Resolution]
+    ERP[Smart Bot + SAP Mock]
+    Rules[Contract Rule Engine]
+    Invoice[Typst Invoice Renderer]
+    Audit[Append-only Audit Chain]
+  end
+
+  subgraph SideEffects
+    Dispatch[Rust Dispatch Service]
+    Outbox[Dispatch Outbox]
+    Mail[Zoho SMTP / Email]
+  end
+
+  subgraph Apps
+    Web[React Persona Console]
+    AIDA[AIDA Chat + MCP Tools]
+    Eval[Eval Dashboard]
+  end
+
+  Portal --> Intake
+  Email --> Intake
+  Form --> Intake
+  WhatsApp --> Intake
+  OCR --> Extract
+  Intake --> Extract --> Match --> ERP --> Rules --> Invoice
+  Rules -->|auto| Dispatch --> Outbox
+  Rules -->|exception| Web
+  Invoice --> Web
+  Audit --> Web
+  Audit --> AIDA
+  Eval --> Web
+  Dispatch --> Mail
+```
+
+### Runtime Services
+
+```mermaid
+flowchart TB
+  Browser[Browser]
+  Web[Vite / React app<br/>apps/web]
+  API[FastAPI core<br/>workers/ai/tia_ai/api/app.py]
+  DB[(SQLite demo<br/>Postgres-ready schema)]
+  Rust[Rust axum dispatch<br/>services/dispatch]
+  OCRModel[GLM-OCR via vLLM<br/>OpenAI-compatible endpoint]
+  ChatModel[OpenAI-compatible chat model]
+  MCP[MCP server<br/>/mcp + tia-mcp stdio]
+
+  Browser --> Web
+  Web --> API
+  API --> DB
+  API --> Rust
+  API --> OCRModel
+  API --> ChatModel
+  API --> MCP
+  Rust --> DB
+```
+
+### Data Pipeline
+
+```mermaid
+sequenceDiagram
+  participant C as Client
+  participant API as FastAPI Intake
+  participant OCR as GLM-OCR / Parsers
+  participant M as Matcher
+  participant R as Rule Engine
+  participant I as Invoice Renderer
+  participant D as Dispatch
+  participant U as UI / AIDA
+
+  C->>API: submit timesheet
+  API->>OCR: extract canonical rows
+  OCR-->>API: TimesheetExtraction
+  API->>M: resolve employees
+  M-->>API: matches + cost matrix
+  API->>R: validate against contract
+  R-->>API: rule results
+  API->>I: render tax invoice
+  alt all rules pass and under threshold
+    API->>D: idempotent dispatch
+    D-->>API: dispatched
+  else exception
+    API->>U: route to HITL review
+  end
+  API-->>U: audit timeline, invoice, metrics
+```
+
+---
+
+## Monorepo Layout
+
+```text
+tia/
+|-- apps/web/                 React + Vite persona console
+|-- workers/ai/               Python FastAPI core, extractors, matcher, rules, agent
+|   |-- tia_ai/api/           HTTP API and MCP mount
+|   |-- tia_ai/extract/       Excel, PDF, email, attachment, image extraction
+|   |-- tia_ai/match/         Candidate retrieval + Hungarian assignment
+|   |-- tia_ai/validate/      Contract-bound deterministic rules
+|   |-- tia_ai/erp/           Smart Bot / SAP mock, Ramco Excel, WPS SIF
+|   |-- tia_ai/invoice/       Typst invoice and credit-note rendering
+|   |-- tia_ai/qa/            AIDA tool-calling agent and streaming events
+|   |-- tia_ai/mcp/           MCP server wrappers for the same agent tools
+|   |-- tia_ai/finance/       Leakage sentinel and recovery invoices
+|   `-- tests/                Pytest coverage for pipeline and APIs
+|-- workers/whatsapp/         Bun + Hono Meta Cloud API bridge
+|-- services/dispatch/        Rust axum/sqlx dispatch side-effect service
+|-- data/seed/                TASC sample master database
+|-- data/gold/                Eval ground truth
+|-- data/synthetic/           Generated demo/eval samples
+|-- docs/                     Demo script, deck, connector docs
+|-- deploy/                   systemd install/update helpers
+`-- staging/                  Runtime artifacts and outbox (gitignored)
+```
+
+---
+
+## Technology Stack
+
+| Layer | Technology | Why |
+|---|---|---|
+| Frontend | React 19, Vite 8, TypeScript 6, Tailwind CSS 3 | Fast, typed, demo-friendly operations console |
+| Client state | TanStack Query 5, Zustand, React Router 7 | Data caching, persona navigation, scoped UI state |
+| UI polish | Framer Motion, Lucide icons, Tailwind utilities | Dense operational UI with clear actions |
+| Core API | Python 3.12, FastAPI, Uvicorn, Pydantic v2 | Typed request/response contracts and fast iteration |
+| Persistence | SQLAlchemy 2.0, SQLite demo, Postgres-ready | Portable schema with JSON fields and audit trail |
+| Excel extraction | openpyxl | Direct structured timesheet parsing |
+| PDF extraction | pdfplumber | Text-layer PDF parsing without model calls |
+| Image/OCR | GLM-OCR through vLLM, OpenAI-compatible API | Self-hostable/open-weight document intelligence |
+| Matching | rapidfuzz, jellyfish, scipy linear_sum_assignment | Fuzzy/phonetic candidate ranking + global assignment |
+| Validation | Pure Python rule engine, Decimal-style money math | Auditable, deterministic contract checks |
+| Invoice rendering | Typst Python wheel | Deterministic, high-quality PDF generation |
+| Dispatch | Rust, axum, tokio, sqlx | Isolated idempotent side-effect adapter |
+| Agent chat | OpenAI-compatible tool calling, SSE streaming | Grounded answers, visible tool-call strip |
+| MCP | `mcp` FastMCP, `/mcp`, `tia-mcp` stdio | Expose the same agent tools to Claude/Cursor/hosts |
+| WhatsApp | Bun, Hono, TypeScript | Lightweight Meta Cloud API bridge |
+| Tooling | uv, bun, cargo, Makefile, Docker | No pip/npm drift; reproducible local workflow |
+
+---
+
+## Models and AI Boundary
+
+TIA keeps models at the document and reasoning edges. Money movement, invoice
+math, validation, routing, and dispatch are deterministic.
+
+| Use case | Model path | Notes |
+|---|---|---|
+| Handwritten / photographed timesheets | `GLM_OCR_BASE_URL`, `GLM_OCR_MODEL` (default `glm-ocr:q8_0`) | OpenAI-compatible vLLM endpoint; markdown primary, KIE JSON fallback, layout prompt for bbox provenance |
+| Context-aware chat | `OPENAI_BASE_URL`, `OPENAI_MODEL` (default `gpt-4o-mini`) | Tool-calling agent with citation contract; base URL can point to OpenAI, Azure, Ollama/vLLM-compatible gateways |
+| AIDA streaming chat | Same OpenAI-compatible chat path | Emits structured tool events plus streamed prose |
+| MCP agent tools | Same deterministic Python tool registry | MCP hosts call TIA tools directly; the model host is external |
+
+No invoice is trusted because a model said so. Final confidence comes from the
+matcher and validators, not from raw OCR confidence.
+
+---
+
+## Feature Inventory
+
+### Ingestion
+
+- Portal multipart upload: `POST /intake/upload`
+- Email intake with mode detection: direct forward, cc-silent, watched mailbox
+- Mailbox webhook compatible with Postmark/SES-style payloads
+- Online timesheet app: `POST /submit/{client_code}`
+- WhatsApp bridge: Meta signature verification, dedupe, media download, forward to core
+- Attachment-aware `.eml` ingestion with sibling document assets
+- Content-hash deduplication and idempotency keys
+
+### Extraction
+
+- Excel: clean timesheets, punch-clock formats, messy spreadsheets
+- Email/text: structured body, quoted replies, name-only submissions, reimbursements
+- PDF: text-layer typed PDF via pdfplumber
+- Image: GLM-OCR markdown and KIE prompt modes
+- Real monthly handwritten form parser from model markdown
+- Canonical leave-code normalization: `AL`, `SICK`, `UNPAID`, `PUBLIC_HOLIDAY`, `ABSENT`, `PRESENT`
+
+### Resolution
+
+- Client resolution from code or fuzzy client hint
+- Employee resolution by exact emp ID, scoped name match, fuzzy name, phonetic match
+- Hungarian assignment for global row-to-employee consistency
+- Ambiguity margin routing for duplicate names
+- Cost matrix and candidate labels surfaced to the review UI
+
+### Validation
+
+Registered contract rules:
+
+| Rule | Name | Purpose |
+|---|---|---|
+| R1 | `employee_in_contract_scope` | Employee must be authorized on the contract roster |
+| R2 | `rate_compliance_per_category` | Explicit billed rates must match rate cards |
+| R3 | `period_boundary_check` | Invoice period must fall inside contract dates |
+| R4 | `ot_within_contract_cap` | OT must stay below per-contract cap |
+| R5 | `sow_hours_not_exceeded` | Fixed-scope SOW cannot be billed after completion or over budget |
+| R6 | `markup_correctly_applied` | Line amount must reconcile to payroll, OT, markup, reimbursements |
+| R7 | `vat_calculation_correct` | VAT must match jurisdictional contract rate |
+| R10 | `holiday_weekend_multiplier_check` | OT amount must reconcile to statutory multiplier |
+| R14 | `period_not_closed` | Locked client periods cannot be invoiced |
+| R15 | `anomaly_vs_history` | Bills unusually high versus historical baseline are flagged/blocked |
+
+R8 duplicate detection and R9 signature warning are present in code but retired
+or disabled for the current demo flow to avoid noisy rerun behavior.
+
+### Invoice, Dispatch, and Finance Ops
+
+- UAE Tax Invoice PDF with TRN, VAT, sequence number, SAC/place-of-supply fields
+- Tax Credit Note flow for clawback, including partial credit notes
+- UAE VAT Article 60 / Article 62 / FTA Decision No. 7 of 2019 references in credit-note PDF
+- Auto-dispatch when under threshold and all blocking rules pass
+- Rust dispatch service with SQLite-backed idempotency and outbox
+- Finance approval queue for high-value or exception invoices
+- Client approve/reject and query threads
+- Period close/reopen controls
+- Payments and refund-required audit events
+- Client statement endpoint and audit bundle ZIP
+
+### Smart Bot / SAP Artifacts
+
+- Ramco/SAP-shaped consolidated Excel export: `GET /consolidate/{client}/{period}.xlsx`
+- WPS SIF bank file: `GET /payroll/sif/{client}/{period}.sif`
+- SAP Business One A/R Invoice OData v4 payload: `GET /invoices/{id}/sap-b1-payload`
+- `U_TIA_AuditHash` in the SAP B1 payload for downstream audit traceability
+
+### AIDA Agent and MCP
+
+AIDA is the grounded finance operator embedded in the UI and exposed over MCP.
+
+Read tools include:
+
+- `get_client_settings`
+- `get_contract`
+- `get_invoice`
+- `get_timesheet`
+- `get_events`
+- `search_employees`
+- `get_employee_history`
+- `find_revenue_leakage`
+- `verify_audit_chain`
+- `metrics_stp`
+- `list_clients`
+- `list_invoices`
+- `prepare_sap_b1_payload`
+
+Write tools include:
+
+- `recover_leakage`
+- `dispatch_invoice`
+- `clawback_invoice`
+- `approve_timesheet`
+- `resend_invoice_email`
+
+Every write tool logs `agent.<tool>_invoked` to the audit chain.
+
+### Dashboards
+
+- Client: submit timesheets, review invoices, approve/reject, raise queries
+- FinOps: inbox, triage, review screen, contract panel, cost matrix, dispatch tracking, clients, eval
+- Finance: KPI tiles, touchless rate, time-to-invoice, extraction accuracy, dispatch pillars, leakage sentinel, approval queue, compliance downloads
+
+---
+
+## Database and Audit Model
+
+TIA uses SQLAlchemy models that run on SQLite for the demo and are designed for
+Postgres migration. The operational spine is append-only `events`.
+
+Core tables:
+
+- `clients`, `employees`, `payroll`
+- `contracts`, `rate_cards`, `sows`
+- `doc_assets`, `timesheets`, `hypotheses`
+- `invoices`, `payments`, `queries`, `corrections`
+- `events`
+
+Audit events store:
+
+- actor
+- entity kind and ID
+- action
+- payload
+- before/after snapshots where useful
+- optional idempotency key
+- previous hash and current hash
+
+`GET /audit/verify` re-walks the chain and returns the head hash.
+
+---
+
+## Key API Surface
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/health` | Liveness |
+| GET | `/status` | API, DB, OpenAI, OCR, Zoho, dispatch, eval status |
+| GET | `/rules` | Validation rule metadata |
+| POST | `/intake/upload` | Portal upload |
+| POST | `/intake/email` | Email intake with mode detection |
+| POST | `/intake/mailbox-webhook` | Watched mailbox webhook |
+| POST | `/intake/whatsapp` | WhatsApp bridge intake |
+| POST | `/submit/{client_code}` | Online timesheet form |
+| GET | `/documents` | Uploaded documents |
+| GET | `/documents/{id}/source` | Source preview |
+| POST | `/timesheets/{id}/approve` | FinOps approval |
+| POST | `/timesheets/{id}/reject` | FinOps rejection |
+| GET | `/invoices` | Invoice list |
+| GET | `/invoices/{id}` | Invoice detail |
+| GET | `/invoices/{id}/pdf` | PDF invoice or credit-note bundle |
+| GET | `/invoices/{id}/why` | Review/rationale payload |
+| POST | `/invoices/{id}/dispatch` | Dispatch invoice |
+| POST | `/invoices/{id}/client-approve` | Client approval |
+| POST | `/invoices/{id}/finance-approve` | Finance approval |
+| GET | `/invoices/{id}/clawback-eligibility` | Void/credit-note decision |
+| POST | `/invoices/{id}/clawback` | Void or issue credit note |
+| GET | `/metrics/stp` | Touchless rate and dispatch breakdown |
+| GET | `/metrics/time-to-invoice` | Cycle time |
+| GET | `/metrics/accuracy` | Eval F1/ECE |
+| GET | `/metrics/leakage` | Revenue leakage sentinel |
+| POST | `/finance/leakage/{emp_id}/recover` | Recovery invoice |
+| GET | `/dispatch/tracking` | Dispatch operations board |
+| GET | `/eval` | Last eval summary |
+| POST | `/eval/run` | Run eval harness |
+| POST | `/qa` | Grounded agent answer |
+| POST | `/qa/stream` | Streaming AIDA answer and tool events |
+| ANY | `/mcp` | MCP streamable HTTP transport |
+
+---
+
+## Quickstart
+
+### Prerequisites
+
+- Python 3.12
+- uv
+- Bun
+- Rust toolchain
+- Optional: GLM-OCR endpoint for handwritten/image eval
+- Optional: OpenAI-compatible chat endpoint for AIDA
+
+### Install
+
+```bash
+make install
+```
+
+### Seed and Generate Demo Data
+
+```bash
+make seed
+make synth
+```
+
+Expected seed shape:
+
+```text
+clients: 10
+employees: 200
+payroll: 200
+contracts: 10
+rate_cards: 200
+sows: 4
+```
+
+### Run
+
+Terminal 1:
+
+```bash
+make api
+```
+
+Terminal 2:
+
+```bash
+make dispatch
+```
+
+Terminal 3:
+
+```bash
+make web
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173/
+```
+
+If Vite chooses another port, use the URL it prints.
+
+### Verify
+
+```bash
+make eval
+make test
+```
+
+For an image/OCR case to run end-to-end, configure the GLM-OCR endpoint in `.env`.
+
+---
+
+## Environment
+
+```bash
+# Database
+DATABASE_URL=sqlite:////absolute/path/to/tia/tia.db
+
+# OCR model endpoint
+GLM_OCR_BASE_URL=https://ocr.example.com/v1
+GLM_OCR_API_KEY=...
+GLM_OCR_MODEL=glm-ocr:q8_0
+
+# Agent chat endpoint
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-4o-mini
+
+# Optional Rust dispatch service
+RUST_DISPATCH_URL=http://127.0.0.1:8001
+
+# Optional Zoho mailbox ingestion / SMTP reply
+ZOHO_IMAP_USER=tia@...
+ZOHO_IMAP_PASSWORD=...
+ZOHO_SMTP_HOST=smtp.zoho.com
+```
+
+---
+
+## Demo Script
+
+1. **Client auto path**
+   - Open Client -> Submit Timesheet.
+   - Upload `data/synthetic/case_07_clean.xlsx`.
+   - Show `routing=auto`, high confidence, invoice generated/dispatched.
+   - Open the PDF and point to TRN, VAT, sequence number, audit hash.
+
+2. **FinOps exception path**
+   - Upload `data/synthetic/case_13_out_of_scope_sow.eml`.
+   - Show `routing=hitl`, failed rule `R5`.
+   - Open FinOps review.
+   - Show source email, contract panel, matching/cost matrix, red rule chip, audit timeline.
+
+3. **Finance dashboard**
+   - Show touchless rate, mean time-to-invoice, extraction accuracy.
+   - Show dispatch pillars, leakage sentinel, Ramco Excel and WPS SIF downloads.
+
+4. **AIDA**
+   - Ask: "Why did case 13 fail validation?"
+   - Show tool-call strip and citations.
+   - Ask: "What is CL001's auto-dispatch threshold?"
+
+---
+
+## MCP Usage
+
+TIA exposes its agent tools to MCP-aware clients over streamable HTTP and stdio.
+
+HTTP:
+
+```text
+http://127.0.0.1:8000/mcp
+```
+
+Claude Desktop-style stdio config:
 
 ```json
 {
@@ -74,144 +577,70 @@ Drop this into `claude_desktop_config.json` (path depends on OS; on Linux it's
 }
 ```
 
-Restart Claude Desktop. TIA's 17 tools show up under the plug icon - try
-*"Run TIA's month-close: find leakage, recover each row, then verify the chain."*
+More detail: [docs/CONNECT.md](docs/CONNECT.md).
 
-Full protocol surface, tool inventory, and the "adding a connector" guide live in
-[docs/CONNECT.md](docs/CONNECT.md). A pre-baked Claude skill that drives the
-month-close end-to-end lives in `.claude/skills/tia-month-close.md`.
+---
 
-## What's inside
+## Evaluation
 
-- **4 ingestion channels** - portal upload, email (3 modes: direct / cc-silent / watched-mailbox), online form, image/PDF OCR
-- **10 BTP-style contract-bound rules** - rate compliance, OT cap, SOW completion (mentor's "completed early" case), VAT, duplicates, sequential numbering, etc
-- **Smart Bot + SAP** mock matching the brief's reference architecture, with Ramco SRP-shaped consolidated Excel **+ a real WPS SIF** for the bank gateway
-- **Typst-rendered UAE Tax Invoice** (Rust compiler) - "Tax Invoice" header, supplier+customer TRN, sequential invoice number, VAT line breakdown, SAC code for India, audit hash footer
-- **Hungarian matching** (`scipy.linear_sum_assignment`) with the cost matrix surfaced in the "Why?" drawer - no black-box LLM resolution
-- **Rust dispatch service** (axum + sqlx, port :8001) - idempotency-keyed, writes outbox, separate process from the Python core
-- **Agentic chat with 17 grounded tools** - 12 reads + 5 writes, OpenAI tool-calling, structured-event SSE streaming, strict citation contract, MCP-exposed for Claude Desktop / Cursor / any host
-- **3 brief success-measure KPIs** - touchless rate, time-to-invoice, extraction F1 - all live endpoints
-- **13/13 eval PASS** with F1 + ECE on every push (CI gate)
-- **92/92 pytest** across the stack
+The eval harness compares extracted/resolved output against `data/gold` cases and
+reports:
 
-## Architecture
+- per-case pass/fail
+- field-level F1
+- expected calibration error (ECE)
+- extraction latency
+- invoice amount and exception count
 
-The brief's reference architecture maps 1:1 to our modules. The diagram lives in
-the brief PDF (`TIA Hackathon Brief.pdf`, p.3). Module map:
+Representative cases include:
 
-| Brief block | Module |
-|---|---|
-| Mailbox / Email + TIA Portal Upload + Online Timesheet App + Image/PDF | `tia_ai/api/app.py` channel endpoints |
-| Channel Listener / OCR / Normalize to SAP-ready Excel | `tia_ai/extract/` + `tia_ai/orchestrator.py` + `tia_ai/erp/smart_bot_sap.py` |
-| TASC Smart Bot + SAP | `tia_ai/erp/smart_bot_sap.py` (Ramco SRP-shaped Excel + WPS SIF) |
-| Invoice Validation (BTP & other parameters) | `tia_ai/validate/rules_v2.py` (10 rules) |
-| Apply Dispatch Rules + Track Progress | `services/dispatch/` (Rust) + `tia_ai/api/app.py` `/dispatch/*` |
-| Client Master Data + Dispatch Rules | `tia_ai/seed_contracts.py` + `Client.settings` JSONB |
-| Client Portal (Submit / Review / Approve / Raise Queries) | `apps/web/` + `/intake/upload` + `/invoices/{id}/client-approve` + `/clients/{c}/queries` |
-| TIA Dashboard | `/metrics/stp` + `/metrics/time-to-invoice` + `/metrics/accuracy` + `/dispatch/tracking` |
-| Context-Aware AI Chat | `tia_ai/qa/agent.py` (`POST /qa`) |
+- ambiguous duplicate names
+- structured employee email
+- full client roster email
+- handwritten image
+- punch-clock Excel
+- messy Excel
+- quoted reply thread
+- typed PDF
+- fixed-scope SOW completion failure
+- OT-over-cap failure
 
-## Quickstart
+---
 
-```bash
-# install
-make install                    # uv + bun + cargo (Rust dispatch optional)
+## Security and Trust Boundaries
 
-# seed master data + 10 contracts (7 UAE + 2 KSA + 1 India) + 14 gold cases
-make seed
-make synth
+- Mutating API calls use idempotency keys where side effects matter.
+- Dispatch is isolated in a Rust service.
+- External sends write an outbox artifact.
+- Model output never directly moves money.
+- Rule failures carry stable IDs and client-friendly explanations.
+- Client-scoped chat tools cannot widen their own scope.
+- Audit chain stores previous/current hashes and can be verified.
+- MCP write tools are annotated and log every mutation.
 
-# verify
-make eval                       # 13/13 PASS (case 4 vision skipped without GLM_OCR_API_KEY)
-make test                       # pytest 67/67
+---
 
-# run (three terminals)
-make api                        # FastAPI on :8000
-make web                        # Vite UI on :5173
-make dispatch                   # Rust dispatch service on :8001 (optional)
+## Deployment Notes
 
-# open
-open http://127.0.0.1:5173/finops
-```
+The repo includes:
 
-## Environment
+- `docker-compose.yml`
+- service Dockerfiles for web, AI core, and WhatsApp bridge
+- systemd install/update helpers under `deploy/`
+- Makefile commands for local build/run/test
 
-```bash
-# .env at repo root
-OPENAI_API_KEY=sk-...           # chat agent - required for /qa
-OPENAI_BASE_URL=https://api.openai.com/v1   # override for a local vLLM/Ollama
-OPENAI_MODEL=gpt-4o-mini
+The demo uses SQLite and local staging. The schema and configuration are prepared
+for Postgres-style deployment.
 
-GLM_OCR_BASE_URL=https://your-modal-endpoint.run
-GLM_OCR_API_KEY=...             # handwriting/scanned-PDF route
-
-RUST_DISPATCH_URL=http://127.0.0.1:8001   # optional; Python falls back to in-process
-```
-
-## Key endpoints
-
-| Method | Path | What |
-|---|---|---|
-| `GET` | `/health` | liveness |
-| `GET` | `/status` | green-dot board (api / db / openai / modal / rust / last eval) |
-| `POST` | `/intake/upload` | portal upload (multipart) |
-| `POST` | `/intake/email` | email intake; auto-detects `direct_forward` / `cc_silent` / `watched_mailbox` |
-| `POST` | `/intake/mailbox-webhook` | Postmark/SES-shaped watched mailbox |
-| `POST` | `/submit/{client_code}` | online timesheet form |
-| `POST` | `/qa` | grounded chat (5 DB tools, citations forced) |
-| `GET` | `/consolidate/{client}/{period}.xlsx` | Ramco SRP-shaped consolidated workbook |
-| `GET` | `/payroll/sif/{client}/{period}.sif` | WPS SIF for the bank (SCR + EDR records) |
-| `GET` | `/invoices/{id}/pdf` | UAE Tax Invoice PDF (Typst) |
-| `POST` | `/invoices/{id}/dispatch` | idempotent dispatch (proxies to Rust service if `RUST_DISPATCH_URL` set) |
-| `POST` | `/invoices/{id}/client-approve` | client review flow |
-| `POST` | `/invoices/{id}/finance-approve` | finance sign-off (threshold queue) |
-| `POST` | `/clients` / `PUT /clients/{c}/settings` | onboarding + config |
-| `POST` | `/clients/{c}/queries` | client raises a query (FinOps replies on `/queries/{id}/reply`) |
-| `GET` | `/dispatch/tracking` | dispatch dashboard |
-| `GET` | `/dispatch/{c}/queue` | per-client queue honouring `dispatch_order_rule` + `grouping_mode` |
-| `GET` | `/metrics/stp` | touchless rate (target 80%+) |
-| `GET` | `/metrics/time-to-invoice` | mean cycle minutes |
-| `GET` | `/metrics/accuracy` | last-eval F1 + ECE |
-| `GET` | `/eval` | run the eval harness on demand |
-
-## The 10 BTP-style rules
-
-1. **R1** `employee_in_contract_scope` - emp_id on contract roster
-2. **R2** `rate_compliance_per_category` - billed rate matches rate card
-3. **R3** `period_boundary_check` - timesheet date inside contract validity
-4. **R4** `ot_within_contract_cap` - OT % ≤ `max_ot_pct`
-5. **R5** `sow_hours_not_exceeded` - fixed-scope SOW completion / hours-remaining check (the mentor's "completed early" case)
-6. **R6** `markup_correctly_applied` - line amount reconciles to (prorated + OT) × (1 + markup) + reimb
-7. **R7** `vat_calculation_correct` - VAT = excl × rate (5% UAE / 15% KSA / 18% IN)
-8. **R8** `duplicate_invoice_extended` - same (emp_id, period) not already invoiced
-9. **R9** `approver_signature_present` - source doc has an approver (warning)
-10. **R10** `holiday_weekend_multiplier_check` - OT amount reconciles to statutory multipliers (UAE Federal Decree-Law 33/2021: 1.25× standard, 1.5× night/rest/holiday)
-
-Per-contract parameters drive the rules - judges can configure new validation
-profiles via `PUT /clients/{c}/settings` without touching code.
-
-## Deliverables
-
-- **Prototype**: full stack live, all 4 channels, 13/13 eval, 67/67 pytest
-- **Repo**: this (cyberkunju/tia), 17 commits, every push green on CI
-- **Deck**: `docs/deck/TIA-deck.md` (Marp source) + `docs/deck/TIA-deck.pdf`
-- **Demo script**: `docs/DEMO_SCRIPT.md` (90s pitch + 3min walkthrough)
-- **Sample inputs**: 14 gold cases under `data/synthetic/` - Excel (5, 7, 9, 14), handwritten image (4), typed PDF (11), structured email (1, 2, 3, 6, 10, 12, 13), 3-way ambiguous (8)
-- **Video**: recorded on demo day at the venue (see `docs/DEMO_SCRIPT.md` for the takes)
+---
 
 ## Team
 
-- **edneam** (cyberkunju) - backend, agentic core, eval harness, deck
-- **Navaneeth** - frontend, WhatsApp bridge
+- **edneam / cyberkunju** - backend, agentic core, eval harness, deployment, deck
+- **Navaneeth** - frontend and WhatsApp bridge
 
-## Stack lock
-
-Python 3.12 + FastAPI + Pydantic v2 + uv · SQLAlchemy 2.0 (SQLite → Postgres 18 ready)
-· GLM-OCR on Modal vLLM (open weight) · scipy + rapidfuzz + jellyfish (Hungarian +
-phonetic) · Decimal money math · Typst (Rust-backed PDF) · Rust + axum + sqlx + tokio
-(dispatch) · OpenAI tool-calling (swap-ready) · React 19 + Vite 8 + Tailwind +
-TanStack Query · `bun` for JS/TS, `uv` for Python, `cargo` for Rust. No npm/yarn/pip.
+---
 
 ## License
 
-MIT.
+MIT
