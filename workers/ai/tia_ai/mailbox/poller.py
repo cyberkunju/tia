@@ -27,6 +27,7 @@ from email.message import Message
 from typing import Iterator
 
 import httpx
+from sqlalchemy import text
 
 from ..config import (
     ZOHO_IMAP_FOLDER,
@@ -36,6 +37,10 @@ from ..config import (
     ZOHO_IMAP_USER,
     ZOHO_POLL_INTERVAL_SEC,
 )
+from ..db import engine
+
+# App-wide constant so every worker process competes for the SAME advisory lock.
+_SINGLETON_LOCK_KEY = 873421001
 
 log = logging.getLogger("tia.mailbox.poller")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s  %(message)s")
@@ -234,6 +239,14 @@ class ZohoPoller:
         body, attachments = _walk_body(msg)
         from_addr = from_addr_list[0] if from_addr_list else None
 
+        # Loop guard: never process a message sent FROM our own mailbox. TIA's
+        # outbound replies go to the client, not to itself, so this is normally a
+        # no-op — but if our address is ever CC'd back or a reply lands in INBOX,
+        # processing it would generate another reply and loop. Skip outright.
+        if from_addr and from_addr.strip().lower() == (ZOHO_IMAP_USER or "").strip().lower():
+            log.info("zoho-poll skipping self-sent message (loop guard): subj=%r", subject)
+            return {"skipped": "self_sent"}
+
         # 1) Body intake — skipped when attachments are present (the attachment
         #    is the timesheet; one logical email = one timesheet = one reply).
         result: dict
@@ -323,20 +336,126 @@ class ZohoPoller:
         return result
 
     def poll_once(self) -> int:
-        """One pass. Returns the count of messages processed."""
+        """One pass over UNSEEN on a SINGLE IMAP connection.
+
+        Previously this reconnected (TLS+LOGIN+SELECT) once to fetch and AGAIN per
+        message to mark-seen. Now search + fetch + mark-seen all reuse one login,
+        cutting the per-message round trips. Returns the count processed."""
         if not self.configured():
             log.warning("zoho poller not configured - set ZOHO_IMAP_USER and ZOHO_IMAP_PASSWORD")
             return 0
         n = 0
-        for uid, msg in self.fetch_unseen():
+        c = self._connect()
+        try:
+            typ, data = c.uid("search", None, "UNSEEN")
+            if typ != "OK":
+                log.warning("imap search returned %s", typ)
+                return 0
+            uids = data[0].split()
+            if uids:  # quiet when idle — no more "0 UNSEEN" log spam every cycle
+                log.info("zoho: %d UNSEEN message(s) in %s", len(uids), self.folder)
+            for uid in uids:
+                typ, rfc = c.uid("fetch", uid, "(RFC822)")
+                if typ != "OK" or not rfc or not rfc[0]:
+                    continue
+                raw = rfc[0][1] if isinstance(rfc[0], tuple) else None
+                if not raw:
+                    continue
+                msg = email_pkg.message_from_bytes(raw)
+                try:
+                    self.process_message(msg)
+                    c.uid("store", uid, "+FLAGS", "(\\Seen)")  # same connection
+                    n += 1
+                except Exception as e:  # noqa: BLE001
+                    log.error("zoho: failed to process UID %s: %s", uid, e)
+                    # leave UNSEEN so we retry next round
+        finally:
             try:
-                self.process_message(msg)
-                self.mark_seen(uid)
-                n += 1
-            except Exception as e:  # noqa: BLE001
-                log.error("zoho: failed to process UID %s: %s", uid, e)
-                # leave UNSEEN so we retry next round
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                c.logout()
+            except Exception:  # noqa: BLE001
+                pass
         return n
+
+    def _idle_wait(self, idle_timeout_s: float = 600.0) -> bool:
+        """Block on IMAP IDLE until Zoho signals new mail (near-instant) or
+        `idle_timeout_s` elapses, whichever first.
+
+        This is the latency fix: instead of waiting up to one poll interval, the
+        server pushes us the moment a message lands and we process it immediately.
+
+        Returns True if IDLE was used (we genuinely waited), False if IDLE is
+        unusable on this connection so the caller falls back to interval polling.
+        Never raises — any problem degrades to the polling path (≡ old behaviour).
+        Refresh window is kept well under Zoho's ~29-min IDLE cap."""
+        import socket
+
+        try:
+            c = self._connect()
+        except Exception:  # noqa: BLE001
+            return False
+        try:
+            if "IDLE" not in (getattr(c, "capabilities", ()) or ()):
+                return False
+            tag = c._new_tag()  # bytes
+            c.send(tag + b" IDLE\r\n")
+            if not c.readline().startswith(b"+"):  # server must enter idle
+                return False
+            c.sock.settimeout(idle_timeout_s)
+            try:
+                while True:
+                    line = c.readline()
+                    if not line:
+                        break  # connection closed → re-poll/re-connect
+                    up = line.upper()
+                    if b"EXISTS" in up or b"RECENT" in up:
+                        break  # new mail → stop idling so the caller polls now
+            except (socket.timeout, TimeoutError, OSError):
+                pass  # idle window elapsed → loop re-polls then re-idles
+            try:
+                c.send(b"DONE\r\n")
+                c.readline()
+            except Exception:  # noqa: BLE001
+                pass
+            return True
+        except Exception as e:  # noqa: BLE001
+            log.debug("zoho IDLE aborted (%s) — falling back to polling", e)
+            return False
+        finally:
+            try:
+                c.logout()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _acquire_singleton(self):
+        """Win the right to be the ONE active poller across all API worker
+        processes. We run uvicorn with multiple workers, each of which would
+        otherwise start its own poller thread and hammer the same mailbox.
+
+        Postgres: take a session-level advisory lock on a dedicated connection;
+        the lock is held for the life of that connection and auto-releases if the
+        owning worker dies, so a standby worker can take over. Non-Postgres (dev
+        SQLite, single process): no lock needed.
+
+        Returns a truthy handle when this process is the active poller, else None."""
+        if not str(engine.url).startswith("postgresql"):
+            return "no-lock-needed"
+        try:
+            conn = engine.connect()
+            got = conn.execute(
+                text("SELECT pg_try_advisory_lock(:k)"), {"k": _SINGLETON_LOCK_KEY}
+            ).scalar()
+            conn.commit()  # close the txn; the session-level lock persists on conn
+            if got:
+                return conn  # keep the connection open to hold the lock
+            conn.close()
+            return None
+        except Exception as e:  # noqa: BLE001 — never let lock issues stop mail entirely
+            log.warning("singleton lock unavailable (%s) — proceeding without it", e)
+            return "no-lock-needed"
 
     def run_forever(self, interval_s: int = ZOHO_POLL_INTERVAL_SEC) -> None:
         # Idle (don't exit) when unconfigured so the container never crash-loops on a
@@ -348,13 +467,23 @@ class ZohoPoller:
             )
             while not self.configured():
                 time.sleep(max(interval_s, 30))
+
+        # Singleton election: only ONE worker process polls the mailbox. Standby
+        # workers wait and retry, so if the active one dies another takes over.
+        lock = self._acquire_singleton()
+        while lock is None:
+            log.info("zoho poller standby — another worker holds the mailbox lock; retry in 30s")
+            time.sleep(30)
+            lock = self._acquire_singleton()
+
         log.info(
-            "zoho poller starting: %s @ %s:%d, every %ds",
+            "zoho poller starting: %s @ %s:%d (IMAP IDLE push, %ds poll fallback)",
             self.user,
             self.host,
             self.port,
             interval_s,
         )
+        use_idle = True
         while True:
             try:
                 n = self.poll_once()
@@ -362,9 +491,22 @@ class ZohoPoller:
                     log.info("zoho: processed %d message(s) this round", n)
             except (imaplib.IMAP4.error, OSError) as e:
                 log.warning("zoho transient error: %s - backing off", e)
+                time.sleep(interval_s)
+                continue
             except Exception as e:  # noqa: BLE001
                 log.exception("zoho poller unexpected error: %s", e)
-            time.sleep(interval_s)
+                time.sleep(interval_s)
+                continue
+            # Wait for the next message. Prefer an IMAP IDLE push (near-instant
+            # pickup); if IDLE isn't usable on this server/connection, degrade to
+            # fixed-interval polling — never worse than the original behaviour.
+            if use_idle:
+                if not self._idle_wait():
+                    use_idle = False
+                    log.info("zoho: IMAP IDLE unavailable — using %ds interval polling", interval_s)
+                    time.sleep(interval_s)
+            else:
+                time.sleep(interval_s)
 
 
 # Convenience module-level entry points
