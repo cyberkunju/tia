@@ -66,6 +66,13 @@ STRICT RULES:
    `approve_timesheet`, `resend_invoice_email`) MUTATE state. Only call them
    when the user explicitly asks for an action - never speculatively. When you
    do, report the new sequence_no / status / chain head from the tool result.
+9. TOOL ROUTING HINTS:
+   - "do I have overdue / unpaid / pending invoices" → `list_invoices` (filter
+     by status if asked). NEVER use `verify_audit_chain` for invoice questions.
+   - "find / show revenue leakage" → `find_revenue_leakage(period=...)`.
+   - "audit chain / tamper / integrity" → `verify_audit_chain`.
+   - "touchless rate / STP / how many auto" → `metrics_stp`.
+   - "show me the SAP / B1 payload" → `prepare_sap_b1_payload(invoice_id=...)`.
 """
 
 
@@ -499,6 +506,51 @@ def tool_list_clients(session: Session, scope: str | None = None) -> dict:
                 "currency": c.currency_default,
             }
             for c in rows
+        ],
+    }
+
+
+def tool_list_invoices(
+    session: Session,
+    client_code: str | None = None,
+    status: str | None = None,
+    limit: int = 20,
+    scope: str | None = None,
+) -> dict:
+    """List invoices, newest first. Filters: `client_code`, `status`
+    (generated|dispatched|voided|paid|...), `limit` (cap 50).
+
+    Scope-aware: when the Client persona is asking, the result is
+    auto-restricted to the caller's client_code regardless of the
+    `client_code` arg.
+    """
+    q = session.query(Invoice).order_by(Invoice.created_at.desc())
+    effective_client = scope if scope else client_code
+    if effective_client:
+        q = q.filter(Invoice.client_code == effective_client)
+    if status:
+        q = q.filter(Invoice.status == status)
+    limit = max(1, min(int(limit or 20), 50))
+    rows = q.limit(limit).all()
+    return {
+        "found": bool(rows),
+        "filter": {"client_code": effective_client, "status": status, "limit": limit},
+        "total": len(rows),
+        "invoices": [
+            {
+                "id": inv.id,
+                "invoice_sequence_no": inv.invoice_sequence_no,
+                "client_code": inv.client_code,
+                "period": inv.period,
+                "amount_aed": inv.amount,
+                "total_incl_vat": inv.total_incl_vat,
+                "status": inv.status,
+                "client_approval_status": inv.client_approval_status,
+                "due_date": inv.due_date,
+                "voided_at": inv.voided_at.isoformat() if inv.voided_at else None,
+                "created_at": inv.created_at.isoformat() if inv.created_at else None,
+            }
+            for inv in rows
         ],
     }
 
@@ -956,6 +1008,21 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "list_invoices",
+            "description": "List invoices, newest first. USE THIS for questions like 'do I have overdue invoices', 'show me my latest bills', 'what's pending dispatch'. Filters: client_code, status (generated|dispatched|voided|...), limit.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "client_code": {"type": "string"},
+                    "status": {"type": "string"},
+                    "limit": {"type": "integer", "default": 20},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "prepare_sap_b1_payload",
             "description": "Generate the SAP Business One A/R Invoice OData v4 payload for a given invoice. Read-only - returns the JSON body.",
             "parameters": {
@@ -1073,6 +1140,7 @@ _DISPATCH: dict = {
     "verify_audit_chain": tool_verify_audit_chain,
     "metrics_stp": tool_metrics_stp,
     "list_clients": tool_list_clients,
+    "list_invoices": tool_list_invoices,
     "prepare_sap_b1_payload": tool_prepare_sap_b1_payload,
     # writes
     "recover_leakage": tool_recover_leakage,
@@ -1109,6 +1177,7 @@ def answer(
     entity_context: dict | None = None,
     max_steps: int = 5,
     client_scope: str | None = None,
+    history: list[dict] | None = None,
 ) -> dict:
     """Run a tool-calling loop until the model returns a final answer.
 
@@ -1128,7 +1197,7 @@ def answer(
         }
 
     client = _client()
-    messages = _build_messages(question, entity_context, client_scope)
+    messages = _build_messages(question, entity_context, client_scope, history=history)
     tool_calls_log: list[dict] = []
 
     model = OPENAI_MODEL or "gpt-4o-mini"
@@ -1202,7 +1271,15 @@ def _build_messages(
     question: str,
     entity_context: dict | None,
     client_scope: str | None,
+    history: list[dict] | None = None,
 ) -> list[dict]:
+    """Assemble the OpenAI messages array.
+
+    `history`: prior chat turns the frontend wants to carry forward. Each item
+    is `{"role": "user"|"assistant", "content": str}`. We accept it raw,
+    drop anything malformed, and cap to the last 12 turns so token usage stays
+    bounded even on a long conversation.
+    """
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
     if client_scope:
         messages.append(
@@ -1224,6 +1301,14 @@ def _build_messages(
                 ),
             }
         )
+    if history:
+        # Keep only the last N turns to bound token cost. A "turn" here is one
+        # message, so 12 messages = ~6 back-and-forth exchanges.
+        for m in history[-12:]:
+            role = m.get("role") if isinstance(m, dict) else None
+            content = m.get("content") if isinstance(m, dict) else None
+            if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+                messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": question})
     return messages
 

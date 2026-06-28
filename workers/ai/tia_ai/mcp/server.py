@@ -30,6 +30,7 @@ from ..qa.agent import (
     tool_get_invoice,
     tool_get_timesheet,
     tool_list_clients,
+    tool_list_invoices,
     tool_metrics_stp,
     tool_prepare_sap_b1_payload,
     tool_recover_leakage,
@@ -182,6 +183,21 @@ def list_clients() -> dict:
     """List all clients."""
     with _session() as s:
         return tool_list_clients(s)
+
+
+@mcp.tool(
+    name="list_invoices",
+    description="List invoices, newest first. USE THIS for 'do I have overdue invoices', 'show me my latest bills', 'what's pending dispatch'. Filters: client_code, status, limit.",
+    annotations={"readOnlyHint": True, "destructiveHint": False},
+)
+def list_invoices(
+    client_code: str | None = None,
+    status: str | None = None,
+    limit: int = 20,
+) -> dict:
+    """List invoices with optional filters."""
+    with _session() as s:
+        return tool_list_invoices(s, client_code=client_code, status=status, limit=limit)
 
 
 @mcp.tool(

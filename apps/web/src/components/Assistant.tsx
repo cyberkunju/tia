@@ -380,6 +380,18 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
     setInput("");
     setBusy(true);
 
+    // Snapshot prior turns so the agent can answer follow-ups ("why?", "show
+    // me that one again"). We send the LAST 12 messages (mirrors the backend
+    // cap inside _build_messages). Tool/cite metadata is dropped — only the
+    // user/assistant text matters for context.
+    const history: { role: "user" | "assistant"; content: string }[] = msgs
+      .slice(-12)
+      .filter((m) => m.text && m.text.trim())
+      .map((m) => ({
+        role: m.role === "user" ? "user" : "assistant",
+        content: m.text,
+      }));
+
     // Append a placeholder AIDA bubble that we'll populate as events arrive
     const aidaIdx = msgs.length + 1;
     setMsgs((m) => [...m, { role: "aida", text: "", tools: [], streaming: true }]);
@@ -397,6 +409,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
         entityContext,
         clientScoped ? currentClientCode : null,
         ac.signal,
+        history,
       )) {
         if ((ev as QaStreamEvent).type === "tool") {
           const tev = ev as Extract<QaStreamEvent, { type: "tool" }>;

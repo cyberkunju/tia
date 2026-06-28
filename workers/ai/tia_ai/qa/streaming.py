@@ -95,12 +95,16 @@ async def stream_answer(
     entity_context: dict | None = None,
     client_scope: str | None = None,
     max_steps: int = 6,
+    history: list[dict] | None = None,
 ) -> AsyncIterator[dict]:
     """Run the agent loop, yielding events as tools fire and tokens stream.
 
     The session is NOT closed here - the FastAPI dependency that gave it to us
     owns the lifecycle. We do `session.flush()` after each tool call so the
     mutation is visible to subsequent tools in the same loop.
+
+    `history`: optional prior chat turns from the frontend. Cap is enforced
+    inside `_build_messages` (last 12 turns).
     """
     if not OPENAI_API_KEY:
         yield {
@@ -110,7 +114,7 @@ async def stream_answer(
         return
 
     client = _async_client()
-    messages = _build_messages(question, entity_context, client_scope)
+    messages = _build_messages(question, entity_context, client_scope, history=history)
     tool_calls_log: list[dict] = []
 
     model = OPENAI_MODEL or "gpt-4o-mini"

@@ -158,13 +158,20 @@ export function LeakageSentinelCard({ period, clientCode }: LeakageSentinelCardP
             </div>
           )}
 
-          {/* Top 10 detail table */}
+          {/* Top-10 detail table (with overflow indicator) */}
           <div>
-            <div className="text-2xs uppercase tracking-wide text-ink-400 font-semibold mb-1.5">
-              Top {data.entries.length} unbilled associates
+            <div className="flex items-baseline justify-between mb-1.5">
+              <span className="text-2xs uppercase tracking-wide text-ink-400 font-semibold">
+                Top {Math.min(10, data.entries.length)} unbilled associates
+              </span>
+              {data.entries.length > 10 && (
+                <span className="text-2xs text-ink-400">
+                  +{data.entries.length - 10} more not shown
+                </span>
+              )}
             </div>
             <div className="divide-y divide-ink-100 border border-ink-200 rounded-lg overflow-hidden">
-              {data.entries.map((e) => (
+              {data.entries.slice(0, 10).map((e) => (
                 <div
                   key={`${e.emp_id}-${e.reason}`}
                   className="flex items-center gap-3 py-2 px-3 text-sm hover:bg-ink-50/60 transition-colors"

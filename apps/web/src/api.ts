@@ -310,11 +310,12 @@ export const api = {
     entity_context?: { kind: string; id: string },
     client_scope?: string | null,
     signal?: AbortSignal,
+    history?: { role: "user" | "assistant"; content: string }[],
   ): AsyncGenerator<import("./types").QaStreamEvent, void, void> {
     const res = await fetch(`${API_BASE}/qa/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, entity_context, client_scope }),
+      body: JSON.stringify({ question, entity_context, client_scope, history }),
       signal,
     });
     if (!res.ok || !res.body) {

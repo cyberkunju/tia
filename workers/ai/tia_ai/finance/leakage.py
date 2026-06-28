@@ -294,10 +294,15 @@ def compute_revenue_leakage(
 
     `client_code` (optional) restricts the scan to one client - used when a
     Client persona asks "where am I losing money".
+
+    Pure-read: no audit event is written here. Earlier versions logged a
+    `metrics.leakage_scan` event per scan, but the dashboard polls this every
+    15s and the resulting concurrent log_event calls would race the audit
+    chain's read-then-write tip lookup, forking the chain. The leakage
+    *recovery* still logs (recover_leakage → invoice.recovery_issued +
+    agent.recover_leakage_invoked) — that's where the chain entry belongs.
     """
     from datetime import datetime, timezone
-
-    from ..orchestrator import log_event
 
     pq = session.query(Payroll).filter(Payroll.period == period)
     if client_code:
@@ -383,25 +388,6 @@ def compute_revenue_leakage(
         is_anomalous_period=is_anomalous,
         baseline_delta_pct=(round(delta_pct, 4) if delta_pct is not None else None),
     )
-
-    # Audit-log the scan (best-effort; never block the response)
-    try:
-        log_event(
-            session,
-            "system",
-            "metrics",
-            f"leakage:{period}:{client_code or 'ALL'}",
-            "metrics.leakage_scan",
-            {
-                "period": period,
-                "client_code": client_code,
-                "total_aed": report.total_aed,
-                "associate_count": report.associate_count,
-                "is_anomalous": is_anomalous,
-            },
-        )
-    except Exception:  # noqa: BLE001
-        pass
 
     return report
 

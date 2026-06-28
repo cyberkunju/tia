@@ -1008,6 +1008,10 @@ class QAQuery(BaseModel):
     # When the asker is a Client, pass their client_code so the agent is data-isolated
     # to that client. FinOps/Finance omit it for full visibility.
     client_scope: str | None = None
+    # Prior chat turns (`[{"role": "user|assistant", "content": str}, ...]`) so
+    # follow-ups like "why?" or "show that one again" work. Capped to the last
+    # 12 messages inside _build_messages.
+    history: list[dict] | None = None
 
 
 @app.post("/qa")
@@ -1022,6 +1026,7 @@ def qa(payload: QAQuery, s: Session = Depends(db_session)) -> dict:
             payload.question,
             payload.entity_context,
             client_scope=payload.client_scope,
+            history=payload.history,
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"qa agent failed: {e}") from e
@@ -1055,6 +1060,7 @@ async def qa_stream(payload: QAQuery) -> StreamingResponse:
                 payload.question,
                 entity_context=payload.entity_context,
                 client_scope=payload.client_scope,
+                history=payload.history,
             ):
                 yield f"data: {json.dumps(event, default=str)}\n\n"
             s.commit()
