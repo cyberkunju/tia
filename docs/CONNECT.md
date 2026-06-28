@@ -31,12 +31,20 @@ LeakageSentinelCard.tsx                 /invoices/{id}/sap-b1-payload
 
 Two transports, same tool registry. Choose by your client:
 
-| Transport          | URL / command                  | Best for                                |
-|--------------------|--------------------------------|-----------------------------------------|
-| Streamable HTTP    | `http://127.0.0.1:8000/mcp`    | Web hosts, server-to-server, Cursor     |
-| stdio (subprocess) | `uv run tia-mcp`               | Claude Desktop, local CLI clients       |
+| Transport          | URL / command                          | Best for                              |
+|--------------------|----------------------------------------|---------------------------------------|
+| Streamable HTTP    | `https://tia.cyberkunju.com/mcp/`      | Claude, Cursor, Kiro, GPT, web hosts  |
+| Streamable HTTP    | `http://127.0.0.1:8000/mcp/` (local)   | Same host / server-to-server          |
+| stdio (subprocess) | `uv run tia-mcp`                       | Claude Desktop, local CLI clients     |
 
-### Claude Desktop
+The HTTP transport is **stateless JSON** (multi-worker- and proxy-safe). Always
+use the **trailing slash** (`/mcp/`) to skip the mount redirect.
+
+> Security note: the public HTTP endpoint is currently unauthenticated and
+> exposes write tools. Put it behind a bearer token / Cloudflare Access before
+> real use. The stdio transport runs locally and needs no network auth.
+
+### Claude Desktop (stdio, local)
 
 ```json
 {
@@ -49,10 +57,21 @@ Two transports, same tool registry. Choose by your client:
 }
 ```
 
-### Cursor / custom HTTP host
+### Claude / Cursor / Kiro / GPT (remote Streamable HTTP)
 
-Point your MCP client at `http://127.0.0.1:8000/mcp`. Standard Streamable-HTTP
-session negotiation applies.
+```json
+{
+  "mcpServers": {
+    "tia": {
+      "url": "https://tia.cyberkunju.com/mcp/"
+    }
+  }
+}
+```
+
+Kiro (`~/.kiro/settings/mcp.json`) and Cursor use the same `url` shape. Hosts
+that speak only stdio can bridge to the URL with `npx mcp-remote
+https://tia.cyberkunju.com/mcp/`.
 
 ## Tool inventory
 
