@@ -149,24 +149,26 @@ def extract_email(text: str) -> TimesheetExtraction:
         leading = _leading_name(line)
         is_label_led = leading is None or leading.split()[0].lower() in _FIELD_WORDS
 
-        # Labelled continuation line ("Days worked: 22", "Leave taken: AL (2 days)"):
-        # no Emp ID, led by a field word - attach to the employee above, don't spawn a row.
-        if current is not None and emp is None and is_label_led:
-            if low.startswith("leave") or bare:
-                codes = canon_leaves(bare) if bare else canon_leaves(re.split(r"[,/ ]+", lv.group(1))) if lv else []
-                for c in codes:
-                    if c not in current.leave_codes:
-                        current.leave_codes.append(c)
-            if days_label_m and current.days_worked is None:
-                current.days_worked = _clean_num(days_label_m.group(1))
-            if ot and current.ot_hours is None:
-                current.ot_hours = _clean_num(ot.group(1))
-            for amt, reason in reimb_hits:
-                val = _clean_num(amt)
-                if val:
-                    current.reimbursements.append(
-                        Reimbursement(reason=(reason or "reimbursement").strip(), amount_aed=val)
-                    )
+        # A labelled line ("Days worked: 22", "Leave taken: AL", "Total Working Days: 22")
+        # with no Emp ID is NEVER a new employee: it attaches to the employee above if one
+        # exists, otherwise it is ignored. This keeps summary/total lines out of the rows.
+        if emp is None and is_label_led:
+            if current is not None:
+                if low.startswith("leave") or bare:
+                    codes = canon_leaves(bare) if bare else canon_leaves(re.split(r"[,/ ]+", lv.group(1))) if lv else []
+                    for c in codes:
+                        if c not in current.leave_codes:
+                            current.leave_codes.append(c)
+                if days_label_m and current.days_worked is None:
+                    current.days_worked = _clean_num(days_label_m.group(1))
+                if ot and current.ot_hours is None:
+                    current.ot_hours = _clean_num(ot.group(1))
+                for amt, reason in reimb_hits:
+                    val = _clean_num(amt)
+                    if val:
+                        current.reimbursements.append(
+                            Reimbursement(reason=(reason or "reimbursement").strip(), amount_aed=val)
+                        )
             continue
 
         if not (emp or days_m or days_label_m or reimb_hits):
