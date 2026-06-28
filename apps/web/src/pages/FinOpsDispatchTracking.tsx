@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Mail, Radar, RotateCcw, Sparkles, Zap } from "lucide-react";
 import { api } from "../api";
-import { fmtAED, fmtAge, isAutoDispatched } from "../lib";
-import { PageHeader, StatusBadge, ConfidenceBadge, Badge, EmptyState, TableSkeleton } from "../ui";
+import { fmtAED, fmtAge, fmtPct, isAutoDispatched } from "../lib";
+import { PageHeader, Metric, StatusBadge, ConfidenceBadge, Badge, EmptyState, TableSkeleton } from "../ui";
 import { TouchlessRationale } from "../components/TouchlessRationale";
 import { ClawbackModal } from "../components/ClawbackModal";
 import { InvoiceChatTrigger } from "../components/InvoiceChatTrigger";
@@ -11,10 +11,25 @@ import type { DispatchTrackingRow, Invoice } from "../types";
 
 export function FinOpsDispatchTracking() {
   const { data, isLoading } = useQuery({ queryKey: ["dispatch-tracking"], queryFn: api.dispatchTracking, refetchInterval: 5_000 });
+  const { data: stp } = useQuery({ queryKey: ["m-stp"], queryFn: api.metricsStp, refetchInterval: 5_000 });
   const [whyFor, setWhyFor] = useState<Invoice | null>(null);
   const [clawbackFor, setClawbackFor] = useState<Invoice | null>(null);
   const [resending, setResending] = useState<string | null>(null);
   const [resendResult, setResendResult] = useState<Record<string, { ok: boolean; msg: string }>>({});
+
+  // Live KPI strip — counts derived from /dispatch/tracking right now.
+  const kpi = useMemo(() => {
+    const rows = data ?? [];
+    let dispatched = 0, generated = 0, awaitingApproval = 0, autoCount = 0, totalAED = 0;
+    for (const r of rows) {
+      if (r.status === "dispatched") dispatched += 1;
+      else if (r.status === "generated") generated += 1;
+      if (!r.client_approval_status || r.client_approval_status === "pending") awaitingApproval += 1;
+      if (isAutoDispatched(r.status) && !r.client_approval_status) autoCount += 1;
+      totalAED += r.total_incl_vat ?? r.amount ?? 0;
+    }
+    return { rows: rows.length, dispatched, generated, awaitingApproval, autoCount, totalAED };
+  }, [data]);
 
   async function resend(id: string) {
     setResending(id);
@@ -56,6 +71,14 @@ export function FinOpsDispatchTracking() {
   return (
     <div>
       <PageHeader icon={Radar} title="Dispatch tracking" description="Every invoice's dispatch state and client approval, end to end. The AUTO chip marks fully touchless dispatches." />
+
+      {/* Live KPI strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <Metric label="Total tracked" value={kpi.rows.toString()} hint={`${fmtAED(kpi.totalAED)} billed`} />
+        <Metric label="Dispatched" value={kpi.dispatched.toString()} hint={kpi.autoCount > 0 ? `${kpi.autoCount} fully touchless` : "no touchless yet"} accent={kpi.autoCount > 0} />
+        <Metric label="Pending dispatch" value={kpi.generated.toString()} hint={kpi.generated === 0 ? "queue clean" : "awaiting send"} accent={kpi.generated === 0} />
+        <Metric label="Touchless rate" value={stp ? fmtPct(stp.touchless_rate) : "-"} hint={stp ? `target ${fmtPct(stp.target)}` : "no STP data"} accent={stp ? stp.touchless_rate >= stp.target : false} />
+      </div>
       <div className="card-flush">
         <div className="table-wrap">
           <table className="data-table">

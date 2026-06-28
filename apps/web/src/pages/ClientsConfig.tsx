@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, Check, Plus, X } from "lucide-react";
+import { Building2, Check, Plus, X, Mail, Upload, MessageCircle } from "lucide-react";
 import { api } from "../api";
-import { cn, TASC_ENTITY } from "../lib";
+import { cn, fmtAED, fmtAge, TASC_ENTITY } from "../lib";
 import { PageHeader, Panel, Badge, Spinner, EmptyState } from "../ui";
 import { Select } from "../components/Select";
 
@@ -15,10 +15,34 @@ const DISPATCH_RULES = [
 ];
 const PROFILES = ["standard", "regulated", "lite"];
 
+/**
+ * Derive the channel chips for a client from its actual settings - not a
+ * hardcoded array. Email is on when there's at least one watched mailbox;
+ * WhatsApp when `whatsapp_enabled`; Portal is always on (it's the universal
+ * fallback channel).
+ */
+function clientChannels(settings: Record<string, unknown> | undefined): { id: string; label: string; icon: typeof Mail }[] {
+  const s = settings ?? {};
+  const channels: { id: string; label: string; icon: typeof Mail }[] = [
+    { id: "portal", label: "Portal upload", icon: Upload },
+  ];
+  const mailboxes = Array.isArray(s.watched_mailboxes) ? s.watched_mailboxes : [];
+  if (mailboxes.length > 0) {
+    channels.push({ id: "email", label: `Email · ${mailboxes.length} mailbox${mailboxes.length === 1 ? "" : "es"}`, icon: Mail });
+  }
+  if (s.whatsapp_enabled) {
+    channels.push({ id: "whatsapp", label: "WhatsApp", icon: MessageCircle });
+  }
+  return channels;
+}
+
 export function ClientsConfig() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const { data: clients, isLoading } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
+  // Pull invoices once so per-client live numbers stay fresh and we don't
+  // refetch per row.
+  const { data: invoices } = useQuery({ queryKey: ["invoices"], queryFn: () => api.listInvoices(), refetchInterval: 6_000 });
   const active = params.get("c") ?? clients?.[0]?.code;
   const client = clients?.find((c) => c.code === active);
   const [showNew, setShowNew] = useState(false);
@@ -35,6 +59,28 @@ export function ClientsConfig() {
     setMarkup((s.markup_pct as number) ?? 0.15);
     setThreshold((s.threshold_aed as number) ?? (s.validation_threshold_aed as number) ?? 60000);
   }, [client]);
+
+  // Live per-client stats derived from /invoices.
+  const stats = useMemo(() => {
+    const m: Record<string, { count: number; dispatched: number; pending: number; total_aed: number; latest_period: string | null; latest_at: string | null }> = {};
+    for (const i of invoices ?? []) {
+      const c = i.client_code;
+      if (!c) continue;
+      const row = m[c] ?? { count: 0, dispatched: 0, pending: 0, total_aed: 0, latest_period: null, latest_at: null };
+      row.count += 1;
+      if (i.status === "dispatched") row.dispatched += 1;
+      else if (i.status === "generated") row.pending += 1;
+      row.total_aed += i.total_incl_vat ?? i.amount ?? 0;
+      const at = i.dispatched_at ?? null;
+      if (at && (!row.latest_at || at > row.latest_at)) {
+        row.latest_at = at;
+        row.latest_period = i.period;
+      }
+      m[c] = row;
+    }
+    return m;
+  }, [invoices]);
+  const activeStats = active ? stats[active] : undefined;
 
   const save = useMutation({
     mutationFn: () => api.updateClientSettings(active!, { dispatch_rule: rule, validation_profile: profile, markup_pct: markup, threshold_aed: threshold }),
@@ -53,15 +99,23 @@ export function ClientsConfig() {
         <Panel title="Clients" bodyClassName="p-0">
           {isLoading && <div className="p-4 text-sm text-ink-500 flex items-center gap-2"><Spinner /> Loading…</div>}
           <ul className="max-h-[60vh] overflow-y-auto">
-            {clients?.map((c) => (
-              <li key={c.code}>
-                <button onClick={() => { const p = new URLSearchParams(params); p.set("c", c.code); setParams(p); }}
-                  className={cn("w-full text-left px-4 py-2.5 border-b border-ink-100 hover:bg-ink-50", active === c.code && "bg-brand-50")}>
-                  <div className="text-sm font-medium text-ink-900">{c.code}</div>
-                  <div className="text-2xs text-ink-500 truncate">{c.name}</div>
-                </button>
-              </li>
-            ))}
+            {clients?.map((c) => {
+              const cs = stats[c.code];
+              return (
+                <li key={c.code}>
+                  <button onClick={() => { const p = new URLSearchParams(params); p.set("c", c.code); setParams(p); }}
+                    className={cn("w-full text-left px-4 py-2.5 border-b border-ink-100 hover:bg-ink-50", active === c.code && "bg-brand-50")}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-sm font-medium text-ink-900 truncate">{c.code}</div>
+                      {cs && cs.count > 0 && (
+                        <span className="text-2xs text-ink-400 tnum shrink-0">{cs.count} inv</span>
+                      )}
+                    </div>
+                    <div className="text-2xs text-ink-500 truncate">{c.name}</div>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </Panel>
 
@@ -72,14 +126,42 @@ export function ClientsConfig() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <Field label="Billing entity" value={TASC_ENTITY.name} />
                 <Field label="TRN" value={TASC_ENTITY.trn} />
-                <Field label="Currency" value="AED" />
+                <Field label="Currency" value={(client.settings as Record<string, unknown> | undefined)?.currency as string ?? "AED"} />
                 <Field label="City" value={client.city ?? "-"} />
               </div>
             </Panel>
 
-            <Panel title="Input channels">
-              <div className="flex flex-wrap gap-2">{["Email", "Portal upload", "WhatsApp"].map((ch) => <Badge key={ch} tone="blue" dot={false}>{ch}</Badge>)}</div>
-              <p className="text-xs text-ink-400 mt-2">Email + portal are live; WhatsApp via the Meta Cloud API bridge.</p>
+            {/* Live activity strip — derived from /invoices for this client */}
+            <Panel title="Live activity" subtitle="Real-time counts from the pipeline">
+              {activeStats && activeStats.count > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <StatTile label="Invoices" value={activeStats.count.toString()} tone="default" />
+                  <StatTile label="Dispatched" value={activeStats.dispatched.toString()} tone={activeStats.dispatched > 0 ? "green" : "default"} />
+                  <StatTile label="Pending dispatch" value={activeStats.pending.toString()} tone={activeStats.pending > 0 ? "amber" : "default"} />
+                  <StatTile label="Total billed" value={fmtAED(activeStats.total_aed)} tone="default" hint={activeStats.latest_period ? `latest ${activeStats.latest_period}${activeStats.latest_at ? ` · ${fmtAge(activeStats.latest_at)} ago` : ""}` : undefined} />
+                </div>
+              ) : (
+                <p className="text-xs text-ink-500">No invoices generated for this client yet. Submit a timesheet to see numbers populate here.</p>
+              )}
+            </Panel>
+
+            <Panel title="Input channels" subtitle="Derived from this client's settings">
+              <div className="flex flex-wrap gap-2">
+                {clientChannels(client.settings as Record<string, unknown> | undefined).map((ch) => {
+                  const Icon = ch.icon;
+                  return (
+                    <Badge key={ch.id} tone="blue" dot={false}>
+                      <Icon size={11} /> {ch.label}
+                    </Badge>
+                  );
+                })}
+              </div>
+              {Array.isArray((client.settings as Record<string, unknown> | undefined)?.watched_mailboxes) &&
+                ((client.settings as Record<string, unknown>).watched_mailboxes as string[]).length > 0 && (
+                <p className="text-xs text-ink-500 mt-2">
+                  Watched: <span className="font-mono">{((client.settings as Record<string, unknown>).watched_mailboxes as string[]).join(", ")}</span>
+                </p>
+              )}
             </Panel>
 
             <Panel title="Processing parameters" actions={<button className="btn-primary btn-sm" disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? <Spinner /> : <Check size={14} />} Save</button>}>
@@ -93,6 +175,17 @@ export function ClientsConfig() {
           </div>
         ) : <EmptyState icon={Building2} title="Select a client" />}
       </div>
+    </div>
+  );
+}
+
+function StatTile({ label, value, tone = "default", hint }: { label: string; value: string; tone?: "default" | "green" | "amber"; hint?: string }) {
+  const toneCls = tone === "green" ? "text-emerald-700" : tone === "amber" ? "text-amber-700" : "text-ink-900";
+  return (
+    <div className="rounded-lg border border-ink-200 px-3 py-2">
+      <div className="text-2xs uppercase tracking-wide text-ink-400 font-semibold">{label}</div>
+      <div className={`text-lg font-semibold tnum ${toneCls}`}>{value}</div>
+      {hint && <div className="text-2xs text-ink-400 mt-0.5 truncate">{hint}</div>}
     </div>
   );
 }
