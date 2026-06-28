@@ -33,4 +33,19 @@ log "change on $BRANCH: ${LOCAL:0:7} -> ${REMOTE:0:7}; deploying"
 git reset --hard "origin/$BRANCH"                 >>"$LOG" 2>&1
 docker compose up -d --build --remove-orphans     >>"$LOG" 2>&1
 docker image prune -f                             >>"$LOG" 2>&1
-log "deploy ok @ $(git rev-parse --short HEAD)"
+
+# Post-deploy health gate: confirm the stack actually serves before calling it a
+# success, so a broken build is surfaced in the log instead of silently "deployed".
+# Hits the api /health through the nginx edge (the same path real traffic uses).
+WEB_PORT="$(sed -n 's/^WEB_PORT=//p' .env 2>/dev/null | tr -d '"'\''' | head -n1)"
+WEB_PORT="${WEB_PORT:-8090}"
+healthy=0
+for _ in $(seq 1 30); do
+  if curl -fsS "http://localhost:${WEB_PORT}/api/health" >/dev/null 2>&1; then healthy=1; break; fi
+  sleep 2
+done
+if [ "$healthy" = 1 ]; then
+  log "deploy ok @ $(git rev-parse --short HEAD) - health check passed"
+else
+  log "DEPLOY WARNING @ $(git rev-parse --short HEAD) - /api/health not OK after 60s; check 'docker compose logs'"
+fi
