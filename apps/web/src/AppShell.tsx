@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RotateCw, Search } from "lucide-react";
+import { RotateCw, Search, MessageCircle, Mail } from "lucide-react";
 import { usePersona, type Persona } from "./store";
 import { api } from "./api";
 import { cn } from "./lib";
 import { Logo } from "./components/Logo";
 import { CommandPalette } from "./components/CommandPalette";
 import { Assistant } from "./components/Assistant";
-import { SystemStatusFooter } from "./components/SystemStatusFooter";
 import { Select } from "./components/Select";
 
 const PERSONA_HOME: Record<Persona, string> = { finops: "/console", client: "/portal", finance: "/finance" };
@@ -115,9 +114,26 @@ export function AppShell() {
           {/* Acting-as Client identity - only relevant for the Client persona. */}
           {persona === "client" && <ActingAsPicker />}
 
-          {/* Six-dot system heartbeat - judges spot misconfig on stage at a glance. */}
-          <div className="hidden lg:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-white/20 bg-white/10 shrink-0" title="External services (api · db · openai · ocr · mail · dispatch)">
-            <SystemStatusFooter compact />
+          {/* Quick contact - WhatsApp + email, one click away during a demo. */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <a
+              href="https://wa.me/919400245958?text=Hi"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Chat on WhatsApp"
+              title="WhatsApp +91 94002 45958"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/20 bg-white/10 text-white/80 hover:bg-white/20 hover:border-white/30 transition-colors"
+            >
+              <MessageCircle size={15} />
+            </a>
+            <a
+              href="mailto:tai@cyberkunju.com"
+              aria-label="Send an email"
+              title="Email tai@cyberkunju.com"
+              className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/20 bg-white/10 text-white/80 hover:bg-white/20 hover:border-white/30 transition-colors"
+            >
+              <Mail size={15} />
+            </a>
           </div>
 
           <DemoResetButton />
