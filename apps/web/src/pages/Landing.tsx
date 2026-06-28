@@ -12,6 +12,7 @@ import { api } from "../api";
 import { fmtPct, cn } from "../lib";
 import { Logo } from "../components/Logo";
 import { WhatsAppDemo } from "../components/WhatsAppDemo";
+import { EmailDemo } from "../components/EmailDemo";
 
 /* ────────────────────────────── content ────────────────────────────── */
 
@@ -92,7 +93,8 @@ function LandingNav() {
           </span>
         </Link>
         <nav className="hidden md:flex items-center gap-8 text-sm text-ink-600">
-          <a href="#whatsapp" className="hover:text-ink-900 transition-colors">Live demo</a>
+          <a href="#whatsapp" className="hover:text-ink-900 transition-colors">WhatsApp</a>
+          <a href="#email" className="hover:text-ink-900 transition-colors">Email</a>
           <a href="#how" className="hover:text-ink-900 transition-colors">How it works</a>
           <a href="#capabilities" className="hover:text-ink-900 transition-colors">Capabilities</a>
           <a href="#personas" className="hover:text-ink-900 transition-colors">For your team</a>
@@ -116,10 +118,9 @@ function Hero() {
         <div className="grid items-center gap-12 lg:gap-16 lg:grid-cols-[1.15fr_minmax(320px,400px)]">
           <div>
             <Reveal>
-              <div className="inline-flex items-center gap-2 rounded-full border border-brand-200 bg-brand-50/70 px-3 py-1 text-2xs font-semibold text-brand-700">
-                TASC Outsourcing
-                <span className="h-1 w-1 rounded-full bg-brand-400" />
-                United Arab Emirates
+              <div className="flex items-center gap-3 text-2xs font-semibold uppercase tracking-[0.16em] text-ink-500">
+                <span className="h-px w-9 bg-brand-500" />
+                TASC Outsourcing, United Arab Emirates
               </div>
             </Reveal>
             <Reveal delay={0.05}>
@@ -339,6 +340,57 @@ function WhatsAppSection() {
   );
 }
 
+/* ────────────────────────────── email ────────────────────────────── */
+
+const EMAIL_FEATURES: { icon: typeof Inbox; title: string; body: string }[] = [
+  { icon: Inbox, title: "A watched inbox", body: "TIA monitors a shared mailbox and picks up timesheets the moment they land." },
+  { icon: Mail, title: "Replies in the thread", body: "The invoice PDF comes back as a reply, so the whole exchange stays in one place." },
+  { icon: Layers, title: "Handles the mess", body: "Quoted replies, forwards, mixed attachments, and unknown senders are all sorted out." },
+  { icon: Link2, title: "Logged on every mail", body: "Each inbound and outbound message is written to the tamper-evident audit chain." },
+];
+
+function EmailSection() {
+  return (
+    <section id="email" className="relative scroll-mt-20">
+      <Container className="py-20 lg:py-28">
+        <div className="grid items-center gap-12 lg:gap-16 lg:grid-cols-2">
+          <Reveal className="order-2 lg:order-1">
+            <EmailDemo />
+          </Reveal>
+          <div className="order-1 lg:order-2">
+            <Reveal>
+              <Eyebrow>Over email</Eyebrow>
+              <h2 className="mt-2 text-3xl sm:text-4xl xl:text-5xl font-semibold tracking-tight text-ink-900 max-w-2xl leading-[1.05]">
+                Forward a timesheet, get the invoice by return.
+              </h2>
+              <p className="mt-4 text-base sm:text-lg text-ink-600 leading-relaxed max-w-2xl">
+                TIA runs a shared mailbox. A client emails the timesheet in, the agent reads it,
+                validates it, and replies with the finished tax invoice in the same thread. Nobody
+                re-keys a thing.
+              </p>
+            </Reveal>
+            <div className="mt-10 grid sm:grid-cols-2 gap-x-8 gap-y-7">
+              {EMAIL_FEATURES.map((f, i) => (
+                <Reveal key={f.title} delay={(i % 2) * 0.06}>
+                  <div className="flex gap-3.5">
+                    <span className="grid place-items-center h-10 w-10 rounded-xl bg-brand-50 text-brand-600 ring-1 ring-brand-100 shrink-0">
+                      <f.icon size={18} strokeWidth={2} />
+                    </span>
+                    <div>
+                      <h3 className="text-base font-semibold text-ink-900">{f.title}</h3>
+                      <p className="mt-0.5 text-sm text-ink-500 leading-relaxed">{f.body}</p>
+                    </div>
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Container>
+    </section>
+  );
+}
+
 /* ────────────────────────────── live metrics ────────────────────────────── */
 
 function MetricsStrip() {
@@ -537,6 +589,7 @@ export function Landing() {
         <Hero />
         <MetricsStrip />
         <WhatsAppSection />
+        <EmailSection />
         <PipelineSection />
         <CapabilitiesSection />
         <PersonasSection />
