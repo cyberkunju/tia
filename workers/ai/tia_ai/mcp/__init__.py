@@ -30,6 +30,15 @@ mcp = FastMCP(
     # mount the sub-app under /mcp in api/app.py, so set the internal path to
     # "/" — the public URL ends up at /mcp (not /mcp/mcp).
     streamable_http_path="/",
+    # Stateless + JSON responses. The API runs multiple uvicorn workers and sits
+    # behind nginx + Cloudflare; a stateful SSE session would break because the
+    # follow-up request can land on a different worker that doesn't hold the
+    # in-memory session (causing client hangs). Stateless makes every JSON-RPC
+    # request self-contained, and json_response returns plain application/json
+    # instead of an SSE stream — proxy- and multi-worker-safe, which is exactly
+    # what a request/response tool server needs.
+    stateless_http=True,
+    json_response=True,
 )
 
 # Eager import to register every @mcp.tool wrapper on the singleton above.

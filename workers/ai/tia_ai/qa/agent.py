@@ -1441,6 +1441,128 @@ def _invoke_tool(session: Session, name: str, args: dict, client_scope: str | No
         return {"error": str(e)}
 
 
+def tool_list_documents(
+    session: Session,
+    status: str | None = None,
+    routing: str | None = None,
+    limit: int = 50,
+    scope: str | None = None,
+) -> dict:
+    """List documents with their timesheet status/routing — the FinOps pipeline &
+    review/approval queue (mirrors the web console). Filter by `status`
+    (e.g. 'awaiting_review', 'invoice_generated', 'approved', 'rejected') or
+    `routing` ('hitl' | 'auto' | 'escalate'). Use this to SEE what needs human
+    review before acting with approve_timesheet / reject_timesheet."""
+    from ..models import DocAsset, Timesheet
+
+    rows = (
+        session.query(DocAsset).order_by(DocAsset.uploaded_at.desc()).limit(500).all()
+    )
+    limit = max(1, min(int(limit or 50), 200))
+    out: list[dict] = []
+    for d in rows:
+        ts = (
+            session.query(Timesheet)
+            .filter_by(doc_id=d.id)
+            .order_by(Timesheet.created_at.desc())
+            .first()
+        )
+        if scope and ts and ts.client_code and ts.client_code != scope:
+            continue
+        st = ts.status if ts else "ingested"
+        rt = ts.routing if ts else None
+        if status and st != status:
+            continue
+        if routing and rt != routing:
+            continue
+        out.append(
+            {
+                "doc_id": d.id,
+                "channel": d.source_channel,
+                "uploaded_by": d.uploaded_by,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+                "timesheet_id": ts.id if ts else None,
+                "client_code": ts.client_code if ts else None,
+                "period": ts.period if ts else None,
+                "status": st,
+                "routing": rt,
+                "confidence": ts.confidence_calibrated if ts else None,
+                "hitl_reason": ts.hitl_reason if ts else None,
+            }
+        )
+        if len(out) >= limit:
+            break
+    return {"found": bool(out), "count": len(out), "documents": out}
+
+
+def tool_finance_queue(session: Session, scope: str | None = None) -> dict:
+    """Invoices at/above the client's validation_threshold_aed (or with rule
+    exceptions) that need Finance sign-off before dispatch — the web 'Finance
+    approvals' queue."""
+    rows = (
+        session.query(Invoice)
+        .filter(Invoice.status.notin_(("dispatched", "rejected", "voided")))
+        .order_by(Invoice.created_at.desc())
+        .all()
+    )
+    out: list[dict] = []
+    for inv in rows:
+        if scope and inv.client_code != scope:
+            continue
+        c = session.get(Client, inv.client_code) if inv.client_code else None
+        threshold = float((c.settings or {}).get("validation_threshold_aed", 50000)) if c else 50000.0
+        rule_fails = [
+            r for r in (inv.rule_results or [])
+            if not r.get("passed") and r.get("severity") != "warning"
+        ]
+        if (inv.amount or 0) >= threshold or rule_fails:
+            out.append(
+                {
+                    "id": inv.id,
+                    "invoice_sequence_no": inv.invoice_sequence_no,
+                    "client_code": inv.client_code,
+                    "client_name": c.name if c else None,
+                    "period": inv.period,
+                    "amount": inv.amount,
+                    "total_incl_vat": inv.total_incl_vat,
+                    "currency": inv.currency,
+                    "threshold": threshold,
+                    "status": inv.status,
+                    "rule_failures": [r.get("rule_id") for r in rule_fails],
+                }
+            )
+    return {"found": bool(out), "count": len(out), "queue": out}
+
+
+def tool_reject_timesheet(
+    session: Session, timesheet_id: str, reason: str, scope: str | None = None
+) -> dict:
+    """Reject a HITL timesheet with a reason (the web 'reject' action). Records the
+    rejection on the audit chain and, if the submission came from WhatsApp, notifies
+    the sender of the reason. Pairs with approve_timesheet."""
+    ts = session.get(Timesheet, timesheet_id)
+    if not ts:
+        return {"ok": False, "reason": f"timesheet {timesheet_id} not found"}
+    if scope and ts.client_code != scope:
+        return _DENIED
+    from ..orchestrator import reject_timesheet as _reject
+
+    _reject(session, ts, by_user="agent", reason=reason)
+    notified = False
+    try:
+        from ..whatsapp import push_text_to_sender
+
+        note = (
+            "⚠️ Our team reviewed your timesheet and couldn't process it.\n"
+            f"Reason: {reason}\nPlease resend a corrected timesheet."
+        )
+        res = push_text_to_sender(session, ts, note)
+        notified = bool(res and res.get("ok"))
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "timesheet_id": ts.id, "status": ts.status, "whatsapp_notified": notified}
+
+
 _CITE_PAT = __import__("re").compile(r"\[(?P<kind>[a-zA-Z_]+):(?P<id>[A-Za-z0-9._\-]+)\]")
 
 

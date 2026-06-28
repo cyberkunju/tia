@@ -23,6 +23,7 @@ from ..db import SessionLocal
 from ..qa.agent import (
     tool_dispatch_invoice,
     tool_find_revenue_leakage,
+    tool_finance_queue,
     tool_get_client_settings,
     tool_get_contract,
     tool_get_employee_history,
@@ -30,10 +31,12 @@ from ..qa.agent import (
     tool_get_invoice,
     tool_get_timesheet,
     tool_list_clients,
+    tool_list_documents,
     tool_list_invoices,
     tool_metrics_stp,
     tool_prepare_sap_b1_payload,
     tool_recover_leakage,
+    tool_reject_timesheet,
     tool_resend_invoice_email,
     tool_search_employees,
     tool_verify_audit_chain,
@@ -211,6 +214,28 @@ def prepare_sap_b1_payload(invoice_id: str) -> dict:
         return tool_prepare_sap_b1_payload(s, invoice_id=invoice_id)
 
 
+@mcp.tool(
+    name="list_documents",
+    description="The FinOps pipeline & review/approval queue: documents with their timesheet status + routing. Filter status='awaiting_review' (or routing='hitl') to see exactly what needs human review. USE THIS before approve_timesheet / reject_timesheet.",
+    annotations={"readOnlyHint": True, "destructiveHint": False},
+)
+def list_documents(status: str | None = None, routing: str | None = None, limit: int = 50) -> dict:
+    """List documents + timesheet status/routing (the pipeline/review queue)."""
+    with _session() as s:
+        return tool_list_documents(s, status=status, routing=routing, limit=limit)
+
+
+@mcp.tool(
+    name="finance_queue",
+    description="Invoices at/above the client threshold or with rule exceptions awaiting Finance sign-off before dispatch (the web 'Finance approvals' queue).",
+    annotations={"readOnlyHint": True, "destructiveHint": False},
+)
+def finance_queue() -> dict:
+    """List invoices needing Finance approval."""
+    with _session() as s:
+        return tool_finance_queue(s)
+
+
 # ---------- WRITES -----------------------------------------------------------
 
 
@@ -270,6 +295,17 @@ def approve_timesheet(timesheet_id: str, override_justification: str | None = No
 
 
 @mcp.tool(
+    name="reject_timesheet",
+    description="WRITE. Reject a HITL timesheet with a reason (the web 'reject' action). Records it on the audit chain and notifies the WhatsApp sender if the submission came from WhatsApp.",
+    annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False},
+)
+def reject_timesheet(timesheet_id: str, reason: str) -> dict:
+    """Reject a HITL timesheet with a reason."""
+    with _session() as s:
+        return tool_reject_timesheet(s, timesheet_id=timesheet_id, reason=reason)
+
+
+@mcp.tool(
     name="resend_invoice_email",
     description="WRITE. Re-send the invoice email with a fresh idempotency key.",
     annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
@@ -292,10 +328,13 @@ __all__ = [
     "verify_audit_chain",
     "metrics_stp",
     "list_clients",
+    "list_documents",
+    "finance_queue",
     "prepare_sap_b1_payload",
     "recover_leakage",
     "dispatch_invoice",
     "clawback_invoice",
     "approve_timesheet",
+    "reject_timesheet",
     "resend_invoice_email",
 ]
