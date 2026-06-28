@@ -1,7 +1,7 @@
 """Data-isolation: a client-scoped chat must not read another client's data.
 
 The scope boundary is enforced in the tool functions (the server injects `scope`,
-never the model), so we test the tools directly — no LLM required.
+never the model), so we test the tools directly - no LLM required.
 """
 
 from __future__ import annotations

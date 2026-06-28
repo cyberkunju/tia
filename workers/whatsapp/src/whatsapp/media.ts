@@ -1,5 +1,5 @@
 /**
- * Media service — two-hop inbound download from the Meta Graph API.
+ * Media service - two-hop inbound download from the Meta Graph API.
  *
  *   hop 1: GET {graphBaseUrl}/{mediaId}            → { url, mime_type, file_size }
  *   hop 2: GET {url}  (with the Bearer token)      → the binary bytes
@@ -98,7 +98,7 @@ export function createMediaService(deps: MediaServiceDeps): MediaService {
       return null;
     }
 
-    // Hop 1 — metadata.
+    // Hop 1 - metadata.
     let metaUrl: string;
     let metaMime: string | undefined;
     let declaredSize: number | undefined;
@@ -151,7 +151,7 @@ export function createMediaService(deps: MediaServiceDeps): MediaService {
       return null;
     }
 
-    // Hop 2 — binary.
+    // Hop 2 - binary.
     try {
       const res = await fetchWithTimeout(
         fetchImpl,

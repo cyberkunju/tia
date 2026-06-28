@@ -1,5 +1,5 @@
 /**
- * Internal notify surface — the outbound path the core pipeline calls to reach the user in chat.
+ * Internal notify surface - the outbound path the core pipeline calls to reach the user in chat.
  *
  *   POST /internal/notify   (guarded by x-internal-secret)
  *   body: { to, kind: "text"|"document"|"buttons", text?, url?, filename?, caption?, buttons? }

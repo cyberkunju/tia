@@ -17,7 +17,7 @@ from ..config import STAGING_DIR
 
 BRAND_HEX = "#d9531e"  # TASC orange-red
 
-# ponytail: emitting Typst source by string templating — safer than ad-hoc DSL,
+# ponytail: emitting Typst source by string templating - safer than ad-hoc DSL,
 # upgrade path is a sidecar .typ template file if the layout grows.
 
 _MARKUP_SPECIALS = ("\\", "#", "*", "_", "`", "$", "<", ">", "[", "]", "~", "@")
@@ -97,7 +97,7 @@ _TEMPLATE = r"""
   stroke: 0.4pt + rgb("#cccccc"),
   fill: row_fill,
   table.header(
-    [*Emp ID*], [*Employee — Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Line Total*],
+    [*Emp ID*], [*Employee - Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Line Total*],
   ),
   {rows}
 )
@@ -149,7 +149,7 @@ def _warning_block(invoice: dict) -> str:
         "#v(8pt)\n"
         '#block(fill: rgb("#fff4ec"), stroke: 0.6pt + rgb("{brand}"), '
         "inset: 10pt, radius: 2pt, width: 100%)[\n"
-        '  #text(fill: rgb("{brand}"), weight: "bold")[⚠ Above client threshold] — '
+        '  #text(fill: rgb("{brand}"), weight: "bold")[⚠ Above client threshold] - '
         "requires Finance approval before dispatch.\n"
         "]\n"
     ).replace("{brand}", BRAND_HEX)
@@ -176,14 +176,14 @@ def _sac_block(invoice: dict) -> str:
     return (
         "\n#v(4pt)\n"
         f'#text(size: 9pt, fill: rgb("#444"))[Service Accounting Code (SAC): *{_esc(sac)}* '
-        "— Contract Staffing Services]\n"
+        "- Contract Staffing Services]\n"
     )
 
 
 def _service_code_for(invoice: dict) -> tuple[str, str]:
     """Return (code, description) shown on every Tax Invoice.
 
-    India uses HSN/SAC under GST — for staffing services that's SAC 998513
+    India uses HSN/SAC under GST - for staffing services that's SAC 998513
     ("Contract Staffing Services") or 998514 ("Temporary Staffing Services").
     UAE has no equivalent mandated taxonomy, so we surface the SAC code anyway
     as an informational service classification (TASC's actual practice on
@@ -193,8 +193,8 @@ def _service_code_for(invoice: dict) -> tuple[str, str]:
     sac = invoice.get("sac_code")
     if sac:
         return sac, "Contract Staffing Services"
-    # UAE default — surface SAC as informational classification, not as a tax code
-    return "SAC 998513 (informational)", "Manpower supply services — UAE FTA service category"
+    # UAE default - surface SAC as informational classification, not as a tax code
+    return "SAC 998513 (informational)", "Manpower supply services - UAE FTA service category"
 
 
 def render_invoice(invoice: dict, invoice_id: str) -> str:
@@ -208,7 +208,7 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
     total_incl = float(invoice.get("total_incl_vat") or round(amount + vat_amount, 2))
     seq_no = invoice.get("invoice_sequence_no") or f"TIA-{invoice_id}"
     supplier_trn = invoice.get("supplier_trn") or "100123456700003"
-    customer_trn = invoice.get("customer_trn") or "—"
+    customer_trn = invoice.get("customer_trn") or "-"
     place_of_supply = invoice.get("place_of_supply") or "UAE"
     today = dt.date.today().isoformat()
     due_date = invoice.get("due_date") or (dt.date.today() + dt.timedelta(days=30)).isoformat()
@@ -217,8 +217,8 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
     source = _TEMPLATE.format(
         seq_no=_esc(seq_no),
         brand=BRAND_HEX,
-        client=_esc(invoice.get("client_name") or invoice.get("client_code") or "—"),
-        period=_esc(invoice.get("period") or "—"),
+        client=_esc(invoice.get("client_name") or invoice.get("client_code") or "-"),
+        period=_esc(invoice.get("period") or "-"),
         amount=_num(amount),
         vat_pct=_num(vat_rate * 100),
         vat_amount=_num(vat_amount),
@@ -230,7 +230,7 @@ def render_invoice(invoice: dict, invoice_id: str) -> str:
         due_date=_esc(due_date),
         service_code=_esc(service_code),
         service_desc=_esc(service_desc),
-        rows=rows or "[—], [no line items], [], [], [], [], [],",
+        rows=rows or "[-], [no line items], [], [], [], [], [],",
         warning=_warning_block(invoice),
         exceptions=_exceptions_block(invoice),
         hash=audit,
@@ -275,6 +275,267 @@ def _demo() -> None:
     out = render_invoice(inv, "demo-001")
     assert Path(out).exists() and Path(out).stat().st_size > 1000, out
     print("typst tax invoice rendered:", out, Path(out).stat().st_size, "bytes")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Credit-note rendering - Page 2 appended to the original Tax Invoice.
+#
+#  UAE FTA Decision No. 7 of 2019 permits a single physical document that
+#  shows "Tax Invoice / Tax Credit Note" - that's the legal basis for combining
+#  the two on one PDF. We keep them on separate pages (page 1 unchanged,
+#  page 2 = credit note) so a buyer's AP system can reconcile cleanly.
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+_CREDIT_NOTE_REASON_FRIENDLY: dict[str, str] = {
+    "PRICING_ERROR": "Pricing error - the billing rate on the original invoice was incorrect",
+    "GOODS_RETURNED": "Services returned or cancelled by the customer",
+    "DISCOUNT": "A post-sale discount was granted to the customer",
+    "DUPLICATE": "The original invoice was a duplicate of an earlier issuance",
+    "OTHER": "An adjustment was required (see reason text below)",
+}
+
+
+_CREDIT_NOTE_TEMPLATE = r"""
+#pagebreak()
+
+#set page(paper: "a4", margin: (x: 1.6cm, y: 1.6cm))
+#set text(size: 10pt, font: ("DejaVu Sans", "Liberation Sans", "Arial"))
+#let brand = rgb("{brand}")
+#let muted = rgb("#666666")
+#let row_fill = (_, row) => if row == 0 {{ rgb("#ececec") }} else {{ none }}
+
+#block(fill: rgb("#a31313"), inset: (x: 14pt, y: 12pt), width: 100%, radius: 2pt)[
+  #set text(fill: white)
+  #text(size: 22pt, weight: "bold")[Tax Credit Note]
+  #h(8pt) #text(size: 11pt)[TASC Outsourcing FZ-LLC]
+]
+
+#v(6pt)
+
+#block(fill: rgb("#fff4ec"), inset: 8pt, radius: 2pt)[
+  *Reference:* This Tax Credit Note adjusts Tax Invoice *{orig_seq}* dated *{orig_date}*.
+  Combined Tax Invoice / Tax Credit Note document - issued under FTA Decision No. 7 of 2019.
+]
+
+#v(8pt)
+
+#grid(columns: (1fr, 1fr), gutter: 10pt,
+  [
+    *Supplier* \
+    TASC Outsourcing FZ-LLC \
+    Dubai, UAE \
+    TRN: {supplier_trn}
+  ],
+  [
+    *Bill to* \
+    {client} \
+    {place_of_supply} \
+    TRN: {customer_trn}
+  ],
+)
+
+#v(8pt)
+
+#grid(columns: (1fr, 1fr, 1fr, 1fr), gutter: 6pt,
+  [*Credit Note No* \ {cn_seq}],
+  [*Issue Date* \ {cn_date}],
+  [*Period* \ {period}],
+  [*Currency* \ {currency}],
+)
+
+#v(6pt)
+
+#block(fill: rgb("#fafafa"), inset: (x: 10pt, y: 6pt), radius: 2pt)[
+  *Reason ({reason_code}):* {reason_friendly}
+  {reason_text_block}
+]
+
+#v(10pt)
+
+#text(size: 11pt, weight: "bold")[Reversal of charges]
+
+#table(
+  columns: (2.2cm, 1fr, 1cm, 2cm, 1.6cm, 1.8cm, 2.3cm),
+  align: (left, left, right, right, right, right, right),
+  stroke: 0.4pt + rgb("#cccccc"),
+  fill: row_fill,
+  table.header(
+    [*Emp ID*], [*Employee - Manpower supply service*], [*Days*], [*Prorated*], [*OT*], [*Reimb*], [*Reversed*],
+  ),
+  {rows}
+)
+
+#v(8pt)
+
+#align(right)[
+  #table(
+    columns: (4cm, 3cm),
+    align: (left, right),
+    stroke: none,
+    [Subtotal reversal (excl VAT)], [AED -{amount}],
+    [VAT @ {vat_pct}% reversal], [AED -{vat_amount}],
+    [#text(weight: "bold", fill: rgb("#a31313"))[Total credit (incl VAT)]],
+    [#text(weight: "bold", fill: rgb("#a31313"))[AED -{total_incl}]],
+  )
+]
+
+#v(14pt)
+#line(length: 100%, stroke: 0.3pt + muted)
+#v(4pt)
+#text(size: 7.5pt, fill: muted)[
+  Issued under UAE VAT Law Article 60 (tax credit notes), Article 62 (VAT adjustments),
+  and FTA Decision No. 7 of 2019 (combined Tax Invoice / Tax Credit Note document).
+  This credit note must be retained for 5 years (FTA tax records retention).
+  Audit hash: {hash}  ·  Generated by TIA (Touchless Invoice Agent).
+]
+"""
+
+
+def _credit_note_source(invoice_dict: dict, audit_hash: str) -> str:
+    """Render just the credit-note (page 2) Typst source given the invoice dict
+    plus the credit-note fields."""
+    import datetime as dt
+
+    reason_code = invoice_dict.get("credit_note_reason_code") or "OTHER"
+    reason_friendly = _CREDIT_NOTE_REASON_FRIENDLY.get(
+        reason_code, _CREDIT_NOTE_REASON_FRIENDLY["OTHER"]
+    )
+    reason_text = invoice_dict.get("credit_note_reason_text") or ""
+    reason_text_block = f"\n  #v(2pt) _Operator note:_ {_esc(reason_text)}\n" if reason_text else ""
+    issued_at = invoice_dict.get("credit_note_issued_at")
+    if isinstance(issued_at, dt.datetime):
+        cn_date = issued_at.date().isoformat()
+    elif isinstance(issued_at, str):
+        cn_date = issued_at[:10]
+    else:
+        cn_date = dt.date.today().isoformat()
+
+    amount = float(invoice_dict.get("amount") or invoice_dict.get("total_excl_vat") or 0)
+    vat_rate = float(invoice_dict.get("vat_rate") or 0.05)
+    vat_amount = float(invoice_dict.get("vat_amount") or round(amount * vat_rate, 2))
+    total_incl = float(invoice_dict.get("total_incl_vat") or round(amount + vat_amount, 2))
+
+    rows = "\n  ".join(_row_line(li) for li in invoice_dict.get("line_items", []))
+
+    return _CREDIT_NOTE_TEMPLATE.format(
+        brand=BRAND_HEX,
+        orig_seq=_esc(invoice_dict.get("invoice_sequence_no") or "-"),
+        orig_date=_esc(
+            (invoice_dict.get("created_at") or "")[:10]
+            if isinstance(invoice_dict.get("created_at"), str)
+            else dt.date.today().isoformat()
+        ),
+        supplier_trn=_esc(invoice_dict.get("supplier_trn") or "100123456700003"),
+        customer_trn=_esc(invoice_dict.get("customer_trn") or "-"),
+        place_of_supply=_esc(invoice_dict.get("place_of_supply") or "UAE"),
+        client=_esc(invoice_dict.get("client_name") or invoice_dict.get("client_code") or "-"),
+        cn_seq=_esc(invoice_dict.get("credit_note_sequence_no") or "-"),
+        cn_date=_esc(cn_date),
+        period=_esc(invoice_dict.get("period") or "-"),
+        currency=_esc(invoice_dict.get("currency") or "AED"),
+        reason_code=_esc(reason_code),
+        reason_friendly=_esc(reason_friendly),
+        reason_text_block=reason_text_block,
+        rows=rows or "[-], [no line items], [], [], [], [], [],",
+        amount=_num(amount),
+        vat_pct=_num(vat_rate * 100),
+        vat_amount=_num(vat_amount),
+        total_incl=_num(total_incl),
+        hash=audit_hash,
+    )
+
+
+def render_invoice_with_credit_note(invoice_obj) -> str:
+    """Re-render an invoice's PDF with the credit note appended as page 2.
+
+    `invoice_obj` is a SQLAlchemy `Invoice` row (we read its fields). The
+    rendered PDF replaces the original at `invoice.pdf_path` so the client
+    always sees the latest combined document. The original is preserved at
+    `<pdf>.v1.pdf` for audit.
+    """
+    import shutil
+
+    inv = {
+        "id": invoice_obj.id,
+        "client_code": invoice_obj.client_code,
+        "client_name": getattr(invoice_obj, "client_name", None),
+        "period": invoice_obj.period,
+        "amount": invoice_obj.amount,
+        "currency": invoice_obj.currency,
+        "line_items": invoice_obj.line_items or [],
+        "invoice_sequence_no": invoice_obj.invoice_sequence_no,
+        "supplier_trn": invoice_obj.supplier_trn,
+        "customer_trn": invoice_obj.customer_trn,
+        "vat_rate": invoice_obj.vat_rate,
+        "vat_amount": invoice_obj.vat_amount,
+        "total_excl_vat": invoice_obj.total_excl_vat,
+        "total_incl_vat": invoice_obj.total_incl_vat,
+        "sac_code": invoice_obj.sac_code,
+        "place_of_supply": invoice_obj.place_of_supply,
+        "due_date": invoice_obj.due_date,
+        "credit_note_sequence_no": invoice_obj.credit_note_sequence_no,
+        "credit_note_issued_at": invoice_obj.credit_note_issued_at,
+        "credit_note_reason_code": invoice_obj.credit_note_reason_code,
+        "credit_note_reason_text": invoice_obj.credit_note_reason_text,
+        "created_at": str(invoice_obj.created_at) if invoice_obj.created_at else None,
+    }
+    audit = _audit_hash(inv)
+    # 1) build page 1 (the original Tax Invoice) - same as render_invoice does
+    rows = "\n  ".join(_row_line(li) for li in inv.get("line_items", []))
+    amount = float(inv.get("amount") or 0)
+    vat_rate = float(inv.get("vat_rate") or 0.05)
+    vat_amount = float(inv.get("vat_amount") or round(amount * vat_rate, 2))
+    total_incl = float(inv.get("total_incl_vat") or round(amount + vat_amount, 2))
+    seq_no = inv.get("invoice_sequence_no") or f"TIA-{inv['id'][:8]}"
+    today = (
+        str(invoice_obj.created_at)[:10]
+        if invoice_obj.created_at
+        else __import__("datetime").date.today().isoformat()
+    )
+    due_date = inv.get("due_date") or today
+    service_code, service_desc = _service_code_for(inv)
+    page1 = _TEMPLATE.format(
+        seq_no=_esc(seq_no),
+        brand=BRAND_HEX,
+        client=_esc(inv.get("client_name") or inv.get("client_code") or "-"),
+        period=_esc(inv.get("period") or "-"),
+        amount=_num(amount),
+        vat_pct=_num(vat_rate * 100),
+        vat_amount=_num(vat_amount),
+        total_incl=_num(total_incl),
+        supplier_trn=_esc(inv.get("supplier_trn") or "100123456700003"),
+        customer_trn=_esc(inv.get("customer_trn") or "-"),
+        place_of_supply=_esc(inv.get("place_of_supply") or "UAE"),
+        issue_date=today,
+        due_date=_esc(due_date),
+        service_code=_esc(service_code),
+        service_desc=_esc(service_desc),
+        rows=rows or "[-], [no line items], [], [], [], [], [],",
+        warning="",  # the credit note supersedes any approval warning
+        exceptions="",
+        hash=audit,
+    )
+    # 2) append the credit note as page 2
+    page2 = _credit_note_source(inv, audit)
+    full_source = page1 + page2
+
+    inv_id = invoice_obj.id[:8]
+    typ_path = Path(STAGING_DIR) / f"invoice_{inv_id}_with_cn.typ"
+    new_pdf = Path(STAGING_DIR) / f"invoice_{inv_id}_with_cn.pdf"
+    typ_path.write_text(full_source, encoding="utf-8")
+
+    # preserve the original PDF (audit retention)
+    if invoice_obj.pdf_path and Path(invoice_obj.pdf_path).exists():
+        try:
+            archive = Path(invoice_obj.pdf_path).with_suffix(".v1.pdf")
+            if not archive.exists():
+                shutil.copy2(invoice_obj.pdf_path, archive)
+        except Exception:  # noqa: BLE001
+            pass
+
+    typst.compile(str(typ_path), output=str(new_pdf))
+    return str(new_pdf)
 
 
 if __name__ == "__main__":

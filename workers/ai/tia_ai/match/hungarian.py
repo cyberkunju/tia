@@ -2,7 +2,7 @@
 
 Generic invoice tools do a per-row fuzzy *lookup*. We do a global bipartite *assignment*
 so that, when a client submits several similar/duplicate names, two timesheet rows can't
-both claim the same employee — and a genuinely tied match surfaces as ambiguous (HITL).
+both claim the same employee - and a genuinely tied match surfaces as ambiguous (HITL).
 """
 
 from __future__ import annotations

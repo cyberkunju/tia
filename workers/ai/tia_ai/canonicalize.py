@@ -1,4 +1,4 @@
-"""Deterministic canonicalization — pure functions, no LLM.
+"""Deterministic canonicalization - pure functions, no LLM.
 
 Maps the messy real-world variants the brief throws at us (mixed leave codes,
 punch in/out, period spellings) onto canonical forms. Unit-checked in __main__.

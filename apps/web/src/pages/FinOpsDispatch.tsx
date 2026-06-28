@@ -6,6 +6,7 @@ import { Send, Check } from "lucide-react";
 import { api } from "../api";
 import { cn, fmtMoney } from "../lib";
 import { PageHeader, Panel, StatusBadge, EmptyState, Spinner } from "../ui";
+import { Select } from "../components/Select";
 
 const RULES = [
   { id: "alphabetical", label: "Alphabetical by employee" },
@@ -22,7 +23,7 @@ export function FinOpsDispatch() {
   const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
   const active = clientCode ?? clients?.[0]?.code;
   useEffect(() => {
-    if (!clientCode && active) nav(`/finops/dispatch/${active}`, { replace: true });
+    if (!clientCode && active) nav(`/console/dispatch/${active}`, { replace: true });
   }, [active, clientCode, nav]);
 
   const { data: invoices } = useQuery({
@@ -69,9 +70,14 @@ export function FinOpsDispatch() {
         title="Dispatch"
         description="Per-client ordering rule and dispatch queue."
         actions={
-          <select value={active} onChange={(e) => nav(`/finops/dispatch/${e.target.value}`)} className="select w-auto">
-            {clients?.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
-          </select>
+          <Select
+            className="w-auto min-w-[220px]"
+            value={active ?? ""}
+            onChange={(v) => nav(`/console/dispatch/${v}`)}
+            options={(clients ?? []).map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+            align="right"
+            ariaLabel="Select client"
+          />
         }
       />
 
@@ -107,7 +113,7 @@ export function FinOpsDispatch() {
             );
           })}
         </div>
-        {rule !== initialRule && <p className="text-xs text-amber-700 mt-2.5">Unsaved — “Save as default” to persist this client’s rule.</p>}
+        {rule !== initialRule && <p className="text-xs text-amber-700 mt-2.5">Unsaved - “Save as default” to persist this client’s rule.</p>}
       </Panel>
 
       <Panel title={`Queue · ${ordered.length} invoice${ordered.length === 1 ? "" : "s"}`}>
@@ -126,7 +132,7 @@ export function FinOpsDispatch() {
                   <span className="tnum text-xs text-ink-400 w-5 text-right">{i + 1}</span>
                   <div className="min-w-0">
                     <div className="font-medium text-sm text-ink-800 truncate">{inv.line_items[0]?.employee_name ?? inv.client_code}</div>
-                    <div className="text-2xs text-ink-400 font-mono">{inv.id.slice(0, 8)} · {inv.line_items[0]?.job_title ?? "—"}</div>
+                    <div className="text-2xs text-ink-400 font-mono">{inv.id.slice(0, 8)} · {inv.line_items[0]?.job_title ?? "-"}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -141,3 +147,4 @@ export function FinOpsDispatch() {
     </div>
   );
 }
+

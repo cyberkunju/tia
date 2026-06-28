@@ -24,7 +24,7 @@ def _ensure_columns() -> None:
     runs. We introspect each mapped table and add any missing column as NULLable
     (existing rows get NULL; new inserts use the ORM default). Portable across SQLite
     and Postgres; indexes/FKs are intentionally not back-filled (correctness over
-    optimisation — `create_all` covers them on a fresh DB).
+    optimisation - `create_all` covers them on a fresh DB).
     """
     insp = inspect(engine)
     for table in Base.metadata.sorted_tables:

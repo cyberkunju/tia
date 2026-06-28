@@ -58,3 +58,6 @@ infra/volumes/
 
 # Local-only remote-ops helper scripts (not part of the repo)
 /_remote_*.sh
+
+# Local reference material (briefs, sample DB) -- not part of the app
+/tasc/

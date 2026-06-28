@@ -1,4 +1,4 @@
-"""TASC Smart Bot + SAP — the orchestrator's "load payroll, run SAP, emit invoices" stage.
+"""TASC Smart Bot + SAP - the orchestrator's "load payroll, run SAP, emit invoices" stage.
 
 Brief §4.4: "Simulate or integrate a bot/ERP step that takes the consolidated
 file, processes payroll, and generates invoices." The architecture diagram
@@ -91,7 +91,7 @@ def build_consolidated_excel(session: Session, client_code: str, period: str) ->
     markup = float(contract.markup_pct) if contract else 0.20
     vat_rate = float(contract.vat_rate) if contract else 0.05
     sac = (contract.sac_code if contract else None) or ""
-    contract_type = contract.type if contract else "—"
+    contract_type = contract.type if contract else "-"
 
     payrolls = (
         session.query(Payroll)
@@ -150,7 +150,7 @@ def build_consolidated_excel(session: Session, client_code: str, period: str) ->
                 _money(bill_incl_vat),
                 p.currency or "AED",
                 emp.iban if emp else "",
-                "",  # Pay Date — TBD on actual SAP run
+                "",  # Pay Date - TBD on actual SAP run
                 contract_type,
                 sac,
                 "READY",
@@ -171,7 +171,7 @@ def _slug(s: str) -> str:
 
 
 # --------------------------------------------------------------------------
-# WPS SIF — Salary Information File (UAE Wages Protection System)
+# WPS SIF - Salary Information File (UAE Wages Protection System)
 # --------------------------------------------------------------------------
 
 # SIF v1.0 record spec (per Central Bank / MOHRE):
@@ -185,7 +185,7 @@ def _slug(s: str) -> str:
 # with the Central Bank. For the demo we generate a schema-shaped sample.
 
 
-# Sample TASC MOHRE employer ID (13 digits) — demo only
+# Sample TASC MOHRE employer ID (13 digits) - demo only
 TASC_MOHRE_ID = "9999000000001"
 
 
@@ -208,7 +208,7 @@ def build_wps_sif(session: Session, client_code: str, period: str) -> Path:
     for p in payrolls:
         emp = session.get(Employee, p.emp_id)
         iban = (emp.iban if emp else "") or ""
-        # Real IBAN is 23 chars starting AE — our seed has zero-padded fakes; preserve as-is
+        # Real IBAN is 23 chars starting AE - our seed has zero-padded fakes; preserve as-is
         net = _d(p.net_pay).quantize(CENT, rounding=ROUND_HALF_UP)
         total_salaries += net
         # EDR | EmpID | IBAN | Salary frequency | "Net" | Net pay (cents) | currency | period (MMYYYY)
@@ -233,7 +233,7 @@ def build_wps_sif(session: Session, client_code: str, period: str) -> Path:
             "SCR",
             TASC_MOHRE_ID,
             "TASC Outsourcing FZ-LLC",
-            "EBILUAEAXXX",  # sample SWIFT — Emirates Islamic
+            "EBILUAEAXXX",  # sample SWIFT - Emirates Islamic
             today.strftime("%Y%m%d"),
             pay_date,
             "AED",
@@ -249,13 +249,13 @@ def build_wps_sif(session: Session, client_code: str, period: str) -> Path:
 
 
 # --------------------------------------------------------------------------
-# Step ② — Process Payroll (cosmetic but visible in the pipeline timeline)
+# Step ② - Process Payroll (cosmetic but visible in the pipeline timeline)
 # --------------------------------------------------------------------------
 
 
 def process_payroll_event_payload(consolidated_path: Path, sif_path: Path, n_rows: int) -> dict:
     """Payload for the `payroll_processed_by_sap` event so it reads convincingly
-    on the demo timeline. The mock has no real SAP behaviour — we just stage the
+    on the demo timeline. The mock has no real SAP behaviour - we just stage the
     artifacts and emit the event."""
     return {
         "engine": "smart_bot_sap (mock)",
@@ -267,7 +267,7 @@ def process_payroll_event_payload(consolidated_path: Path, sif_path: Path, n_row
 
 
 def _demo() -> None:
-    """Offline self-check — verifies SCR/EDR shape against a tiny payload."""
+    """Offline self-check - verifies SCR/EDR shape against a tiny payload."""
     scr = "|".join(["SCR", "1" * 13, "X", "Y", "20260601", "20260601", "AED", "100000", "1"])
     edr = "|".join(["EDR", "EMP1", "AE000", "M", "Net", "100000", "AED", "062026"])
     assert scr.split("|")[0] == "SCR"

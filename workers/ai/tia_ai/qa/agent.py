@@ -1,4 +1,4 @@
-"""TIA `/qa` chat agent — context-aware Q&A grounded in the DB.
+"""TIA `/qa` chat agent - context-aware Q&A grounded in the DB.
 
 Brief §4.8 cross-cutting requirement: "context-aware AI chat assistant that
 understands the current client/invoice/timesheet context."
@@ -10,7 +10,7 @@ Design:
   backed by a tool result, and if no tool returns relevant data the model
   must answer "no evidence in TIA's database."
 - Returns: {answer, citations:[{kind,id,snippet}], tool_calls:[...]}
-- Swap-ready for local models — point OPENAI_BASE_URL at a vLLM/Ollama server.
+- Swap-ready for local models - point OPENAI_BASE_URL at a vLLM/Ollama server.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from ..config import (
     OPENAI_BASE_URL,
     OPENAI_MODEL,
 )
+from ..ai.llm import is_reasoning_model
 from ..models import (
     Client,
     Contract,
@@ -65,7 +66,10 @@ CONVERSATION (be genuinely helpful, not robotic):
   with and steer back. Don't refuse the on-topic parts of a mixed message.
 
 STYLE:
-- Short, warm, WhatsApp-friendly. Plain sentences, no markdown headers or tables.
+- Short, warm, WhatsApp-friendly. REPLY IN PLAIN PROSE — no markdown at all: no
+  **bold**, *italics*, bullet/numbered lists, headers (#), backticks or tables.
+  The chat UIs render text verbatim, so markdown leaks as raw asterisks. Use plain
+  sentences; separate points with line breaks or semicolons.
 - You are scoped to ONE client and can only see/discuss that client's data.
 
 SECURITY:
@@ -152,8 +156,8 @@ def route_intent(text: str) -> str | None:
 
 # ---------- Tool implementations (DB-grounded, no LLM in here) ----------
 #
-# Every tool takes `scope` (a client_code or None). When scope is set — i.e. a Client
-# persona is asking — the tool refuses to return data belonging to any other client.
+# Every tool takes `scope` (a client_code or None). When scope is set - i.e. a Client
+# persona is asking - the tool refuses to return data belonging to any other client.
 # This is the data-isolation boundary: the LLM cannot widen its own scope because the
 # server injects `scope`, never the model.
 
@@ -162,9 +166,10 @@ _DENIED = {"found": False, "access": "denied", "reason": "outside your client sc
 
 def _inv_client(session: Session, entity_id: str) -> str | None:
     """Resolve the owning client_code for an invoice/timesheet/client entity id."""
-    inv = session.get(Invoice, entity_id) or session.query(Invoice).filter(
-        Invoice.invoice_sequence_no == entity_id
-    ).first()
+    inv = (
+        session.get(Invoice, entity_id)
+        or session.query(Invoice).filter(Invoice.invoice_sequence_no == entity_id).first()
+    )
     if inv:
         return inv.client_code
     ts = session.get(Timesheet, entity_id)
@@ -282,7 +287,7 @@ def tool_get_invoice(session: Session, invoice_id: str, scope: str | None = None
 
 def tool_get_timesheet(session: Session, timesheet_id: str, scope: str | None = None) -> dict:
     """Explain one timesheet: status, routing, confidence, why it was flagged, and a
-    summary of its validations — so users can ask 'why is this in review?'."""
+    summary of its validations - so users can ask 'why is this in review?'."""
     ts = session.get(Timesheet, timesheet_id)
     if not ts:
         return {"found": False, "timesheet_id": timesheet_id}
@@ -547,7 +552,7 @@ def answer(
     guess which entity to look up first.
 
     client_scope (optional): a client_code. When set (Client persona), every tool is
-    constrained to that client — the model cannot read another client's data. The
+    constrained to that client - the model cannot read another client's data. The
     server injects this into each tool call; the LLM never controls it.
 
     history (optional): prior conversation turns [{"role": "user"|"assistant",
@@ -601,13 +606,19 @@ def answer(
         "error": True,
     }
 
+    # GPT-5 / o-series reasoning models (incl. Azure gpt-5.4-nano) reject a custom
+    # temperature — only the default is allowed. Omit it for those; keep it
+    # deterministic elsewhere. `model` is already the Azure/OpenAI deployment.
+    create_kwargs: dict = {"tools": TOOLS, "tool_choice": "auto"}
+    if not is_reasoning_model(model):
+        create_kwargs["temperature"] = 0.1
+
     for _ in range(max_steps):
         try:
             resp = client.chat.completions.create(
                 model=model,
                 messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",
+                **create_kwargs,
             )
         except Exception:  # noqa: BLE001 — never surface a raw LLM/network error to the user
             return fallback

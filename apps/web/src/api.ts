@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   AccuracyMetric, ApiClient, ContractDetail, DispatchTrackingRow, DocSummary,
   EvalRunResult, FinanceQueueRow, HeadcountMetric, Invoice, InvoiceWhy,
   QAResponse, QueryThread, StatusResponse, StpMetric, TimeMetric, Timesheet,
@@ -16,7 +16,7 @@ async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     let detail = "";
     try { detail = (await res.text()).slice(0, 200); } catch { /* ignore */ }
-    throw new Error(`${res.status} ${res.statusText} on ${path}${detail ? ` — ${detail}` : ""}`);
+    throw new Error(`${res.status} ${res.statusText} on ${path}${detail ? ` ΓÇö ${detail}` : ""}`);
   }
   const ct = res.headers.get("content-type") || "";
   return ct.includes("application/json") ? (await res.json() as T) : (await res.text() as unknown as T);
@@ -39,7 +39,7 @@ export const api = {
   health: () => req<{ status: string }>("/health"),
   status: () => req<StatusResponse>("/status"),
 
-  /* ── intake ─────────────────────────────────────────────────── */
+  /* ΓöÇΓöÇ intake ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   uploadFile: async (file: File, uploadedBy = "client") => {
     const fd = new FormData();
@@ -54,7 +54,9 @@ export const api = {
   submitEmail: (body: string, subject = "", from_addr = "", uploaded_by = "client") =>
     req<{ doc_id: string; timesheet_id: string; status: string; routing: string; confidence: number; intake_mode?: string; reply_drafted?: boolean }>(
       "/intake/email",
-      jsonInit("POST", { body, subject, from_addr, uploaded_by }),
+      // Portal "email body" represents a message sent TO TIA's inbox → a direct intake
+      // (not an orphan). Address it so the backend processes it normally.
+      jsonInit("POST", { body, subject, from_addr, uploaded_by, to_addrs: ["tia@tasc.test"] }),
     ),
 
   submitOnlineForm: (
@@ -71,7 +73,7 @@ export const api = {
       jsonInit("POST", payload),
     ),
 
-  /* ── docs / timesheets ──────────────────────────────────────── */
+  /* ΓöÇΓöÇ docs / timesheets ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   listDocs: () => req<DocSummary[]>("/documents"),
   getDoc: (id: string) =>
@@ -94,7 +96,7 @@ export const api = {
       jsonInit("POST", { by_user: byUser, reason }),
     ),
 
-  /* ── invoices ───────────────────────────────────────────────── */
+  /* ΓöÇΓöÇ invoices ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   listInvoices: (clientCode?: string) =>
     req<Invoice[]>(`/invoices${clientCode ? `?client_code=${clientCode}` : ""}`),
@@ -104,6 +106,11 @@ export const api = {
   dispatchInvoice: (id: string, byUser = "finops") =>
     req<{ status: string; idempotency_key: string }>(
       `/invoices/${id}/dispatch`,
+      jsonInit("POST", { by_user: byUser }),
+    ),
+  resendInvoiceEmail: (id: string, byUser = "finops") =>
+    req<{ sent: boolean; to?: string; message_id?: string; idempotency_key?: string; reason?: string }>(
+      `/invoices/${id}/resend-email`,
       jsonInit("POST", { by_user: byUser }),
     ),
   clientApprove: (id: string, byUser = "client", reason?: string) =>
@@ -127,7 +134,7 @@ export const api = {
       jsonInit("POST", { by_user: byUser, reason }),
     ),
 
-  /* ── clients (onboarding + config) ──────────────────────────── */
+  /* ΓöÇΓöÇ clients (onboarding + config) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   listClients: () => req<ApiClient[]>("/clients"),
   createClient: (payload: {
@@ -146,12 +153,12 @@ export const api = {
       { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(settings) },
     ),
 
-  /* ── contract (for the Contract panel on Review) ────────────── */
+  /* ΓöÇΓöÇ contract (for the Contract panel on Review) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   getContract: async (clientCode: string): Promise<ContractDetail | null> => {
     // We use the /qa tool's data shape indirectly; the simplest path is to ask
     // the agent's contract tool via a synthetic question. We'll instead expose
-    // a future /contracts endpoint — for now, fall back gracefully.
+    // a future /contracts endpoint ΓÇö for now, fall back gracefully.
     try {
       const r = await fetch(`${API_BASE}/contracts/${clientCode}`);
       if (!r.ok) return null;
@@ -159,7 +166,7 @@ export const api = {
     } catch { return null; }
   },
 
-  /* ── queries (raise + thread) ────────────────────────────────── */
+  /* ΓöÇΓöÇ queries (raise + thread) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   raiseQuery: (clientCode: string, payload: { subject: string; body?: string; invoice_id?: string; raised_by?: string }) =>
     req<{ id: string; status: string; client_code: string }>(
@@ -174,7 +181,7 @@ export const api = {
       jsonInit("POST", payload),
     ),
 
-  /* ── chat (context-aware /qa) ────────────────────────────────── */
+  /* ΓöÇΓöÇ chat (context-aware /qa) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   qa: (question: string, entity_context?: { kind: string; id: string }) =>
     req<QAResponse>(
@@ -182,42 +189,50 @@ export const api = {
       jsonInit("POST", { question, entity_context }),
     ),
 
-  /* ── KPIs ────────────────────────────────────────────────────── */
+  /* ΓöÇΓöÇ KPIs ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   metricsStp: () => req<StpMetric>("/metrics/stp"),
   metricsTimeToInvoice: () => req<TimeMetric>("/metrics/time-to-invoice"),
   metricsAccuracy: () => req<AccuracyMetric>("/metrics/accuracy"),
   metricsHeadcount: () => req<HeadcountMetric>("/metrics/headcount"),
 
-  /* ── Finance queue + Dispatch tracking ───────────────────────── */
+  /* ΓöÇΓöÇ Finance queue + Dispatch tracking ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   financeQueue: () => req<FinanceQueueRow[]>("/finance/queue"),
   dispatchTracking: () => req<DispatchTrackingRow[]>("/dispatch/tracking"),
 
-  /* ── SAP artifacts ───────────────────────────────────────────── */
+  /* ΓöÇΓöÇ SAP artifacts ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   consolidatedExcelUrl: (clientCode: string, period: string) =>
     `${API_BASE}/consolidate/${clientCode}/${encodeURIComponent(period)}.xlsx`,
   wpsSifUrl: (clientCode: string, period: string) =>
     `${API_BASE}/payroll/sif/${clientCode}/${encodeURIComponent(period)}.sif`,
 
-  /* ── eval ────────────────────────────────────────────────────── */
+  /* ΓöÇΓöÇ eval ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   evalSummary: () => req<EvalRunResult>("/eval"),
   runEval: () => req<EvalRunResult>("/eval/run", { method: "POST" }),
 
-  /* ── events (append-only audit feed) ─────────────────────────── */
+  /* ΓöÇΓöÇ events (append-only audit feed) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   listEvents: (entityId?: string, limit = 100) =>
     req<import("./types").EventRow[]>(
       `/events?${entityId ? `entity_id=${encodeURIComponent(entityId)}&` : ""}limit=${limit}`,
     ),
 
-  /* ── admin (stage demo helper) ───────────────────────────────── */
+  /* ΓöÇΓöÇ admin (stage demo helper) ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ */
 
   demoReset: () => req<{ status: string; wiped: Record<string, number> }>("/admin/demo-reset", { method: "POST" }),
 
-  /* ── Phase \u03b1/\u03b2: payments, statement, audit bundle, SLA, notifications, multi-user, period lock ── */
+  /* ── rule catalogue (for friendly subtext on chips & config) ── */
+
+  listRules: () => req<import("./types").RuleCatalogue>("/rules"),
+
+  /* ── audit chain integrity (tamper-evident hash chain) ──────── */
+
+  verifyAuditChain: () => req<import("./types").AuditChainReport>("/audit/verify"),
+
+  /* ── Phase α/β: payments, statement, audit bundle, SLA, notifications, multi-user, period lock ── */
 
   payInvoice: (id: string, payload: {
     amount: number; method?: string; reference?: string; notes?: string; paid_by?: string;
@@ -245,8 +260,6 @@ export const api = {
       { method: "POST" },
     ),
 
-  verifyAuditChain: () => req<import("./types").AuditChainReport>("/audit/verify"),
-
   notifications: (persona: "client" | "finops" | "finance" = "client", clientCode?: string, limit = 30) =>
     req<import("./types").NotificationRow[]>(
       `/notifications?persona=${persona}${clientCode ? `&client_code=${clientCode}` : ""}&limit=${limit}`,
@@ -261,4 +274,27 @@ export const api = {
     ),
 
   metricsSla: () => req<import("./types").SlaMetric>("/metrics/sla"),
+
+  /* ── Per-client dispatch ordering queue ─────────────────────── */
+
+  dispatchQueue: (clientCode: string) =>
+    req<{ client_code: string; entries: import("./types").DispatchQueueEntry[]; rule?: string }>(
+      `/dispatch/${clientCode}/queue`,
+    ),
+
+  /* ── WhatsApp / mailbox webhook + invoice audit chain ─────── */
+
+  invoiceAudit: (id: string) =>
+    req<{ invoice_id: string; events: import("./types").EventRow[] }>(`/invoices/${id}/audit`),
+
+  /* ── Clawback (void / credit-note / partial) ───────────────── */
+
+  clawbackEligibility: (id: string) =>
+    req<import("./types").ClawbackEligibility>(`/invoices/${id}/clawback-eligibility`),
+
+  clawback: (id: string, payload: import("./types").ClawbackRequest, key?: string) =>
+    req<import("./types").ClawbackResponse>(
+      `/invoices/${id}/clawback`,
+      jsonInit("POST", payload, key),
+    ),
 };

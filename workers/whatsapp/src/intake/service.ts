@@ -1,9 +1,9 @@
 /**
- * Ingestion adapter — the per-message processor wired into the webhook.
+ * Ingestion adapter - the per-message processor wired into the webhook.
  *
  * The bridge owns no database. For each inbound message it: marks it read, downloads any
  * attachment from Meta and stages it (served back at a public URL the core can fetch), forwards
- * the message to the core's `POST /intake/whatsapp`, and replies to the user — sending the
+ * the message to the core's `POST /intake/whatsapp`, and replies to the user - sending the
  * generated invoice PDF when the pipeline auto-approved, or a status message otherwise.
  *
  * Fail-safe: a media-download or upstream failure is surfaced and replied to, never thrown.

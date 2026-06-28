@@ -1,187 +1,166 @@
-import { useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import {
-  Inbox, Send, Gauge, Upload, ReceiptText, TriangleAlert,
-  LayoutDashboard, Menu, X, MessageSquare, Building2, FileBarChart2,
-  Truck, ListChecks, type LucideIcon,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Link, Outlet, useNavigate } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { RotateCw, Search } from "lucide-react";
 import { usePersona, type Persona } from "./store";
 import { api } from "./api";
 import { cn } from "./lib";
-import { ChatWidget } from "./components/ChatWidget";
+import { Logo } from "./components/Logo";
+import { CommandPalette } from "./components/CommandPalette";
+import { Assistant } from "./components/Assistant";
+import { SystemStatusFooter } from "./components/SystemStatusFooter";
+import { Select } from "./components/Select";
 
-type NavEntry = { to: string; label: string; icon: LucideIcon; end?: boolean };
-
-const PERSONAS: { id: Persona; label: string; blurb: string; nav: NavEntry[] }[] = [
-  {
-    id: "client",
-    label: "Client",
-    blurb: "Submit & approve",
-    nav: [
-      { to: "/client/submit", label: "Submit timesheet", icon: Upload },
-      { to: "/client/invoices", label: "Invoices", icon: ReceiptText },
-      { to: "/client/queries", label: "Queries", icon: MessageSquare },
-    ],
-  },
-  {
-    id: "finops",
-    label: "FinOps",
-    blurb: "Operate the pipeline",
-    nav: [
-      { to: "/finops", label: "Inbox", icon: Inbox, end: true },
-      { to: "/finops/triage", label: "Triage", icon: TriangleAlert },
-      { to: "/finops/dispatch", label: "Dispatch", icon: Send },
-      { to: "/finops/dispatch-tracking", label: "Dispatch tracking", icon: Truck },
-      { to: "/finops/clients", label: "Clients", icon: Building2 },
-      { to: "/finops/eval", label: "Evaluation", icon: Gauge },
-    ],
-  },
-  {
-    id: "finance",
-    label: "Finance",
-    blurb: "Approve & report",
-    nav: [
-      { to: "/finance", label: "Dashboard", icon: LayoutDashboard },
-      { to: "/finance/queue", label: "Approval queue", icon: ListChecks },
-      { to: "/finops/eval", label: "Accuracy", icon: FileBarChart2 },
-    ],
-  },
+const PERSONA_HOME: Record<Persona, string> = { finops: "/console", client: "/portal", finance: "/finance" };
+const PERSONAS: { id: Persona; label: string }[] = [
+  { id: "finops", label: "FinOps" },
+  { id: "client", label: "Client" },
+  { id: "finance", label: "Finance" },
 ];
 
-function ApiStatus() {
-  const { data, isError } = useQuery({
-    queryKey: ["health"],
-    queryFn: api.health,
-    refetchInterval: 15_000,
-    retry: false,
+/**
+ * Acting-as Client picker - only visible when the active persona is "client".
+ * Picks the client identity the Portal pages scope to. Defaults to CL001 the
+ * first time someone switches into the Client persona (handled in store.ts).
+ */
+function ActingAsPicker() {
+  const { currentClientCode, setCurrentClientCode } = usePersona();
+  const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
+  return (
+    <Select
+      variant="band"
+      className="hidden sm:inline-block"
+      value={currentClientCode ?? ""}
+      onChange={(v) => setCurrentClientCode(v || null)}
+      options={(clients ?? []).map((c) => ({ value: c.code, label: `${c.code} · ${c.name}` }))}
+      placeholder={clients ? "Select client" : "Loading…"}
+      ariaLabel="Client this portal is acting on behalf of"
+      title="Client this portal is acting on behalf of"
+    />
+  );
+}
+
+/**
+ * Stage helper - wipes demo data via /admin/demo-reset so the same browser can
+ * replay the click-through without leaving the page. Always visible (no URL
+ * gate) so it works mid-recording. Single-click - no confirm dialog - because
+ * "fast" is the whole point during a demo.
+ */
+function DemoResetButton() {
+  const qc = useQueryClient();
+  const nav = useNavigate();
+  const bumpReset = usePersona((s) => s.bumpReset);
+  const reset = useMutation({
+    mutationFn: api.demoReset,
+    onSuccess: () => {
+      qc.clear();
+      bumpReset();
+      nav("/portal", { replace: true });
+    },
   });
-  const ok = !!data && !isError;
   return (
-    <div className="flex items-center gap-2 px-2.5 py-2 rounded-md bg-teal-800/40 border border-teal-700/60">
-      <span className="relative flex h-2 w-2">
-        {ok && <span className="absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-60 animate-ping" />}
-        <span className={cn("relative inline-flex h-2 w-2 rounded-full", ok ? "bg-brand-400" : "bg-red-400")} />
-      </span>
-      <span className="text-xs font-medium text-teal-50/85">{ok ? "API operational" : "API unreachable"}</span>
-    </div>
-  );
-}
-
-function SidebarBrand() {
-  return (
-    <Link to="/" className="flex items-center gap-2.5 px-1">
-      <span className="grid place-items-center h-9 w-9 rounded-lg bg-brand-500 text-teal-950 font-bold text-sm shadow-md">T</span>
-      <span className="leading-tight">
-        <span className="block text-sm font-semibold text-white tracking-tight">TIA</span>
-        <span className="block text-2xs text-teal-200/80 tracking-wide">Touchless Invoice Agent</span>
-      </span>
-    </Link>
-  );
-}
-
-function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
-  const { persona, setPersona } = usePersona();
-  const current = PERSONAS.find((p) => p.id === persona)!;
-  const loc = useLocation();
-
-  return (
-    <div className="flex h-full flex-col gap-5 p-4">
-      <SidebarBrand />
-
-      <label className="block">
-        <span className="text-2xs font-semibold uppercase tracking-[0.08em] text-teal-300/80">Workspace</span>
-        <div className="relative mt-1.5">
-          <select
-            value={persona}
-            onChange={(e) => setPersona(e.target.value as Persona)}
-            className="w-full rounded-md border border-teal-700/60 bg-teal-800/40 text-sm text-white px-3 py-2 font-medium pr-8 appearance-none focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-400/30"
-          >
-            {PERSONAS.map((p) => (
-              <option key={p.id} value={p.id} className="text-ink-900">{p.label} · {p.blurb}</option>
-            ))}
-          </select>
-        </div>
-      </label>
-
-      <nav className="flex-1 -mx-1">
-        <p className="text-2xs font-semibold uppercase tracking-[0.08em] text-teal-300/80 px-2.5 mb-1.5">Navigation</p>
-        <ul className="space-y-0.5">
-          {current.nav.map((n) => {
-            const active = n.end
-              ? loc.pathname === n.to
-              : loc.pathname === n.to || loc.pathname.startsWith(n.to + "/");
-            return (
-              <li key={n.to}>
-                <NavLink
-                  to={n.to}
-                  end={n.end}
-                  onClick={onNavigate}
-                  className={cn(
-                    "relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium transition-colors",
-                    active
-                      ? "bg-brand-500 text-teal-950 shadow-sm"
-                      : "text-teal-100 hover:bg-teal-800/60 hover:text-white",
-                  )}
-                >
-                  <n.icon size={17} strokeWidth={2} className="shrink-0" />
-                  {n.label}
-                </NavLink>
-              </li>
-            );
-          })}
-        </ul>
-      </nav>
-
-      <div className="space-y-2">
-        <ApiStatus />
-        <p className="text-2xs text-teal-300/70 leading-relaxed px-1">
-          TASC · Touchless Invoice Agent ·{" "}
-          <span className="text-teal-200/90">Self-hosted · BTP-style rules · eval-gated</span>
-        </p>
-      </div>
-    </div>
+    <button
+      onClick={() => reset.mutate()}
+      disabled={reset.isPending}
+      className="inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60 shrink-0"
+      title="Wipe all documents, timesheets, invoices, and events - for demo replay."
+    >
+      <RotateCw size={11} className={reset.isPending ? "animate-spin" : ""} />
+      {reset.isPending ? "Resetting…" : "Reset demo"}
+    </button>
   );
 }
 
 export function AppShell() {
-  const [open, setOpen] = useState(false);
+  const { persona, setPersona } = usePersona();
+  const nav = useNavigate();
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [aidaOpen, setAidaOpen] = useState(false);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPaletteOpen((v) => !v); }
+      if (e.key === "Escape") { setPaletteOpen(false); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const switchPersona = (p: Persona) => { setPersona(p); nav(PERSONA_HOME[p]); };
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[var(--app-sidebar)_1fr]">
-      {/* Desktop sidebar — TASC deep teal */}
-      <aside className="hidden lg:block bg-teal-900 sticky top-0 h-screen">
-        <SidebarContent />
-      </aside>
+    <div className="min-h-screen flex flex-col">
+      <header className="sticky top-0 z-30 h-12 brand-band text-white shadow-sm">
+        <div className="h-full px-3 sm:px-4 flex items-center gap-3">
+          <Link to={PERSONA_HOME[persona]} className="flex items-center gap-2.5 shrink-0 group">
+            <Logo className="h-[18px] text-white" accent="fill-[#ffd9c7]" />
+            <span className="hidden md:block text-2xs text-white/70 border-l border-white/25 pl-2.5 leading-tight">
+              Touchless<br />Invoice Agent
+            </span>
+          </Link>
 
-      {/* Mobile top bar */}
-      <header className="lg:hidden sticky top-0 z-30 flex items-center justify-between h-14 px-4 bg-teal-900">
-        <SidebarBrand />
-        <button className="grid place-items-center h-9 w-9 rounded-md text-white hover:bg-teal-800" onClick={() => setOpen(true)} aria-label="Open menu">
-          <Menu size={20} />
-        </button>
-      </header>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            className="group flex items-center gap-2 h-8 rounded-lg border border-white/20 bg-white/10 text-white/70 hover:bg-white/20 hover:border-white/30 transition-colors
+                       w-9 justify-center shrink-0
+                       sm:w-auto sm:flex-1 sm:max-w-md sm:mx-auto sm:px-3 sm:justify-start"
+          >
+            <Search size={14} className="text-white/80" />
+            <span className="hidden sm:inline text-xs">Search documents, clients, invoices…</span>
+            <span className="ml-auto hidden sm:flex items-center gap-0.5">
+              <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1 rounded border border-white/25 bg-white/10 text-[10px] font-medium text-white/80">⌘</kbd>
+              <kbd className="inline-flex items-center justify-center h-[18px] min-w-[18px] px-1 rounded border border-white/25 bg-white/10 text-[10px] font-medium text-white/80">K</kbd>
+            </span>
+          </button>
 
-      {/* Mobile drawer */}
-      {open && (
-        <div className="lg:hidden fixed inset-0 z-40 animate-fade-in">
-          <div className="absolute inset-0 bg-teal-950/60" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 bottom-0 w-72 bg-teal-900 shadow-lg">
-            <button className="grid place-items-center h-9 w-9 rounded-md text-white hover:bg-teal-800 absolute top-3 right-3" onClick={() => setOpen(false)} aria-label="Close menu">
-              <X size={18} />
-            </button>
-            <SidebarContent onNavigate={() => setOpen(false)} />
+          {/* Acting-as Client identity - only relevant for the Client persona. */}
+          {persona === "client" && <ActingAsPicker />}
+
+          {/* Six-dot system heartbeat - judges spot misconfig on stage at a glance. */}
+          <div className="hidden lg:flex items-center gap-1.5 h-8 px-2.5 rounded-lg border border-white/20 bg-white/10 shrink-0" title="External services (api · db · openai · ocr · mail · dispatch)">
+            <SystemStatusFooter compact />
+          </div>
+
+          <DemoResetButton />
+
+          <div className="flex p-0.5 rounded-lg bg-white/10 border border-white/15 shrink-0 ml-auto sm:ml-0">
+            {PERSONAS.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => switchPersona(p.id)}
+                className={cn(
+                  "px-2 sm:px-2.5 py-1 rounded-md text-[11px] sm:text-xs font-medium transition-colors",
+                  persona === p.id ? "bg-white text-brand-700 shadow-xs" : "text-white/75 hover:text-white",
+                )}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
         </div>
+      </header>
+
+      <main className="flex-1 min-w-0">
+        <Outlet />
+      </main>
+
+      {/* Floating AIDA launcher - vertical tab in the reserved right rail */}
+      {!aidaOpen && (
+        <button
+          onClick={() => setAidaOpen(true)}
+          aria-label="Open TIA chat"
+          className="fixed right-0 bottom-0 z-40 flex flex-col items-center gap-2.5
+                     w-10 pt-3.5 pb-5 brand-band text-white shadow-md hover:shadow-lg
+                     rounded-tl-xl ring-1 ring-brand-700/30 transition-shadow"
+        >
+          <Logo className="h-3 text-white" accent="fill-[#ffd9c7]" />
+          <span className="h-px w-4 bg-white/25" />
+          <span className="[writing-mode:vertical-rl] text-[13px] font-medium">Chat</span>
+        </button>
       )}
 
-      {/* Main */}
-      <div className="flex min-h-screen flex-col min-w-0 relative">
-        <main className="flex-1 w-full max-w-[1440px] mx-auto px-5 sm:px-7 py-6 sm:py-8">
-          <Outlet />
-        </main>
-        <ChatWidget />
-      </div>
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <Assistant open={aidaOpen} onClose={() => setAidaOpen(false)} />
     </div>
   );
 }

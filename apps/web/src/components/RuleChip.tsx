@@ -2,7 +2,7 @@ import { CheckCircle2, AlertOctagon, AlertTriangle, Info } from "lucide-react";
 import type { ValidationResult } from "../types";
 import { cn } from "../lib";
 
-/** A single validation/rule chip — PASS/FAIL with rule_id + delta. */
+/** A single validation/rule chip - PASS/FAIL with rule_id + delta. */
 export function RuleChip({ result }: { result: ValidationResult }) {
   const isFail = !result.passed && result.severity !== "warning";
   const isWarn = result.severity === "warning";

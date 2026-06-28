@@ -1,4 +1,4 @@
-"""FastAPI app — public surface for the React frontend and the WhatsApp bridge.
+"""FastAPI app - public surface for the React frontend and the WhatsApp bridge.
 
 Endpoints follow CONTRACTS.md. Idempotency-Key is honored on mutations.
 """
@@ -38,7 +38,7 @@ from ..orchestrator import (
     reject_timesheet,
 )
 
-app = FastAPI(title="TIA — Touchless Invoice Agent", version="0.1.0")
+app = FastAPI(title="TIA - Touchless Invoice Agent", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -66,6 +66,30 @@ def _startup() -> None:
     init_db()
 
 
+@app.get("/rules")
+def list_rule_definitions() -> dict:
+    """Public catalogue of the BTP-style rule engine.
+
+    Surfaces every rule_id with its function name AND its client-friendly
+    explanation, so the frontend can render rule chips with prose subtext
+    instead of internal `message` payloads.
+    """
+    from ..validate.rules_v2 import FRIENDLY_RULE_MESSAGES, RULES
+
+    return {
+        "count": len(RULES),
+        "rules": [
+            {
+                "rule_id": rid,
+                "function_name": fn.__name__,
+                "friendly_message": FRIENDLY_RULE_MESSAGES.get(rid, ""),
+            }
+            for rid, fn in RULES
+        ],
+        "friendly_message_table": FRIENDLY_RULE_MESSAGES,
+    }
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -74,9 +98,9 @@ def health() -> dict:
 # ---------------------------------------------------------------- intake
 
 
-# Brief §9: "Don't hide the AI — surface accuracy scores and HITL moments."
+# Brief §9: "Don't hide the AI - surface accuracy scores and HITL moments."
 # Brief §4.8 cross-cutting: file safety / size limits / MIME sniffing.
-MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB hard cap on uploads — generous for handwritten scans
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB hard cap on uploads - generous for handwritten scans
 ALLOWED_MIME_PREFIXES = (
     "image/",
     "application/pdf",
@@ -93,6 +117,12 @@ ALLOWED_MIME_PREFIXES = (
 async def intake_upload(
     file: UploadFile,
     uploaded_by: str = Form("client"),
+    # Optional email-source linkage so an attachment-as-timesheet keeps the
+    # original sender's reply address. Used by the Zoho poller when fanning out
+    # email attachments through this endpoint as sibling docs.
+    from_addr: str | None = Form(None),
+    message_id: str | None = Form(None),
+    subject: str | None = Form(None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
@@ -105,17 +135,25 @@ async def intake_upload(
         raise HTTPException(415, f"unsupported media type: {file.content_type}")
     tmp = Path(STAGING_DIR) / f"_inbox_{uuid.uuid4().hex}_{file.filename}"
     tmp.write_bytes(raw)
+    upload_meta: dict = {}
+    if from_addr or message_id or subject:
+        upload_meta = {
+            "from_addr": from_addr,
+            "message_id": message_id,
+            "subject": subject,
+        }
     doc = ingest_file(
         s,
         tmp,
-        channel="upload",
+        channel="email" if from_addr else "upload",
         mime=file.content_type,
         uploaded_by=uploaded_by,
         idempotency_key=idempotency_key,
+        meta=upload_meta or None,
     )
     ts = process_doc(s, doc)
 
-    # E3 — if this is an .eml message, extract attachments and run them through
+    # E3 - if this is an .eml message, extract attachments and run them through
     # the pipeline as sibling docs (parent_doc_id linking back to the email).
     attachments_processed: list[dict] = []
     is_eml = (file.content_type == "message/rfc822") or (
@@ -200,9 +238,10 @@ class EmailIntake(BaseModel):
     client_hint: str | None = None
     uploaded_by: str = "client"
     intake_mode: str | None = None  # if not provided we infer below
+    message_id: str | None = None  # original RFC 5322 Message-ID, for reply threading
 
 
-# TIA's own email address — anything to/cc'd here is treated as an intake.
+# TIA's own email address - anything to/cc'd here is treated as an intake.
 TIA_EMAIL_ADDRESSES = {
     "tia@cyberkunju.com",
     "tia@tasc.test",
@@ -257,11 +296,18 @@ def intake_email(
         mime="text/plain",
         uploaded_by=payload.uploaded_by,
         idempotency_key=idempotency_key,
+        meta={
+            "from_addr": payload.from_addr,
+            "message_id": payload.message_id,
+            "subject": payload.subject,
+            "to_addrs": payload.to_addrs,
+            "cc_addrs": payload.cc_addrs,
+        },
     )
     # log the email-mode decision on the doc so the Review screen can show it
     from ..orchestrator import log_event
 
-    # E10 — preserve the watched_address (set by the webhook adapter) into the event
+    # E10 - preserve the watched_address (set by the webhook adapter) into the event
     mode_payload = {
         "intake_mode": mode,
         "to": payload.to_addrs,
@@ -274,7 +320,7 @@ def intake_email(
 
     log_event(s, payload.from_addr or "email", "doc", doc.id, "email.mode_detected", mode_payload)
 
-    # E9 — orphan email: no TIA address found AND no watched-mailbox match.
+    # E9 - orphan email: no TIA address found AND no watched-mailbox match.
     # Don't try to process; route straight to escalate so FinOps can triage.
     if mode == "unknown":
         from ..models import Timesheet
@@ -286,7 +332,7 @@ def intake_email(
             period=None,
             status="awaiting_review",
             routing="escalate",
-            hitl_reason="orphan email — no client identified (TIA not in To/Cc, no watched mailbox match)",
+            hitl_reason="orphan email - no client identified (TIA not in To/Cc, no watched mailbox match)",
             confidence_calibrated=0.0,
             extraction={},
             match_result={},
@@ -314,19 +360,78 @@ def intake_email(
         }
 
     ts = process_doc(s, doc)
-    # cc_silent: if processed cleanly, no reply; if any exception, draft a reply
+    # Universal hold reply: on any HITL/escalate routing OR an over-threshold
+    # invoice, email the original sender back with "got it, on hold because X."
+    # Fires on all 3 modes (direct_forward, cc_silent, watched_mailbox) — the
+    # client always gets an acknowledgment that the timesheet was received.
     reply_drafted = False
-    if mode == "cc_silent" and ts.routing in ("hitl", "escalate"):
-        reply_path = _draft_cc_silent_reply(payload, ts, s)
-        log_event(
-            s,
-            "smart_bot_sap",
-            "doc",
-            doc.id,
-            "email.cc_silent_reply_drafted",
-            {"path": str(reply_path), "routing": ts.routing, "reason": ts.hitl_reason},
-        )
-        reply_drafted = True
+    reply_sent = False
+    threshold_exceeded = False
+    if ts.client_code:
+        _c = s.get(Client, ts.client_code)
+        if _c:
+            thr = float((_c.settings or {}).get("validation_threshold_aed", 50000))
+            _inv = (
+                s.query(Invoice)
+                .filter_by(timesheet_id=ts.id)
+                .order_by(Invoice.created_at.desc())
+                .first()
+            )
+            if _inv and (_inv.amount or 0) > thr:
+                threshold_exceeded = True
+
+    if ts.routing in ("hitl", "escalate") or threshold_exceeded:
+        # 1) keep the cc_silent .eml draft on disk so the existing outbox view shows it
+        if mode == "cc_silent":
+            try:
+                reply_path = _draft_cc_silent_reply(payload, ts, s)
+                log_event(
+                    s,
+                    "smart_bot_sap",
+                    "doc",
+                    doc.id,
+                    "email.cc_silent_reply_drafted",
+                    {"path": str(reply_path), "routing": ts.routing, "reason": ts.hitl_reason},
+                )
+                reply_drafted = True
+            except Exception as e:  # noqa: BLE001
+                log_event(
+                    s,
+                    "smart_bot_sap",
+                    "doc",
+                    doc.id,
+                    "email.cc_silent_reply_draft_failed",
+                    {"reason": str(e)[:200]},
+                )
+
+        # 2) actually send the threaded reply (any mode, any time)
+        try:
+            from ..mailbox.sender import send_hold_reply
+
+            res = send_hold_reply(
+                s,
+                ts,
+                doc,
+                payload_subject=payload.subject,
+                payload_from_addr=payload.from_addr,
+                payload_message_id=payload.message_id,
+                cc_addrs=payload.cc_addrs,
+                extra_reason=(
+                    "amount over the auto-approval threshold — Finance signoff required"
+                    if threshold_exceeded and ts.routing not in ("hitl", "escalate")
+                    else None
+                ),
+            )
+            reply_sent = bool(res.get("sent"))
+        except Exception as e:  # noqa: BLE001
+            log_event(
+                s,
+                "zoho-smtp",
+                "doc",
+                doc.id,
+                "email.hold_reply_send_failed",
+                {"reason": str(e)[:200]},
+            )
     return {
         "doc_id": doc.id,
         "timesheet_id": ts.id,
@@ -335,11 +440,12 @@ def intake_email(
         "confidence": ts.confidence_calibrated,
         "intake_mode": mode,
         "reply_drafted": reply_drafted,
+        "reply_sent": reply_sent,
     }
 
 
 def _draft_cc_silent_reply(payload: "EmailIntake", ts, s: Session | None = None) -> Path:
-    """Write a .eml reply draft to staging/outbox/ — TIA's polite 'we paused this' note.
+    """Write a .eml reply draft to staging/outbox/ - TIA's polite 'we paused this' note.
 
     Reads:
       - Client.settings.tia_reply_from   → reply From: address (defaults to tia@tasc.test)
@@ -403,7 +509,7 @@ Subject: {rich_subject}
 
 Hi,
 
-Thanks for the timesheet — we've received it and paused it for human review.
+Thanks for the timesheet - we've received it and paused it for human review.
 
 What happened: {reason_line}
 
@@ -411,9 +517,9 @@ Reference: timesheet {ts.id[:8]} · routing {ts.routing} · confidence {ts.confi
 Period: {period or "(not provided)"}
 
 A FinOps reviewer at TASC Outsourcing will follow up shortly. No action required from
-you in the meantime — if you'd like to clarify anything, just reply to this thread.
+you in the meantime - if you'd like to clarify anything, just reply to this thread.
 
-— TIA · Touchless Invoice Agent
+- TIA · Touchless Invoice Agent
    TASC Outsourcing FZ-LLC
 """,
         encoding="utf-8",
@@ -448,7 +554,7 @@ def intake_mailbox_webhook(
     """Watched-mailbox simulator. We adapt the Postmark shape to our internal
     EmailIntake and force intake_mode='watched_mailbox'.
 
-    E5 — HMAC-SHA256 webhook signature verification.
+    E5 - HMAC-SHA256 webhook signature verification.
     When `MAILBOX_WEBHOOK_SECRET` env var is set, requests must carry an
     `X-Webhook-Signature` header containing the hex digest of
     sha256(secret || raw_body). Postmark, SES, and Mandrill all use a variant
@@ -486,7 +592,7 @@ def intake_mailbox_webhook(
         intake_mode="watched_mailbox",
         uploaded_by=payload.From or "mailbox-watcher",
     )
-    # E10 — annotate which watched address actually triggered the webhook
+    # E10 - annotate which watched address actually triggered the webhook
     inner._watched_address = to_list[0] if to_list else (cc_list[0] if cc_list else None)  # type: ignore[attr-defined]
     return intake_email(inner, idempotency_key=idempotency_key, s=s)
 
@@ -508,7 +614,7 @@ def submit_online_form(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """4th channel — Online Timesheet App. Client pre-bound by URL path.
+    """4th channel - Online Timesheet App. Client pre-bound by URL path.
 
     Renders the form payload as a parseable email-style document so the existing
     extractor pipeline handles it without a new format-specific path."""
@@ -937,6 +1043,26 @@ def _inv_dict(i: Invoice) -> dict:
         "client_approval_status": i.client_approval_status,
         "client_approval_reason": i.client_approval_reason,
         "rule_results": i.rule_results or [],
+        # clawback - void path
+        "voided_at": i.voided_at.isoformat() if i.voided_at else None,
+        "voided_by": i.voided_by,
+        "voided_reason_code": i.voided_reason_code,
+        "voided_reason": i.voided_reason,
+        # clawback - credit-note path
+        "credit_note_sequence_no": i.credit_note_sequence_no,
+        "credit_note_issued_at": (
+            i.credit_note_issued_at.isoformat() if i.credit_note_issued_at else None
+        ),
+        "credit_note_issued_by": i.credit_note_issued_by,
+        "credit_note_reason_code": i.credit_note_reason_code,
+        "credit_note_reason_text": i.credit_note_reason_text,
+        "credit_note_article_refs": i.credit_note_article_refs,
+        "credit_note_amount": i.credit_note_amount,
+        "credit_note_disputed_hours": i.credit_note_disputed_hours,
+        "adjustment_type": i.adjustment_type,
+        # reissue chain
+        "replaces_invoice_id": i.replaces_invoice_id,
+        "superseded_by_invoice_id": i.superseded_by_invoice_id,
     }
 
 
@@ -1003,7 +1129,7 @@ def get_consolidated_excel(client_code: str, period: str, s: Session = Depends(d
     """
     from ..erp.smart_bot_sap import build_consolidated_excel
 
-    # period may be "June%202026" or "June-2026" or "2026-06" — accept both
+    # period may be "June%202026" or "June-2026" or "2026-06" - accept both
     period_clean = period.replace("-", " ").replace("%20", " ")
     try:
         path = build_consolidated_excel(s, client_code, period_clean)
@@ -1101,7 +1227,7 @@ def get_invoice_audit(inv_id: str, s: Session = Depends(db_session)) -> dict:
 
 @app.get("/invoices/{inv_id}/why")
 def get_invoice_why(inv_id: str, s: Session = Depends(db_session)) -> dict:
-    """Structured 'Why this invoice?' payload — rules, audit, confidence, matches."""
+    """Structured 'Why this invoice?' payload - rules, audit, confidence, matches."""
     audit = get_invoice_audit(inv_id, s)
     ts = audit["timesheet"]
     why: dict[str, Any] = {
@@ -1148,10 +1274,67 @@ def dispatch(
                 timeout=10.0,
             )
             r.raise_for_status()
-            return r.json()
+            result = r.json()
         except httpx.HTTPError as e:
             raise HTTPException(502, f"rust dispatch unreachable: {e}") from e
+        # Rust did the side-effect (outbox + DB update); we still need to email
+        # the PDF if this came from an email channel. Re-read the invoice since
+        # Rust just mutated it.
+        s.expire_all()
+        i = s.get(Invoice, inv_id)
+        if i is not None and result.get("status") == "dispatched":
+            try:
+                from ..mailbox.sender import send_invoice_email
+
+                send_invoice_email(s, i, by_user=payload.by_user)
+            except Exception as e:  # noqa: BLE001
+                log_event(
+                    s,
+                    payload.by_user,
+                    "invoice",
+                    inv_id,
+                    "email.invoice_send_failed",
+                    {"reason": str(e)[:200]},
+                )
+        return result
     return dispatch_invoice(s, i, payload.by_user, idempotency_key)
+
+
+class ResendEmailPayload(BaseModel):
+    by_user: str = "finops"
+
+
+@app.post("/invoices/{inv_id}/resend-email")
+def resend_invoice_email(
+    inv_id: str,
+    payload: ResendEmailPayload | None = None,
+    s: Session = Depends(db_session),
+) -> dict:
+    """Demo-safety net: manually re-fire the invoice email with a fresh key.
+
+    Uses a timestamped idempotency key so a prior `invoice-reply:{id}` send
+    does NOT short-circuit this. Surfaces SMTP errors directly so on-stage
+    failures show up red in the dashboard instead of disappearing.
+    """
+    import datetime as dt
+
+    from ..mailbox.sender import send_invoice_email
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    by_user = (payload.by_user if payload else None) or "finops"
+    key = f"manual-resend:{inv_id}:{dt.datetime.now(dt.timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    res = send_invoice_email(s, i, idempotency_key=key, by_user=by_user)
+    if not res.get("sent"):
+        # surface the reason in the response so the UI can show it
+        return {"sent": False, "reason": res.get("reason") or res.get("skipped") or "unknown"}
+    return {
+        "sent": True,
+        "to": res.get("to"),
+        "message_id": res.get("message_id"),
+        "idempotency_key": key,
+    }
 
 
 # ---------------------------------------------------------------- clients / dispatch rules
@@ -1196,7 +1379,7 @@ def create_client(
     by_user: str = Header(default="finops", alias="X-User"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """Onboard a new client — brief §4.1 'setup screen to onboard a client'."""
+    """Onboard a new client - brief §4.1 'setup screen to onboard a client'."""
     if s.get(Client, payload.code):
         raise HTTPException(409, f"client {payload.code} already exists")
     settings = {
@@ -1367,7 +1550,7 @@ def client_reject_invoice(
 
 @app.get("/finance/queue")
 def finance_queue(s: Session = Depends(db_session)) -> list[dict]:
-    """Invoices over per-client validation_threshold_aed — Finance must sign off."""
+    """Invoices over per-client validation_threshold_aed - Finance must sign off."""
     out = []
     for inv in s.query(Invoice).order_by(Invoice.created_at.desc()).limit(200).all():
         c = s.get(Client, inv.client_code)
@@ -1461,7 +1644,7 @@ def finance_reject(
     return {"status": "rejected", "invoice_id": inv_id, "reason": payload.reason}
 
 
-# ---------- payment flow (brief §4.7 — client pays the invoice) ----------
+# ---------- payment flow (brief §4.7 - client pays the invoice) ----------
 
 
 class NewPayment(BaseModel):
@@ -1479,7 +1662,7 @@ def record_payment(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
-    """Mock payment flow — same shape as a real Stripe/Tap/bank-gateway adapter
+    """Mock payment flow - same shape as a real Stripe/Tap/bank-gateway adapter
     would consume. For demo: collect method + reference + amount, log a Payment
     row, fire an audit event, surface receipt number."""
     from ..models import Payment
@@ -1730,13 +1913,38 @@ def reply_to_query(
 
 @app.get("/metrics/stp")
 def metric_stp(s: Session = Depends(db_session)) -> dict:
-    """Straight-through processing rate — the brief's '80%+ touchless' headline."""
+    """Straight-through processing rate - the brief's '80%+ touchless' headline.
+
+    Three-pillar breakdown for the dashboard:
+      auto_dispatched   - invoice shipped under threshold without human click
+      hitl_dispatched   - FinOps reviewed, then dispatched
+      finance_dispatched - Finance signed off (over threshold), then dispatched
+    """
     rows = s.query(Timesheet).all()
     total = len(rows)
     auto = sum(1 for t in rows if t.routing == "auto")
     hitl = sum(1 for t in rows if t.routing == "hitl")
     escalate = sum(1 for t in rows if t.routing == "escalate")
     rate = (auto / total) if total else 0.0
+
+    # Count invoices by dispatch path (derived from the audit chain).
+    # `dispatched` (regular path) and `auto_dispatched_within_tolerance` (touchless
+    # path) are both "an invoice left the building" - we sum both.
+    manually_dispatched_ids = {
+        e.entity_id for e in s.query(Event).filter(Event.action == "dispatched").all()
+    }
+    auto_disp_ids = {
+        e.entity_id
+        for e in s.query(Event).filter(Event.action == "auto_dispatched_within_tolerance").all()
+    }
+    finance_approved_ids = {
+        e.entity_id for e in s.query(Event).filter(Event.action == "finance_approved").all()
+    }
+    auto_dispatched = len(auto_disp_ids)
+    finance_dispatched = len((manually_dispatched_ids & finance_approved_ids) - auto_disp_ids)
+    hitl_dispatched = len(manually_dispatched_ids - auto_disp_ids - finance_approved_ids)
+    total_dispatched = len(manually_dispatched_ids | auto_disp_ids)
+
     return {
         "total": total,
         "auto": auto,
@@ -1744,6 +1952,13 @@ def metric_stp(s: Session = Depends(db_session)) -> dict:
         "escalate": escalate,
         "touchless_rate": round(rate, 4),
         "target": 0.80,
+        # 3-pillar breakdown for the Finance dashboard tile
+        "dispatched_breakdown": {
+            "auto_dispatched": auto_dispatched,
+            "hitl_dispatched": hitl_dispatched,
+            "finance_dispatched": finance_dispatched,
+            "total_dispatched": total_dispatched,
+        },
     }
 
 
@@ -1772,7 +1987,7 @@ def metric_time_to_invoice(s: Session = Depends(db_session)) -> dict:
 
 @app.get("/metrics/accuracy")
 def metric_accuracy() -> dict:
-    """Extraction accuracy from the eval harness — the brief's '99%+' target."""
+    """Extraction accuracy from the eval harness - the brief's '99%+' target."""
     last_run = DATA_DIR / "gold" / "_last_run.json"
     if not last_run.exists():
         return {"target": 0.99, "passed": None, "macro_f1": None, "note": "no eval yet"}
@@ -1793,7 +2008,7 @@ def metric_accuracy() -> dict:
 
 @app.get("/metrics/headcount")
 def metric_headcount(s: Session = Depends(db_session)) -> dict:
-    """TASC's HC reporting KPI — count of unique billed employees per period."""
+    """TASC's HC reporting KPI - count of unique billed employees per period."""
     from .. import models as m
 
     rows = (
@@ -1805,7 +2020,7 @@ def metric_headcount(s: Session = Depends(db_session)) -> dict:
     for inv in rows:
         for li in inv.line_items or []:
             if li.get("emp_id"):
-                by_period.setdefault(inv.period or "—", set()).add(li["emp_id"])
+                by_period.setdefault(inv.period or "-", set()).add(li["emp_id"])
     return {
         "by_period": {p: len(emps) for p, emps in sorted(by_period.items())},
         "total_unique_emps": len({eid for emps in by_period.values() for eid in emps}),
@@ -1814,7 +2029,7 @@ def metric_headcount(s: Session = Depends(db_session)) -> dict:
 
 @app.get("/metrics/sla")
 def metric_sla(s: Session = Depends(db_session)) -> dict:
-    """SLA aging — how long is each invoice spending in each status?
+    """SLA aging - how long is each invoice spending in each status?
 
     Drives the brief §4.6 'track progress' requirement + the §4.8 'within
     minutes' KPI. We compute time-in-current-status from the most recent
@@ -1908,6 +2123,13 @@ def system_status(s: Session = Depends(db_session)) -> dict:
     out["openai"] = "configured" if os.getenv("OPENAI_API_KEY") else "missing_key"
     # modal-ocr
     out["modal_ocr"] = "configured" if os.getenv("GLM_OCR_API_KEY") else "missing_key"
+    # zoho mailbox
+    out["zoho_mail"] = (
+        "configured"
+        if (os.getenv("ZOHO_IMAP_USER") and os.getenv("ZOHO_IMAP_PASSWORD"))
+        else "missing_creds"
+    )
+    out["zoho_mail_address"] = os.getenv("ZOHO_IMAP_USER") or None
     # rust-dispatch (best-effort, swallows errors so /status is never down)
     rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
     if rust_url:
@@ -2005,7 +2227,7 @@ def client_dispatch_queue(client_code: str, s: Session = Depends(db_session)) ->
     if grouping == "by_client_period":
         grouped: dict[str, list[dict]] = {}
         for inv in invoices:
-            grouped.setdefault(inv.period or "—", []).append(
+            grouped.setdefault(inv.period or "-", []).append(
                 {
                     "id": inv.id,
                     "amount": inv.amount,
@@ -2084,6 +2306,400 @@ def eval_run() -> dict:
 
 
 # ---------- /admin/demo-reset (stage demo helper) ----------
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  CLAWBACK - state-aware void / credit-note (UAE VAT Art. 60 + Decision 7/2019)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class ClawbackRequest(BaseModel):
+    by_user: str = "finops"
+    reason_code: str = "OTHER"  # PRICING_ERROR|GOODS_RETURNED|DISCOUNT|DUPLICATE|OTHER
+    reason_text: str | None = None
+    # Partial clawback (e.g., 4 of 40 hours = AED 200 of AED 2000).
+    # If null, credit note covers the full invoice. UAE Art. 60 supports partials.
+    partial_amount: float | None = None
+    disputed_hours: float | None = None
+    # Where the recovery is applied (defaults to CREDIT_TO_CLIENT).
+    adjustment_type: str = "CREDIT_TO_CLIENT"
+
+
+_VALID_REASON_CODES = {"PRICING_ERROR", "GOODS_RETURNED", "DISCOUNT", "DUPLICATE", "OTHER"}
+_VALID_ADJUSTMENT_TYPES = {
+    "CREDIT_TO_CLIENT",
+    "DEDUCT_FROM_NEXT_INVOICE",
+    "DEDUCT_FROM_PAYROLL",
+    "INTERNAL_WRITE_OFF",
+    "MANUAL_REVIEW",
+}
+_FRIENDLY_REASON: dict[str, str] = {
+    "PRICING_ERROR": "the billing rate was incorrect",
+    "GOODS_RETURNED": "services were returned or cancelled",
+    "DISCOUNT": "a post-sale discount was granted",
+    "DUPLICATE": "the invoice was a duplicate of an earlier one",
+    "OTHER": "an adjustment was needed",
+}
+_FRIENDLY_ADJUSTMENT: dict[str, str] = {
+    "CREDIT_TO_CLIENT": "Credit memo issued against your AR balance",
+    "DEDUCT_FROM_NEXT_INVOICE": "Will be netted against your next invoice",
+    "DEDUCT_FROM_PAYROLL": "Recovered from the associate's next pay run",
+    "INTERNAL_WRITE_OFF": "Absorbed internally - no further recovery",
+    "MANUAL_REVIEW": "Escalated to Finance for manual reconciliation",
+}
+
+
+def _has_payment(s: Session, invoice_id: str) -> bool:
+    from ..models import Payment
+
+    return s.query(Payment).filter_by(invoice_id=invoice_id).first() is not None
+
+
+def _next_credit_note_seq(s: Session, client_code: str, period: str | None) -> str:
+    """Sequence credit notes per (client, period). UAE Art. 60 requires referenceable sequence."""
+    period_key = (period or "0000-00").replace(" ", "").upper()
+    count = (
+        s.query(Invoice)
+        .filter(Invoice.client_code == client_code, Invoice.credit_note_sequence_no.is_not(None))
+        .count()
+    ) + 1
+    return f"TIA-CN-{client_code}-{period_key}-{count:04d}"
+
+
+@app.get("/invoices/{inv_id}/clawback-eligibility")
+def clawback_eligibility(inv_id: str, s: Session = Depends(db_session)) -> dict:
+    """Return the action this invoice would resolve into if the operator clawed
+    back NOW, plus the FTA 14-day countdown for credit-note scenarios."""
+    import datetime as dt
+
+    from ..invoice.fsm import PRE_DISPATCH_STATES
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    if i.status in {"voided", "superseded"}:
+        return {
+            "current_state": i.status,
+            "action_when_clawed_back": None,
+            "reason": "terminal state - already settled",
+        }
+    if i.credit_note_sequence_no:
+        return {
+            "current_state": i.status,
+            "action_when_clawed_back": None,
+            "reason": "credit note already issued",
+        }
+
+    out: dict = {"current_state": i.status, "amount_aed": i.amount, "currency": i.currency}
+    if i.status in PRE_DISPATCH_STATES:
+        out["action_when_clawed_back"] = "void"
+        out["explanation"] = "Pre-dispatch - invoice will be voided as if never issued."
+        return out
+
+    if i.status == "dispatched":
+        action = "credit_note_with_refund_pending" if _has_payment(s, inv_id) else "credit_note"
+        out["action_when_clawed_back"] = action
+        dispatched_at = i.dispatch_attempted_at or i.created_at
+        if dispatched_at:
+            now = dt.datetime.now(dt.timezone.utc)
+            # normalise - naive datetimes get utc tz attached
+            if dispatched_at.tzinfo is None:
+                dispatched_at = dispatched_at.replace(tzinfo=dt.timezone.utc)
+            days_since = (now - dispatched_at).days
+            deadline = dispatched_at + dt.timedelta(days=14)
+            out["dispatched_at"] = dispatched_at.isoformat()
+            out["days_since_dispatch"] = days_since
+            out["fta_14_day_deadline"] = deadline.date().isoformat()
+            out["days_remaining"] = max(0, 14 - days_since)
+            if out["days_remaining"] <= 2:
+                out["urgency"] = "urgent"
+            elif out["days_remaining"] <= 5:
+                out["urgency"] = "warning"
+            else:
+                out["urgency"] = "normal"
+        out["explanation"] = (
+            "Issue a UAE Tax Credit Note (Art. 60). Source timesheet returns for re-review. "
+            "Client is notified via a query thread."
+        )
+        if action == "credit_note_with_refund_pending":
+            out["explanation"] += " A refund will be flagged for manual processing."
+        out["valid_reason_codes"] = sorted(_VALID_REASON_CODES)
+        out["valid_adjustment_types"] = sorted(_VALID_ADJUSTMENT_TYPES)
+        out["adjustment_type_labels"] = _FRIENDLY_ADJUSTMENT
+        return out
+
+    out["action_when_clawed_back"] = None
+    out["reason"] = f"clawback not valid from state '{i.status}'"
+    return out
+
+
+@app.post("/invoices/{inv_id}/clawback")
+def clawback_invoice(
+    inv_id: str,
+    payload: ClawbackRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    s: Session = Depends(db_session),
+) -> dict:
+    """State-aware clawback:
+       pre-dispatch       → VOID
+       dispatched, unpaid → CREDIT NOTE (UAE Art. 60), source timesheet → needs_review
+       dispatched, paid   → CREDIT NOTE + payment_refund_required event
+
+    Always immediate (no settling period; research-backed - NetSuite/Pelcro pattern).
+    Idempotent on Idempotency-Key.
+    """
+    import datetime as dt
+
+    from ..invoice.fsm import PRE_DISPATCH_STATES, InvalidTransition, set_status
+    from ..models import Payment, Query as QueryModel
+
+    if payload.reason_code not in _VALID_REASON_CODES:
+        raise HTTPException(400, f"reason_code must be one of {sorted(_VALID_REASON_CODES)}")
+    if payload.adjustment_type not in _VALID_ADJUSTMENT_TYPES:
+        raise HTTPException(
+            400, f"adjustment_type must be one of {sorted(_VALID_ADJUSTMENT_TYPES)}"
+        )
+
+    i = s.get(Invoice, inv_id)
+    if not i:
+        raise HTTPException(404, "invoice not found")
+    if i.status in {"voided", "superseded"}:
+        return {"action_taken": "already_settled", "status": i.status, "invoice_id": inv_id}
+    if i.credit_note_sequence_no:
+        return {
+            "action_taken": "already_credit_noted",
+            "status": i.status,
+            "invoice_id": inv_id,
+            "credit_note_sequence_no": i.credit_note_sequence_no,
+        }
+
+    now = dt.datetime.now(dt.timezone.utc)
+    friendly_reason = _FRIENDLY_REASON.get(payload.reason_code, "an adjustment was needed")
+
+    # ── pre-dispatch → VOID ───────────────────────────────────────────────
+    if i.status in PRE_DISPATCH_STATES:
+        before = {"status": i.status}
+        try:
+            set_status(s, i, "voided")
+        except InvalidTransition as e:
+            raise HTTPException(409, str(e)) from e
+        i.voided_at = now
+        i.voided_by = payload.by_user
+        i.voided_reason_code = payload.reason_code
+        i.voided_reason = payload.reason_text or friendly_reason
+        log_event(
+            s,
+            payload.by_user,
+            "invoice",
+            inv_id,
+            "invoice.voided",
+            {
+                "reason_code": payload.reason_code,
+                "reason_text": payload.reason_text,
+                "friendly": friendly_reason,
+                "sequence_no": i.invoice_sequence_no,
+            },
+            idempotency_key=idempotency_key,
+            before=before,
+            after={"status": i.status, "voided_by": payload.by_user},
+        )
+        # If we auto-dispatched a moment ago, rename the outbox file so it's clearly marked
+        try:
+            outbox = Path(STAGING_DIR) / "outbox"
+            for f in outbox.glob(f"dispatch_{inv_id}_*.txt"):
+                voided_path = f.with_name(f"voided_{f.name}")
+                f.rename(voided_path)
+                # write a void notice next to it
+                voided_path.with_suffix(".void.txt").write_text(
+                    f"This dispatch was VOIDED by {payload.by_user} at {now.isoformat()}.\n"
+                    f"Reason ({payload.reason_code}): {payload.reason_text or friendly_reason}\n",
+                    encoding="utf-8",
+                )
+        except Exception:  # noqa: BLE001
+            pass  # never let the file rename fail the clawback
+        return {
+            "action_taken": "voided",
+            "status": i.status,
+            "invoice_id": inv_id,
+            "voided_at": i.voided_at.isoformat(),
+            "reason": friendly_reason,
+        }
+
+    # ── dispatched → CREDIT NOTE ──────────────────────────────────────────
+    if i.status != "dispatched":
+        raise HTTPException(409, f"clawback not valid from state '{i.status}'")
+
+    paid = _has_payment(s, inv_id)
+    article_refs = [
+        "UAE VAT Law Article 60",
+        "UAE VAT Law Article 62",
+        "FTA Decision No. 7 of 2019",
+    ]
+    cn_seq = _next_credit_note_seq(s, i.client_code, i.period)
+
+    # Partial vs full clawback (UAE Art. 60 supports partial credit notes).
+    full_amount = float(i.amount or 0)
+    requested_partial = payload.partial_amount
+    is_partial = requested_partial is not None and 0 < float(requested_partial) < full_amount
+    cn_amount = (
+        float(requested_partial) if (is_partial and requested_partial is not None) else full_amount
+    )
+
+    before = {
+        "credit_note_sequence_no": None,
+        "credit_note_issued_at": None,
+        "adjustment_type": None,
+    }
+    i.credit_note_sequence_no = cn_seq
+    i.credit_note_issued_at = now
+    i.credit_note_issued_by = payload.by_user
+    i.credit_note_reason_code = payload.reason_code
+    i.credit_note_reason_text = payload.reason_text or friendly_reason
+    i.credit_note_article_refs = article_refs
+    i.credit_note_amount = cn_amount
+    i.credit_note_disputed_hours = payload.disputed_hours
+    i.adjustment_type = payload.adjustment_type
+
+    # Re-render the PDF as 2 pages (page 1 = original invoice, page 2 = credit note)
+    try:
+        from ..invoice.render import render_invoice_with_credit_note
+
+        i.pdf_path = render_invoice_with_credit_note(i)
+    except Exception as e:  # noqa: BLE001
+        log_event(
+            s, "system", "invoice", inv_id, "credit_note.pdf_render_failed", {"error": str(e)[:200]}
+        )
+
+    after = {
+        "credit_note_sequence_no": cn_seq,
+        "credit_note_issued_at": i.credit_note_issued_at.isoformat(),
+        "credit_note_amount": cn_amount,
+        "is_partial": is_partial,
+        "adjustment_type": payload.adjustment_type,
+    }
+    log_event(
+        s,
+        payload.by_user,
+        "invoice",
+        inv_id,
+        "invoice.credit_note_issued",
+        {
+            "reason_code": payload.reason_code,
+            "reason_text": payload.reason_text,
+            "friendly": friendly_reason,
+            "credit_note_sequence_no": cn_seq,
+            "original_sequence_no": i.invoice_sequence_no,
+            "article_refs": article_refs,
+            "has_payment": paid,
+            "is_partial": is_partial,
+            "credit_note_amount": cn_amount,
+            "invoice_amount": full_amount,
+            "disputed_hours": payload.disputed_hours,
+            "adjustment_type": payload.adjustment_type,
+            "adjustment_friendly": _FRIENDLY_ADJUSTMENT.get(payload.adjustment_type, ""),
+        },
+        idempotency_key=idempotency_key,
+        before=before,
+        after=after,
+    )
+
+    # Mark source timesheet for re-review (Q1 path b)
+    ts = s.get(Timesheet, i.timesheet_id) if i.timesheet_id else None
+    if ts:
+        ts.status = "needs_review"
+        ts.routing = "hitl"
+        ts.needs_review_reason = (
+            f"Credit Note {cn_seq} issued - {friendly_reason}. Please upload a corrected timesheet."
+        )
+        ts.needs_review_since = now
+        log_event(
+            s,
+            "system",
+            "timesheet",
+            ts.id,
+            "timesheet.needs_review_after_clawback",
+            {"credit_note_sequence_no": cn_seq, "reason_code": payload.reason_code},
+        )
+
+    # Auto-open a client query thread (Q-final = a)
+    cn_amount_text = f"{cn_amount:.2f} {i.currency or 'AED'}" + (
+        f" (partial - {payload.disputed_hours:g} disputed hour"
+        + ("s" if payload.disputed_hours and payload.disputed_hours != 1 else "")
+        + ")"
+        if is_partial and payload.disputed_hours
+        else (" (partial)" if is_partial else "")
+    )
+    adjustment_friendly = _FRIENDLY_ADJUSTMENT.get(payload.adjustment_type, "Credit memo issued")
+    client_msg = (
+        f"We've issued Tax Credit Note {cn_seq} for invoice "
+        f"{i.invoice_sequence_no or inv_id[:8]} on {now.date().isoformat()}. "
+        f"Amount: {cn_amount_text}. "
+        f"Reason: {friendly_reason}. "
+        f"Adjustment: {adjustment_friendly}. "
+        f"A corrected invoice will follow once FinOps completes a re-review of the source timesheet."
+    )
+    q = QueryModel(
+        client_code=i.client_code,
+        invoice_id=inv_id,
+        subject=f"Credit Note {cn_seq} issued",
+        body=client_msg,
+        raised_by="TIA · auto-notification",
+        thread=[
+            {
+                "by": "TIA · auto-notification",
+                "role": "finops",
+                "body": client_msg,
+                "at": now.isoformat(),
+            }
+        ],
+    )
+    s.add(q)
+    s.flush()
+    log_event(
+        s,
+        "system",
+        "client",
+        i.client_code,
+        "query.auto_opened_credit_note",
+        {"query_id": q.id, "credit_note_sequence_no": cn_seq, "invoice_id": inv_id},
+    )
+
+    # Refund event if there was a payment
+    if paid:
+        pay = s.query(Payment).filter_by(invoice_id=inv_id).first()
+        log_event(
+            s,
+            "system",
+            "invoice",
+            inv_id,
+            "payment_refund_required",
+            {
+                "credit_note_sequence_no": cn_seq,
+                "payment_id": pay.id if pay else None,
+                "amount": pay.amount if pay else i.amount,
+                "currency": pay.currency if pay else i.currency,
+                "reason": "credit note issued against paid invoice",
+            },
+        )
+
+    return {
+        "action_taken": "credit_note_with_refund_pending" if paid else "credit_note_issued",
+        "status": i.status,
+        "invoice_id": inv_id,
+        "credit_note_sequence_no": cn_seq,
+        "credit_note_issued_at": i.credit_note_issued_at.isoformat(),
+        "article_refs": article_refs,
+        "source_timesheet_id": i.timesheet_id,
+        "auto_query_id": q.id,
+        "refund_required": paid,
+        "is_partial": is_partial,
+        "credit_note_amount": cn_amount,
+        "invoice_amount": full_amount,
+        "disputed_hours": payload.disputed_hours,
+        "adjustment_type": payload.adjustment_type,
+        "adjustment_friendly": adjustment_friendly,
+        "reason": friendly_reason,
+    }
 
 
 @app.post("/admin/demo-reset")
@@ -2203,7 +2819,7 @@ def list_events(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  Real-product polish — Statement / Audit bundle / Notifications / Multi-user
+#  Real-product polish - Statement / Audit bundle / Notifications / Multi-user
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -2213,7 +2829,7 @@ def client_statement(
     months: int = 12,
     s: Session = Depends(db_session),
 ) -> dict:
-    """Month-by-month statement of account — what every B2B AR portal shows.
+    """Month-by-month statement of account - what every B2B AR portal shows.
 
     Aggregates invoices + payments + outstanding balance by period for the
     last `months` months.
@@ -2230,7 +2846,7 @@ def client_statement(
 
     by_period: dict[str, dict] = {}
     for inv in invoices:
-        p = inv.period or "—"
+        p = inv.period or "-"
         b = by_period.setdefault(
             p,
             {
@@ -2252,7 +2868,7 @@ def client_statement(
         inv = next((i for i in invoices if i.id == pay.invoice_id), None)
         if not inv:
             continue
-        p = inv.period or "—"
+        p = inv.period or "-"
         if p in by_period:
             by_period[p]["paid"] += float(pay.amount or 0)
     for b in by_period.values():
@@ -2417,7 +3033,7 @@ def list_notifications(
     s: Session = Depends(db_session),
 ) -> list[dict]:
     """In-app notification feed. Filters the audit stream to things the user
-    actually cares about — generated, dispatched, approval requests, query
+    actually cares about - generated, dispatched, approval requests, query
     replies. Frontend renders these in the bell dropdown."""
     actions = {
         "client": {
@@ -2476,11 +3092,11 @@ def _notif_summary(e: Event) -> str:
     a = e.action
     p = e.payload or {}
     if a == "generated":
-        return f"Invoice {p.get('sequence_no', e.entity_id[:8])} generated for {p.get('client', '?')} — AED {p.get('total_incl_vat', p.get('amount', 0))}"
+        return f"Invoice {p.get('sequence_no', e.entity_id[:8])} generated for {p.get('client', '?')} - AED {p.get('total_incl_vat', p.get('amount', 0))}"
     if a == "client_approved":
         return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} approved by client"
     if a == "client_rejected":
-        return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} rejected — reason: {p.get('reason', 'n/a')}"
+        return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} rejected - reason: {p.get('reason', 'n/a')}"
     if a == "finance_approved":
         return f"Invoice {p.get('invoice_sequence_no', e.entity_id[:8])} approved by Finance"
     if a == "dispatched":

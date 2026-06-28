@@ -1,15 +1,15 @@
 /**
- * Sender — outbound replies via POST /{phone_number_id}/messages.
+ * Sender - outbound replies via POST /{phone_number_id}/messages.
  *
  * TIA's reply surface is intentionally small: a free-form text acknowledgement/status, and a
  * read-receipt + typing indicator. Each call is bounded by an 8s timeout, validates the body, and
- * never throws — it returns a {@link SendResult} so the caller can audit and move on. The
+ * never throws - it returns a {@link SendResult} so the caller can audit and move on. The
  * `phone_number_id` is resolved per-call (multi-number) from the ambient send context, falling
  * back to the configured default.
  *
  * The 24-hour customer-service window matters: a free-form text fails with code 131047/131026/470
  * when the window is closed. We classify that distinctly so callers know an acknowledgement could
- * not be delivered (a template would be required to re-open the window — out of scope for v1, but
+ * not be delivered (a template would be required to re-open the window - out of scope for v1, but
  * the classification is surfaced rather than hidden).
  */
 import { graphBaseUrl, type AppConfig } from "../config.ts";

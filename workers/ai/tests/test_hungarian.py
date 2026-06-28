@@ -1,4 +1,4 @@
-"""Hungarian matcher tests — must avoid double-claims and preserve ties."""
+"""Hungarian matcher tests - must avoid double-claims and preserve ties."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def test_identity_assignment():
 
 
 def test_no_double_claim_under_collision():
-    """Both rows prefer col 0 — must split them between the two cols."""
+    """Both rows prefer col 0 - must split them between the two cols."""
     cost = [[0.1, 0.4], [0.15, 0.5]]
     a, _ = assign(cost)
     assert sorted(a) == [0, 1]
@@ -38,7 +38,7 @@ def test_empty():
 
 
 def test_tied_costs_still_produce_valid_assignment():
-    """Genuine ties (the Fatima Khan shape) — assignment must still be valid;
+    """Genuine ties (the Fatima Khan shape) - assignment must still be valid;
     the *caller* is responsible for flagging ambiguity from the cost matrix itself."""
     a, total = assign([[0.0, 0.0]])
     assert a in ([0], [1])  # either column is a valid pick

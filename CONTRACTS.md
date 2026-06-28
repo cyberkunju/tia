@@ -5,13 +5,13 @@ can work in parallel against stubs. Change these only by editing this file first
 
 ---
 
-## 1. OCR serving — GLM-OCR on Modal (teammate owns)
+## 1. OCR serving - GLM-OCR on Modal (teammate owns)
 
 **Base URL:** `https://versifine--glm-ocr-serve.modal.run` (scale-to-zero; cold start ~15–30s)
 
 OpenAI-compatible vLLM endpoint. Two logical operations:
 
-### 1a. KIE — image + schema → filled JSON
+### 1a. KIE - image + schema → filled JSON
 ```
 POST {base}/v1/chat/completions
 {
@@ -29,7 +29,7 @@ POST {base}/v1/chat/completions
 Returns assistant message whose content is a JSON object matching `TimesheetExtraction`
 (see §4). Worker is tolerant of code-fences / leading prose.
 
-### 1b. Layout — image → blocks with bboxes
+### 1b. Layout - image → blocks with bboxes
 Same shape, prompt = `prompt_layout_all_en`. Returns
 `[{ "bbox": [x1,y1,x2,y2], "category": "Text|Table|Picture|...", "text": "..." }, ...]`
 in resized-image coords. Used by the reconciler to anchor KIE fields to a source bbox.
@@ -38,7 +38,7 @@ in resized-image coords. Used by the reconciler to anchor KIE fields to a source
 
 ---
 
-## 2. Ingestion — WhatsApp bridge (teammate owns the bridge; API owns the endpoint)
+## 2. Ingestion - WhatsApp bridge (teammate owns the bridge; API owns the endpoint)
 
 ```
 POST {api}/intake/whatsapp
@@ -58,7 +58,7 @@ content-hashes it, and enqueues the pipeline.
 **Status: implemented.** The bridge lives in `workers/whatsapp` (Bun + Hono, Meta Cloud API).
 It verifies the Meta signature, de-duplicates retries, downloads inbound media and serves it at
 its own `/media/<hash>` (so this endpoint can fetch `attachment_url`), forwards here, and replies
-to the user with the generated invoice PDF (or a review notice). It owns no DB — the core is the
+to the user with the generated invoice PDF (or a review notice). It owns no DB - the core is the
 single source of truth.
 
 ---
@@ -80,7 +80,7 @@ Until NATS is wired, the Rust orchestrator calls stages in-process (same state m
 
 ---
 
-## 4. Canonical schema — `TimesheetExtraction` (shared, source of truth)
+## 4. Canonical schema - `TimesheetExtraction` (shared, source of truth)
 
 ```jsonc
 {

@@ -16,7 +16,7 @@ from .models import Client, Contract, Employee, RateCard, SOW
 # TASC's own TRN (sample; a real one is 15 digits ending in 0003 for a free-zone branch)
 TASC_TRN = "100123456700003"
 
-# Jurisdiction routing — 7 UAE + 2 KSA + 1 India
+# Jurisdiction routing - 7 UAE + 2 KSA + 1 India
 JURISDICTION_OVERRIDE = {
     "CL008": "KSA",
     "CL009": "KSA",
@@ -115,7 +115,7 @@ def seed_contracts() -> dict[str, int]:
             authorized = [e.emp_id for e in emps]
             contract = Contract(
                 client_code=c.code,
-                name=f"{c.name} — Manpower Supply {dt.date(2026, 1, 1).year}",
+                name=f"{c.name} - Manpower Supply {dt.date(2026, 1, 1).year}",
                 type=ctype,
                 start_date=start,
                 end_date=end,
@@ -124,7 +124,7 @@ def seed_contracts() -> dict[str, int]:
                 vat_rate=vat,
                 sac_code=sac,
                 markup_pct=0.20 if jurisdiction == "UAE" else 0.25,
-                max_ot_pct=0.20,  # 20% OT cap — R4
+                max_ot_pct=0.20,  # 20% OT cap - R4
                 payment_terms_days=30,
                 billing_cadence="MONTHLY",
                 approver_name="Site Manager",
@@ -137,7 +137,7 @@ def seed_contracts() -> dict[str, int]:
             s.flush()  # need contract.id for rate cards
             counts["contracts"] += 1
 
-            # rate cards — one per distinct job title under this client
+            # rate cards - one per distinct job title under this client
             titles = {(e.job_title or "Admin Assistant") for e in emps}
             for title in sorted(titles):
                 tmpl = RATE_CARD_TEMPLATES.get(title, DEFAULT_RATE)
@@ -154,7 +154,7 @@ def seed_contracts() -> dict[str, int]:
                 s.add(rc)
                 counts["rate_cards"] += 1
 
-            # SOW — only meaningful for FIXED_SCOPE; seed a couple of deliverables
+            # SOW - only meaningful for FIXED_SCOPE; seed a couple of deliverables
             if ctype == "FIXED_SCOPE":
                 # Make at least one SOW "completed early" so the eval case fires R5
                 s.add(

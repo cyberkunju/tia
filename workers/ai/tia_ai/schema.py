@@ -1,4 +1,4 @@
-"""Canonical Pydantic schemas — the shared source of truth (see CONTRACTS.md §4).
+"""Canonical Pydantic schemas - the shared source of truth (see CONTRACTS.md §4).
 
 The model never produces final confidence; it produces *signals*. Final calibrated
 confidence is computed by the matcher + validators downstream.
@@ -11,7 +11,7 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
-# Leave codes — canonical enum. The canonicalizer maps raw variants to these.
+# Leave codes - canonical enum. The canonicalizer maps raw variants to these.
 # ---------------------------------------------------------------------------
 
 

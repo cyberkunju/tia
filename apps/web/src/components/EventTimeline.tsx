@@ -11,10 +11,16 @@ const ACTION_TONE: Record<string, string> = {
   routed: "bg-amber-50 text-amber-700",
   generated: "bg-emerald-50 text-emerald-700",
   dispatched: "bg-emerald-50 text-emerald-700",
+  auto_dispatched_within_tolerance: "bg-brand-100 text-brand-900",
   client_approved: "bg-brand-50 text-brand-800",
   client_rejected: "bg-red-50 text-red-700",
   finance_approved: "bg-brand-50 text-brand-800",
   finance_rejected: "bg-red-50 text-red-700",
+  "invoice.voided": "bg-red-50 text-red-700",
+  "invoice.credit_note_issued": "bg-amber-50 text-amber-900",
+  "timesheet.needs_review_after_clawback": "bg-amber-50 text-amber-800",
+  "query.auto_opened_credit_note": "bg-amber-50 text-amber-800",
+  payment_refund_required: "bg-red-50 text-red-700",
 };
 
 export function EventTimeline({ events, max = 12 }: { events: EventRow[]; max?: number }) {
@@ -62,10 +68,24 @@ function summarisePayload(p: Record<string, unknown>): string {
   if (p.amount) out.push(`AED ${Number(p.amount).toFixed(2)}`);
   if (p.client) out.push(String(p.client));
   if (p.sequence_no) out.push(String(p.sequence_no));
+  if (p.credit_note_sequence_no) out.push(`CN ${p.credit_note_sequence_no}`);
   if (p.rule_id) out.push(`rule ${p.rule_id}`);
   if (p.engine) out.push(`engine: ${p.engine}`);
   if (p.intake_mode) out.push(`mode: ${p.intake_mode}`);
   if (p.rules_run) out.push(`${p.rules_run} rules · ${p.blocking_failures ?? 0} failed`);
+  if (p.rules_passed_count !== undefined) {
+    out.push(`${p.rules_passed_count} rules passed`);
+  }
+  if (p.is_partial && p.credit_note_amount) {
+    out.push(
+      `partial - AED ${Number(p.credit_note_amount).toFixed(2)} of AED ${
+        p.invoice_amount ? Number(p.invoice_amount).toFixed(2) : "?"
+      }`,
+    );
+  }
+  if (p.adjustment_type) out.push(String(p.adjustment_type).toLowerCase().replace(/_/g, " "));
+  if (p.threshold) out.push(`threshold AED ${Number(p.threshold).toFixed(0)}`);
   if (p.consolidated_excel) out.push("consolidated.xlsx + WPS.sif written");
+  if (p.friendly) out.push(`(${p.friendly})`);
   return out.join(" · ");
 }

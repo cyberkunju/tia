@@ -1,4 +1,4 @@
-"""Pipeline orchestrator — drives a document through the state machine.
+"""Pipeline orchestrator - drives a document through the state machine.
 
 Deterministic, idempotent, in-process. NATS JetStream is the target subject pub/sub
 (see CONTRACTS §3); for the demo the orchestrator calls phases directly and the
@@ -82,8 +82,8 @@ def log_event(
 
     Each event records:
       - payload  (the action's parameters)
-      - before / after  (state diff for mutations — optional but recommended)
-      - prev_hash + hash  (chain — a break in the chain is detectable
+      - before / after  (state diff for mutations - optional but recommended)
+      - prev_hash + hash  (chain - a break in the chain is detectable
         by re-walking `verify_audit_chain()` in tia_ai/audit.py)
 
     Idempotent on `idempotency_key`: replays return the original row.
@@ -124,15 +124,24 @@ def ingest_file(
     uploaded_by: str | None = None,
     idempotency_key: str | None = None,
     parent_doc_id: str | None = None,
+    meta: dict | None = None,
 ) -> DocAsset:
     """Stage the file (NVMe staging dir) + content-hash dedupe + audit-log.
 
     `parent_doc_id` links an attachment back to its parent email DocAsset
-    (used by the E3 .eml attachment extractor)."""
+    (used by the E3 .eml attachment extractor). `meta` is opaque per-channel
+    metadata (for email: from_addr, message_id, subject, etc.) stored on the
+    DocAsset so the email reply path can thread back without re-parsing."""
     src_path = Path(src_path)
     content_hash = _hash_file(src_path)
     existing = session.query(DocAsset).filter_by(content_hash=content_hash).first()
     if existing:
+        # If this is a re-ingest with fresh meta (e.g. same .eml re-delivered via
+        # IMAP after a transient), merge so the latest from_addr / message_id wins.
+        if meta:
+            merged = dict(existing.meta or {})
+            merged.update(meta)
+            existing.meta = merged
         log_event(
             session,
             uploaded_by,
@@ -156,6 +165,7 @@ def ingest_file(
         filename=src_path.name,
         uploaded_by=uploaded_by,
         parent_doc_id=parent_doc_id,
+        meta=meta or {},
     )
     session.add(doc)
     session.flush()
@@ -373,8 +383,8 @@ def _generate_invoice(
     period_for_seq = (inv.get("period") or "0000-00").replace(" ", "").upper()
     sequence_no = f"TIA-{inv['client_code'] or 'NA'}-{period_for_seq}-{seq_count:04d}"
 
-    # Smart Bot + SAP step ① — consolidated SAP-ready Excel
-    # Smart Bot + SAP step ② — process payroll (visible event)
+    # Smart Bot + SAP step ① - consolidated SAP-ready Excel
+    # Smart Bot + SAP step ② - process payroll (visible event)
     # (step ③ "generate invoices" is what this very function does)
     smart_bot_artifacts: dict = {}
     if inv.get("client_code") and inv.get("period"):
@@ -402,7 +412,7 @@ def _generate_invoice(
                 {"reason": str(e)[:200]},
             )
 
-    # inv payload for Typst — extend with tax fields
+    # inv payload for Typst - extend with tax fields
     inv_for_pdf = {
         **inv,
         "supplier_trn": "100123456700003",
@@ -460,7 +470,148 @@ def _generate_invoice(
             **smart_bot_artifacts,
         },
     )
+
+    # ── Auto-dispatch (Option B: re-use validation_threshold_aed) ─────────
+    # Decision: amount ≤ threshold AND all blocking rules passed AND R14 didn't
+    # fire (period not closed). Skip if Finance approval is intentionally
+    # required (over-threshold case routes there instead).
+    _maybe_auto_dispatch(session, invoice, client, rule_results or [])
     return invoice
+
+
+def _maybe_auto_dispatch(session, invoice, client, rule_results: list) -> None:
+    """Tolerance-based touchless dispatch.
+
+    Lives here (not in the dispatch endpoint) because every channel funnels
+    through `_generate_invoice` - upload, email, mailbox-webhook, online form,
+    Zoho IMAP poller. One hook → universal touchless behaviour.
+    """
+    if invoice.status != "generated":
+        return
+    threshold = 50000.0
+    if client and (client.settings or {}).get("validation_threshold_aed") is not None:
+        try:
+            threshold = float(client.settings["validation_threshold_aed"])
+        except (TypeError, ValueError):
+            threshold = 50000.0
+
+    if (invoice.amount or 0) > threshold:
+        return  # Finance approval queue takes it from here
+
+    passed_ids: list[str] = []
+    blocking_failures: list[str] = []
+    warned_ids: list[str] = []
+    for r in rule_results:
+        rid = r.get("rule_id") or r.get("rule")
+        if not rid:
+            continue
+        if r.get("passed"):
+            passed_ids.append(rid)
+        elif r.get("severity") == "warning":
+            warned_ids.append(rid)
+        else:
+            blocking_failures.append(rid)
+
+    if blocking_failures:
+        return  # any blocking failure → HITL
+
+    # all clear → auto-dispatch
+    import datetime as dt
+    import os
+
+    from .invoice.fsm import set_status
+
+    try:
+        set_status(session, invoice, "client_approved")
+    except Exception:  # noqa: BLE001
+        return  # FSM blocked it → defer to manual queue
+
+    dispatch_key = f"auto:{invoice.id}"
+    rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
+    engine = "in_process"
+
+    if rust_url:
+        try:
+            import httpx
+
+            session.commit()  # release sqlite lock so the Rust process can write
+            r = httpx.post(
+                f"{rust_url}/dispatch/{invoice.id}",
+                json={"by_user": "system"},
+                headers={"Idempotency-Key": dispatch_key},
+                timeout=10.0,
+            )
+            r.raise_for_status()
+            engine = "rust"
+        except Exception as e:  # noqa: BLE001
+            log_event(
+                session,
+                "system",
+                "invoice",
+                invoice.id,
+                "auto_dispatch_skipped",
+                {
+                    "reason": f"rust unreachable: {e}",
+                    "threshold": threshold,
+                    "amount": invoice.amount,
+                },
+            )
+            return
+    else:
+        # in-process fallback: same as the manual dispatch endpoint's fallback path
+        invoice.dispatch_idempotency_key = dispatch_key
+        invoice.dispatch_attempted_at = dt.datetime.now(dt.timezone.utc)
+        try:
+            set_status(session, invoice, "dispatched")
+        except Exception:  # noqa: BLE001
+            return
+
+    log_event(
+        session,
+        "system",
+        "invoice",
+        invoice.id,
+        "auto_dispatched_within_tolerance",
+        {
+            "amount": invoice.amount,
+            "threshold": threshold,
+            "currency": invoice.currency,
+            "rules_passed_count": len(passed_ids),
+            "rules_warned_count": len(warned_ids),
+            "rules_passed": sorted(passed_ids),
+            "decision": (
+                f"amount {invoice.amount:.2f} ≤ threshold {threshold:.2f}; "
+                f"{len(passed_ids)} blocking rules passed"
+            ),
+            "engine": engine,
+            "idempotency_key": dispatch_key,
+        },
+        before={"status": "generated"},
+        after={
+            "status": invoice.status,
+            "dispatch_attempted_at": (
+                invoice.dispatch_attempted_at.isoformat() if invoice.dispatch_attempted_at else None
+            ),
+        },
+    )
+
+    # Close the email loop: if the source timesheet came via email, ship the
+    # rendered invoice PDF back to the original sender. send_invoice_email is
+    # a no-op (with audit reason) for non-email sources / missing from_addr /
+    # SMTP not configured — so this is safe on every channel.
+    try:
+        from .mailbox.sender import send_invoice_email
+
+        send_invoice_email(session, invoice, by_user="system")
+    except Exception as e:  # noqa: BLE001
+        log_event(
+            session,
+            "system",
+            "invoice",
+            invoice.id,
+            "email.invoice_send_failed",
+            {"reason": str(e)[:200]},
+        )
 
 
 def approve_timesheet(
@@ -528,7 +679,7 @@ def reject_timesheet(
 def dispatch_invoice(
     session: Session, invoice: Invoice, by_user: str, idempotency_key: str
 ) -> dict:
-    """Idempotent dispatch — keyed by client+invoice; refuses to re-fire."""
+    """Idempotent dispatch - keyed by client+invoice; refuses to re-fire."""
     if invoice.dispatch_idempotency_key:
         return {"status": "already_dispatched", "idempotency_key": invoice.dispatch_idempotency_key}
     invoice.dispatch_idempotency_key = idempotency_key
@@ -545,4 +696,18 @@ def dispatch_invoice(
         {"channel": "mock_webhook"},
         idempotency_key=idempotency_key,
     )
+    # Close the email loop on the in-process dispatch fallback too.
+    try:
+        from .mailbox.sender import send_invoice_email
+
+        send_invoice_email(session, invoice, by_user=by_user)
+    except Exception as e:  # noqa: BLE001
+        log_event(
+            session,
+            by_user,
+            "invoice",
+            invoice.id,
+            "email.invoice_send_failed",
+            {"reason": str(e)[:200]},
+        )
     return {"status": "dispatched", "idempotency_key": idempotency_key}

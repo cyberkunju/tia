@@ -109,11 +109,16 @@ class DocAsset(Base):
     uploaded_at: Mapped[dt.datetime] = mapped_column(default=_now)
     doc_class: Mapped[str | None] = mapped_column(String, nullable=True)
     quality_score: Mapped[float | None] = mapped_column(Float, nullable=True)
-    # E3 — when this DocAsset is an attachment extracted from another email,
+    # E3 - when this DocAsset is an attachment extracted from another email,
     # link back to the parent email DocAsset. Null for top-level docs.
     parent_doc_id: Mapped[str | None] = mapped_column(
         ForeignKey("doc_assets.id"), nullable=True, index=True
     )
+    # Channel-specific metadata. For email channel we stash
+    # {from_addr, message_id, subject, to_addrs, cc_addrs} so the closer-the-loop
+    # email reply (hold ack + invoice send) can thread back to the original sender
+    # without re-parsing anything. Other channels can stash anything they want.
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
 class Timesheet(Base):
@@ -131,6 +136,10 @@ class Timesheet(Base):
     validations: Mapped[list] = mapped_column(JSON, default=list)
     match_result: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)
+    # Set when a clawback bounces the timesheet back for review (Q1 path b).
+    # FinOps re-uploads the corrected version; the new doc carries a fresh timesheet.
+    needs_review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    needs_review_since: Mapped[dt.datetime | None] = mapped_column(nullable=True)
 
     hypotheses: Mapped[list[Hypothesis]] = relationship(back_populates="timesheet")
 
@@ -184,15 +193,49 @@ class Invoice(Base):
     )  # pending|approved|rejected
     client_approved_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
     client_approval_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # validation provenance — list of {rule_id, passed, expected, actual, severity}
+    # validation provenance - list of {rule_id, passed, expected, actual, severity}
     rule_results: Mapped[list] = mapped_column(JSON, default=list)
+    # ── clawback: void path ─────────────────────────────────────────────
+    voided_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    voided_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    voided_reason_code: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )  # PRICING_ERROR|GOODS_RETURNED|DISCOUNT|DUPLICATE|OTHER
+    voided_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── clawback: credit-note path (UAE VAT Art. 60 + Decision 7/2019) ──
+    # Lives as 2nd-page on the same PDF; sequence_no is a separate parallel sequence.
+    credit_note_sequence_no: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
+    credit_note_issued_at: Mapped[dt.datetime | None] = mapped_column(nullable=True)
+    credit_note_issued_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    credit_note_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    credit_note_reason_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credit_note_article_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Partial vs full clawback. When set, the credit note covers `credit_note_amount`
+    # only (UAE Art. 60 allows partials), not the full invoice value. Used for
+    # the "4 of 40 hours disputed" case from real staffing operations.
+    credit_note_amount: Mapped[float | None] = mapped_column(Float, nullable=True)
+    credit_note_disputed_hours: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Where the recovery is applied (drives downstream reconciliation):
+    #   CREDIT_TO_CLIENT          - issue a credit memo against AR (default)
+    #   DEDUCT_FROM_NEXT_INVOICE  - net against the client's next invoice
+    #   DEDUCT_FROM_PAYROLL       - recover from the employee's next pay run
+    #   INTERNAL_WRITE_OFF        - absorb the loss; no further recovery
+    #   MANUAL_REVIEW             - escalate for Finance to decide
+    adjustment_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    # ── reissue chain (linked corrections across versions) ──────────────
+    replaces_invoice_id: Mapped[str | None] = mapped_column(
+        ForeignKey("invoices.id"), nullable=True
+    )
+    superseded_by_invoice_id: Mapped[str | None] = mapped_column(
+        ForeignKey("invoices.id"), nullable=True
+    )
 
 
 # --------------------------- contracts (BTP-style validation profile) -------
 
 
 class Contract(Base):
-    """Per-client × period contract — the source of truth for billing rules.
+    """Per-client × period contract - the source of truth for billing rules.
 
     Mentor's key insight (brief §4.5 calls it a "BTP-style configurable rule set"):
     the invoice must reconcile against the *contract*, not just the timesheet.
@@ -243,7 +286,7 @@ class RateCard(Base):
 
 
 class SOW(Base):
-    """Statement of Work — drives rule R5 (sow_hours_not_exceeded).
+    """Statement of Work - drives rule R5 (sow_hours_not_exceeded).
 
     For FIXED_SCOPE contracts the SOW caps total hours per deliverable. If a worker
     completes the deliverable early but a timesheet keeps charging hours, R5 fires.
@@ -286,8 +329,8 @@ class Payment(Base):
     """Client payment against an invoice.
 
     Mock for the demo (no real Stripe/Tap/bank gateway in scope); the schema
-    matches what a real production setup would carry — method, reference,
-    amount, currency, reconciliation status — so the path to real payment
+    matches what a real production setup would carry - method, reference,
+    amount, currency, reconciliation status - so the path to real payment
     is a one-adapter swap (lettre/stripe/tap-payments)."""
 
     __tablename__ = "payments"
@@ -341,12 +384,12 @@ class ChatMessage(Base):
 
 
 class Event(Base):
-    """Append-only audit spine — tamper-evident via hash chain.
+    """Append-only audit spine - tamper-evident via hash chain.
 
     Each event's `hash` = sha256(prev_hash + actor + entity_id + action + payload).
     A break in the chain (any historical event modified) is detectable by re-walking
     the chain. Sufficient for SOC2/ISO27001-style audit, FTA tax-record retention,
-    and dispute defence — close to what production-grade financial systems expect.
+    and dispute defence - close to what production-grade financial systems expect.
     """
 
     __tablename__ = "events"
@@ -362,6 +405,6 @@ class Event(Base):
     # tamper-evidence
     prev_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     hash: Mapped[str | None] = mapped_column(String, index=True, nullable=True)
-    # before/after diff for mutations — null for create-only events
+    # before/after diff for mutations - null for create-only events
     before: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSON, nullable=True)

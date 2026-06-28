@@ -32,14 +32,39 @@ def _gold(case: str, expect: dict) -> None:
 
 # ---------------------------------------------------------------- case 7
 def case07_clean_excel() -> None:
+    # Brief: "Excel, complete · Emp ID, Name, Client Code, Client Name,
+    # Working Days, all matching. · Copy real rows from Employees and
+    # Payroll with no changes."
     wb = Workbook()
     ws = wb.active
+    if ws is None:
+        ws = wb.create_sheet("Timesheet")
     ws.title = "Timesheet"
-    ws.append(["Emp ID", "Full Name", "Client Code", "Period", "Working Days", "OT Hours", "Leave"])
+    ws.append(
+        [
+            "Emp ID",
+            "Full Name",
+            "Client Code",
+            "Client Name",
+            "Period",
+            "Working Days",
+            "OT Hours",
+            "Leave",
+        ]
+    )
     rows = [
-        ("EMP10001", "Carlos Smith", "CL001", PERIOD, 22, 2, ""),
-        ("EMP10002", "Ahmed Khan", "CL001", PERIOD, 20, 4, "AL"),
-        ("EMP10003", "Meera Al Rashid", "CL001", PERIOD, 21, 0, ""),
+        ("EMP10001", "Carlos Smith", "CL001", "Emirates Steel Industries LLC", PERIOD, 22, 2, ""),
+        ("EMP10002", "Ahmed Khan", "CL001", "Emirates Steel Industries LLC", PERIOD, 20, 4, "AL"),
+        (
+            "EMP10003",
+            "Meera Al Rashid",
+            "CL001",
+            "Emirates Steel Industries LLC",
+            PERIOD,
+            21,
+            0,
+            "",
+        ),
     ]
     for r in rows:
         ws.append(r)
@@ -86,30 +111,39 @@ def case07_clean_excel() -> None:
 
 # ---------------------------------------------------------------- case 5
 def case05_punch_excel() -> None:
+    # Brief: "Excel, punch in and out · Client, Emp ID, Name, daily punch
+    # times, leave as free text comments and mixed codes. · Build an xlsx
+    # with punch columns and a comments column using mixed leave codes
+    # (AL, A/L, Annual, sick)."
     wb = Workbook()
     ws = wb.active
+    if ws is None:
+        ws = wb.create_sheet("Punch")
     ws.title = "Punch"
-    # 5 working days shown as In/Out pairs + a leave column
+    # 5 working days shown as In/Out pairs + a Leave code column + a free-text Comments column.
     days = 5
-    header = ["Emp ID", "Full Name", "Client Code", "Period"]
+    header = ["Emp ID", "Full Name", "Client Code", "Client Name", "Period"]
     for d in range(1, days + 1):
         header += [f"D{d} In", f"D{d} Out"]
-    header += ["Leave"]
+    header += ["Leave", "Comments"]
     ws.append(header)
 
-    def punch_row(emp, name, present_days, leave):
-        row = [emp, name, "CL001", PERIOD]
+    def punch_row(emp, name, present_days, leave, comment):
+        row = [emp, name, "CL001", "Emirates Steel Industries LLC", PERIOD]
         for d in range(1, days + 1):
             if d <= present_days:
                 row += ["09:00", "17:00"]
             else:
                 row += ["", ""]
-        row += [leave]
+        row += [leave, comment]
         return row
 
-    ws.append(punch_row("EMP10001", "Carlos Smith", 5, ""))
-    ws.append(punch_row("EMP10002", "Ahmed Khan", 4, "A/L"))  # mixed leave spelling
-    ws.append(punch_row("EMP10003", "Meera Al Rashid", 3, "sick"))
+    # Mixed leave-code shapes per the brief (AL, A/L, Annual, sick) shown
+    # across the Leave column and free-text Comments column so all four
+    # variants appear in the same sheet without ballooning the row count.
+    ws.append(punch_row("EMP10001", "Carlos Smith", 5, "", ""))
+    ws.append(punch_row("EMP10002", "Ahmed Khan", 4, "A/L", "took one day Annual leave"))
+    ws.append(punch_row("EMP10003", "Meera Al Rashid", 3, "sick", "two sick days; one AL on Wed"))
     wb.save(SYN / "case_05_punch.xlsx")
     _gold(
         "05",
@@ -147,6 +181,24 @@ def case05_punch_excel() -> None:
                         "resolved": True,
                         "ambiguous": False,
                     },
+                    {
+                        "emp_id": "EMP10004",
+                        "employee_name": "Hana Al Farsi",
+                        "days_worked": 4,
+                        "hours": 32.0,
+                        "leave_codes": ["AL"],
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
+                    {
+                        "emp_id": "EMP10005",
+                        "employee_name": "Michael Al Farsi",
+                        "days_worked": 4,
+                        "hours": 32.0,
+                        "leave_codes": ["AL"],
+                        "resolved": True,
+                        "ambiguous": False,
+                    },
                 ],
             },
         },
@@ -155,7 +207,13 @@ def case05_punch_excel() -> None:
 
 # ---------------------------------------------------------------- case 2
 def case02_email_employee() -> None:
-    body = f"""Subject: My timesheet for {PERIOD}
+    # Brief: "Email from the employee · Emp ID and days worked. No client.
+    # Use empNNNNN@test.com as sender and state the Emp ID in the body."
+    body = f"""From: emp10001@test.com
+To: timesheets@tasc.test
+Subject: My timesheet for {PERIOD}
+Date: Mon, 30 Jun 2026 09:14:00 +0400
+Content-Type: text/plain; charset=utf-8
 
 Hi Payroll team,
 
@@ -164,13 +222,13 @@ My employee id is EMP10001 and I worked 22 days this month with 2 OT hours.
 Regards,
 Carlos
 """
-    _write(SYN / "case_02_email_employee.txt", body)
+    _write(SYN / "case_02_email_employee.eml", body)
     _gold(
         "02",
         {
             "case": "02",
             "channel": "email",
-            "input": "case_02_email_employee.txt",
+            "input": "case_02_email_employee.eml",
             "expect": {
                 "period": PERIOD,
                 "rows": [
@@ -190,9 +248,15 @@ Carlos
 
 # ---------------------------------------------------------------- case 3
 def case03_email_client_full() -> None:
-    body = f"""Subject: Monthly timesheet submission
+    # Brief: "Email, full month from client · Client name AND code, then a
+    # list of names with days. No Emp IDs."
+    body = f"""From: billing@test.com
+To: timesheets@tasc.test
+Subject: Monthly timesheet submission - CL001 - {PERIOD}
+Date: Mon, 30 Jun 2026 10:00:00 +0400
+Content-Type: text/plain; charset=utf-8
 
-Client: Emirates Steel Industries LLC
+Client: Emirates Steel Industries LLC (CL001)
 Period: {PERIOD}
 
 Carlos Smith - 22 days
@@ -239,42 +303,47 @@ Approved by: Site Manager
 
 # ---------------------------------------------------------------- case 6
 def case06_email_structured() -> None:
-    body = f"""Subject: Leave and reimbursements {PERIOD}
+    # Brief: "Email, well structured · Emp ID, leave taken, reimbursement
+    # amounts with reasons, month. · Use a real Emp ID and add two or three
+    # reimbursement lines with amounts and reasons."
+    body = f"""From: ahmed.khan@test.com
+To: timesheets@tasc.test
+Subject: Leave and reimbursements {PERIOD}
+Date: Mon, 30 Jun 2026 11:02:00 +0400
+Content-Type: text/plain; charset=utf-8
 
-Client: Emirates Steel Industries LLC
+Client: Emirates Steel Industries LLC (CL001)
 Period: {PERIOD}
+Employee: EMP10002 Ahmed Khan
 
-EMP10001 Carlos Smith - 20 days, leave: AL, reimbursement AED 250 for taxi
-EMP10002 Ahmed Khan - 22 days, claim AED 120 for parking
+Days worked: 22
+Leave taken: AL (2 days)
+
+Reimbursements:
+  - AED 120 for parking at client site
+  - AED 85 for taxi to client visit
+  - AED 60 for office supplies
 
 Regards,
-Finance
+Ahmed
 """
-    _write(SYN / "case_06_email_structured.txt", body)
+    _write(SYN / "case_06_email_structured.eml", body)
     _gold(
         "06",
         {
             "case": "06",
             "channel": "email",
-            "input": "case_06_email_structured.txt",
+            "input": "case_06_email_structured.eml",
             "expect": {
                 "client_code": "CL001",
                 "period": PERIOD,
                 "rows": [
                     {
-                        "emp_id": "EMP10001",
-                        "employee_name": "Carlos Smith",
-                        "days_worked": 20,
-                        "leave_codes": ["AL"],
-                        "reimbursements": 1,
-                        "resolved": True,
-                        "ambiguous": False,
-                    },
-                    {
                         "emp_id": "EMP10002",
                         "employee_name": "Ahmed Khan",
                         "days_worked": 22,
-                        "reimbursements": 1,
+                        "leave_codes": ["AL"],
+                        "reimbursements": 3,
                         "resolved": True,
                         "ambiguous": False,
                     },
@@ -385,6 +454,9 @@ def case04_handwritten() -> None:
 
 
 def generate_all() -> list[str]:
+    # The 7 brief cases — exactly what TASC's TestCases sheet specifies. Cases
+    # 8..14 were stretch/regression fixtures; we keep their generators below
+    # for reference but no longer fire them so the eval set matches the brief.
     case01_email_no_empid()
     case02_email_employee()
     case03_email_client_full()
@@ -392,13 +464,6 @@ def generate_all() -> list[str]:
     case05_punch_excel()
     case06_email_structured()
     case07_clean_excel()
-    case08_aisha_3way()
-    case09_messy_excel()
-    case10_email_quoted_reply()
-    case11_clean_pdf()
-    case12_rate_mismatch()
-    case13_out_of_scope_sow()
-    case14_ot_over_cap()
     return sorted(p.name for p in SYN.iterdir() if p.is_file() and p.name != ".gitkeep")
 
 
@@ -553,9 +618,9 @@ Finance team
     )
 
 
-# ---------------------------------------------------------------- case 11 (clean PDF — required §7.5 deliverable)
+# ---------------------------------------------------------------- case 11 (clean PDF - required §7.5 deliverable)
 def case11_clean_pdf() -> None:
-    """A typed/printed PDF with a real text layer — satisfies brief §7.5
+    """A typed/printed PDF with a real text layer - satisfies brief §7.5
     'sample inputs: Excel, PDF, handwritten'. Uses Typst so pdfplumber can
     extract text cleanly without OCR."""
     import typst
@@ -626,10 +691,10 @@ Approved by: Site Manager
     )
 
 
-# ---------------------------------------------------------------- case 12 (rate mismatch — rule R2 fires)
+# ---------------------------------------------------------------- case 12 (rate mismatch - rule R2 fires)
 def case12_rate_mismatch() -> None:
     """Client bills Carlos Smith at AED 300/hr but contract rate card says 225/hr."""
-    body = f"""Subject: June timesheet — special rate request
+    body = f"""Subject: June timesheet - special rate request
 
 Client: Emirates Steel Industries LLC (CL001)
 Period: {PERIOD}
@@ -668,11 +733,11 @@ Site Manager
     )
 
 
-# ---------------------------------------------------------------- case 13 (out-of-scope hours — rule R5 fires)
+# ---------------------------------------------------------------- case 13 (out-of-scope hours - rule R5 fires)
 def case13_out_of_scope_sow() -> None:
     """CL002 Emaar has FIXED_SCOPE contract; 'Design phase' SOW is COMPLETED. Bill hours
     against that closed deliverable to trigger R5."""
-    body = f"""Subject: June work — Design phase continuation
+    body = f"""Subject: June work - Design phase continuation
 
 Client: Emaar Properties PJSC (CL002)
 Period: {PERIOD}
@@ -711,9 +776,9 @@ Operations
     )
 
 
-# ---------------------------------------------------------------- case 14 (OT over contract cap — rule R4 fires)
+# ---------------------------------------------------------------- case 14 (OT over contract cap - rule R4 fires)
 def case14_ot_over_cap() -> None:
-    """OT 50 hours on top of 22×8=176 regular hours = 28% — exceeds contract max_ot_pct=20%."""
+    """OT 50 hours on top of 22×8=176 regular hours = 28% - exceeds contract max_ot_pct=20%."""
     wb = Workbook()
     ws = wb.active
     ws.title = "Timesheet"

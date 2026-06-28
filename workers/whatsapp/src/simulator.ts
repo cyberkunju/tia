@@ -4,7 +4,7 @@
  * The real webhook only trusts traffic carrying a valid X-Hub-Signature-256 HMAC over the exact
  * raw body. That makes it awkward to exercise the end-to-end inbound path by hand. This endpoint
  * takes a small spec (messages / a full envelope), wraps it in a valid Meta envelope, computes the
- * correct signature with the app secret, and posts it to the real webhook — driving the genuine
+ * correct signature with the app secret, and posts it to the real webhook - driving the genuine
  * signature → dedup → parse → intake path with no Meta involvement.
  *
  * It is INVISIBLE IN PRODUCTION: the production gate runs first and returns 404, so a dev tool can
@@ -81,7 +81,7 @@ export function buildEnvelope(
 export function createSimulatorRouter(deps: SimulatorRouterDeps): SimulatorRouter {
   const router = new Hono();
 
-  // Production gate FIRST — invisible in production regardless of any input.
+  // Production gate FIRST - invisible in production regardless of any input.
   router.use("/internal/simulator/*", async (c: Context, next: Next) => {
     if (deps.isProduction()) return c.body(null, 404);
     await next();

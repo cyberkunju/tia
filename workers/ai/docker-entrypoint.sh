@@ -21,7 +21,7 @@ if url.startswith("postgresql"):
             print(f"db: ready after {attempt}s", flush=True)
             break
         except Exception as exc:  # noqa: BLE001
-            print(f"db: waiting ({attempt}/{deadline}) — {exc.__class__.__name__}", flush=True)
+            print(f"db: waiting ({attempt}/{deadline}) - {exc.__class__.__name__}", flush=True)
             time.sleep(1)
     else:
         print("db: unreachable, giving up", file=sys.stderr, flush=True)

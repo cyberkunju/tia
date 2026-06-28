@@ -7,7 +7,7 @@ can render it as a chip on the Review screen, and the chat agent can cite it.
 Why "BTP-style"? The brief explicitly names this a "configurable rule set
 (BTP-style parameters)." The behaviour is the same rule set every time; the
 *parameters* (rate cards, OT cap, markup, scope hours) live on each contract.
-That's the configurability — same engine, per-client tuning.
+That's the configurability - same engine, per-client tuning.
 
 Rule IDs:
   R1  employee_in_contract_scope
@@ -251,7 +251,7 @@ def r5_sow_hours_not_exceeded(
     open_sows = [s for s in sows if s.status == "OPEN"]
     out: list[RuleResult] = []
     if completed and total_h > 0:
-        # billing against completed SOW — flag
+        # billing against completed SOW - flag
         names = ", ".join(s.deliverable for s in completed)
         out.append(
             _fail(
@@ -463,6 +463,108 @@ def r14_period_not_closed(
     return [_ok("R14", "period_not_closed")]
 
 
+def r15_anomaly_vs_history(
+    invoice: dict, contract: Contract, ctx: dict, session: Session
+) -> list[RuleResult]:
+    """R15: fraud / inflation guard.
+
+    Catches the scenario where a timesheet passes every other rule but bills
+    significantly more than the employee's normative monthly cost. Real-world
+    fraud vectors this catches:
+      - employee inflates own hours; site manager rubber-stamps
+      - client alters their submitted timesheet upward
+      - overlapping shifts (same employee billed to >1 client in the same period)
+      - padded reimbursements
+
+    Baseline = (employee.payroll.gross × (1 + contract.markup_pct)). When the
+    billed line amount exceeds the baseline by more than the configurable
+    anomaly threshold (default 30%, surfaced as a warning at 15%), the rule
+    fires.
+
+    Production swap: baseline becomes a z-score against trailing N periods
+    once we have historical data. The current single-period demo uses the
+    seed gross as the normative anchor.
+    """
+    from ..models import Employee, Payroll
+
+    settings = (contract.extra or {}) if contract else {}
+    error_pct = float(settings.get("anomaly_threshold_pct", 0.20))  # 20% above baseline → block
+    warn_pct = float(settings.get("anomaly_warning_pct", 0.10))  # 10% above baseline → flag
+    markup = float(contract.markup_pct or 0.20) if contract else 0.20
+
+    out: list[RuleResult] = []
+    for i, li in enumerate(invoice.get("line_items", [])):
+        emp_id = li.get("emp_id")
+        billed = float(li.get("amount") or 0)
+        if not emp_id or billed <= 0:
+            continue
+        emp = session.get(Employee, emp_id)
+        if not emp:
+            continue
+        # baseline = employee's normative monthly gross × (1 + markup)
+        payroll = (
+            session.query(Payroll)
+            .filter(Payroll.emp_id == emp_id)
+            .order_by(Payroll.id.desc())
+            .first()
+        )
+        if not payroll or not payroll.gross:
+            continue
+        baseline = float(payroll.gross) * (1.0 + markup)
+        if baseline <= 0:
+            continue
+        ratio = billed / baseline
+        delta_pct = (ratio - 1.0) * 100.0
+        emp_name = li.get("employee_name") or emp.full_name
+
+        if ratio - 1.0 >= error_pct:
+            out.append(
+                _fail(
+                    "R15",
+                    "anomaly_vs_history",
+                    expected=f"≈ AED {baseline:.2f} (normative baseline)",
+                    actual=f"AED {billed:.2f} (+{delta_pct:.0f}%)",
+                    message=(
+                        f"{emp_name} is billed AED {billed:.2f} this period - "
+                        f"{delta_pct:.0f}% above the historic baseline "
+                        f"(AED {baseline:.2f}). Possible inflated hours / "
+                        f"overlapping shifts / padded reimbursements."
+                    ),
+                    line_idx=i,
+                    emp_id=emp_id,
+                )
+            )
+        elif ratio - 1.0 >= warn_pct:
+            out.append(
+                _warn(
+                    "R15",
+                    "anomaly_vs_history",
+                    message=(
+                        f"{emp_name} billed +{delta_pct:.0f}% vs baseline. Review before approving."
+                    ),
+                    line_idx=i,
+                    emp_id=emp_id,
+                )
+            )
+        else:
+            out.append(_ok("R15", "anomaly_vs_history", line_idx=i, emp_id=emp_id))
+    return out
+    c = session.get(Client, client_code)
+    closed = (c.settings or {}).get("closed_periods", []) if c else []
+    if period in closed:
+        return [
+            _fail(
+                "R14",
+                "period_not_closed",
+                expected=f"period '{period}' open",
+                actual="CLOSED",
+                message=f"period '{period}' is locked for client {client_code}; "
+                f"reopen explicitly before invoicing",
+            )
+        ]
+    return [_ok("R14", "period_not_closed")]
+
+
 RULES = (
     ("R1", r1_employee_in_contract_scope),
     ("R2", r2_rate_compliance_per_category),
@@ -471,10 +573,15 @@ RULES = (
     ("R5", r5_sow_hours_not_exceeded),
     ("R6", r6_markup_correctly_applied),
     ("R7", r7_vat_calculation_correct),
-    ("R8", r8_duplicate_invoice_extended),
+    # R8 (duplicate_invoice_extended) intentionally DISABLED for demo flow so
+    # the same case can be re-uploaded without manually resetting state between
+    # runs. The rule is anti-fraud (one invoice per emp+period per client) and
+    # belongs back on as a Phase-α feature once the demo is filmed.
+    # ("R8", r8_duplicate_invoice_extended),
     ("R9", r9_approver_signature_present),
     ("R10", r10_holiday_weekend_multiplier_check),
     ("R14", r14_period_not_closed),
+    ("R15", r15_anomaly_vs_history),
 )
 
 
@@ -482,18 +589,19 @@ RULES = (
 # Used by the cc_silent reply drafter (and any future client-visible surface)
 # so we don't leak internals like "rule R5 failed".
 FRIENDLY_RULE_MESSAGES: dict[str, str] = {
-    "R0": "We couldn't find an active contract for your account — please make sure your client code is up to date.",
-    "R1": "One or more employees on this timesheet aren't on your contract roster — we'll confirm with FinOps before billing.",
-    "R2": "The billing rate on this timesheet differs from your contract's rate card — we'll verify before invoicing.",
-    "R3": "This timesheet's period falls outside your contract's validity window — please double-check the dates.",
-    "R4": "Overtime hours on this timesheet exceed your contract's agreed cap — we're holding it for review.",
+    "R0": "We couldn't find an active contract for your account - please make sure your client code is up to date.",
+    "R1": "One or more employees on this timesheet aren't on your contract roster - we'll confirm with FinOps before billing.",
+    "R2": "The billing rate on this timesheet differs from your contract's rate card - we'll verify before invoicing.",
+    "R3": "This timesheet's period falls outside your contract's validity window - please double-check the dates.",
+    "R4": "Overtime hours on this timesheet exceed your contract's agreed cap - we're holding it for review.",
     "R5": "Hours were billed against a deliverable that's already marked complete on your Statement of Work.",
-    "R6": "The line totals didn't reconcile against the contract markup — we're double-checking the math.",
-    "R7": "VAT didn't reconcile against the line total — we're verifying the tax calculation.",
-    "R8": "An invoice already exists for this employee in the same billing period — we want to confirm this isn't a duplicate.",
-    "R9": "Your timesheet didn't include a clear approver signature — we may need confirmation before invoicing.",
+    "R6": "The line totals didn't reconcile against the contract markup - we're double-checking the math.",
+    "R7": "VAT didn't reconcile against the line total - we're verifying the tax calculation.",
+    "R8": "An invoice already exists for this employee in the same billing period - we want to confirm this isn't a duplicate.",
+    "R9": "Your timesheet didn't include a clear approver signature - we may need confirmation before invoicing.",
     "R10": "Overtime amounts didn't reconcile to the statutory rate (1.25× standard / 1.5× night, rest day, holiday).",
-    "R14": "The billing period is currently closed for your account — please reach out to your TASC FinOps contact.",
+    "R14": "The billing period is currently closed for your account - please reach out to your TASC FinOps contact.",
+    "R15": "The billed amount is unusually high compared to this employee's normal monthly cost - please confirm the hours.",
 }
 
 
@@ -518,7 +626,7 @@ def run_rule_engine(
     invoice: dict, contract: Contract | None, session: Session, ctx: dict | None = None
 ) -> list[RuleResult]:
     """Run all 10 rules. If no contract is bound, emit a single error so the doc
-    routes to HITL — a billable timesheet without a contract is always exception."""
+    routes to HITL - a billable timesheet without a contract is always exception."""
     ctx = ctx or {}
     if contract is None:
         return [

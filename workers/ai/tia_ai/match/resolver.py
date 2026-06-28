@@ -160,7 +160,7 @@ def resolve(extraction: TimesheetExtraction, session: Session) -> MatchResult:
             if len(cands) > 1 and margin <= AMBIGUITY_MARGIN and second >= NAME_THRESHOLD:
                 ambiguous = True
                 confidence = round(0.45 * top.score, 4)
-                reason = f"{sum(1 for c in cands if c.score >= NAME_THRESHOLD)} strong candidates (Δ={margin:.2f}) — needs review"
+                reason = f"{sum(1 for c in cands if c.score >= NAME_THRESHOLD)} strong candidates (Δ={margin:.2f}) - needs review"
             else:
                 # use Hungarian assignment for the consistent pick
                 assigned_col = assignment[idx] if idx < len(assignment) else -1

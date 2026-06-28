@@ -14,7 +14,7 @@ env:
   UV_VERSION: "0.5.4"
 
 jobs:
-  # 1) pytest — fast unit + integration suite (50 tests, no external calls)
+  # 1) pytest - fast unit + integration suite (50 tests, no external calls)
   backend-tests:
     name: backend-tests (pytest)
     runs-on: ubuntu-latest
@@ -32,7 +32,7 @@ jobs:
       - name: run pytest
         run: uv run pytest tests/ -q --tb=short
 
-  # 2) frontend — TypeScript + Vite build (tsc -b catches every TS error)
+  # 2) frontend - TypeScript + Vite build (tsc -b catches every TS error)
   frontend-build:
     name: frontend-build (tsc + vite)
     runs-on: ubuntu-latest
@@ -49,7 +49,7 @@ jobs:
       - name: build (tsc + vite)
         run: bun run build
 
-  # 3) eval — 9 deterministic cases (case 4 vision is skipped — needs Modal creds)
+  # 3) eval - 9 deterministic cases (case 4 vision is skipped - needs Modal creds)
   eval-harness:
     name: eval-harness (9 cases, F1+ECE gate)
     runs-on: ubuntu-latest
@@ -67,7 +67,7 @@ jobs:
         run: |
           uv run python -m tia_ai.seed
           uv run python -m tia_ai.synthgen
-      - name: run eval (skip case 4 — Modal-only)
+      - name: run eval (skip case 4 - Modal-only)
         run: |
           uv run python - <<'PY'
           import json, sys
@@ -93,7 +93,7 @@ jobs:
               sys.exit(1)
           PY
 
-  # 4) api-smoke — boot uvicorn, hit critical endpoints, confirm response shapes
+  # 4) api-smoke - boot uvicorn, hit critical endpoints, confirm response shapes
   api-smoke:
     name: api-smoke (boot + curl critical endpoints)
     runs-on: ubuntu-latest
@@ -150,7 +150,7 @@ jobs:
           pkill -f "uv run uvicorn" || true
           sleep 1
 
-  # 5) collector — single required check for branch protection
+  # 5) collector - single required check for branch protection
   ci-status:
     name: ci-status
     runs-on: ubuntu-latest

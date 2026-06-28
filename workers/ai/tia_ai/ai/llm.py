@@ -1,4 +1,4 @@
-"""Provider-agnostic LLM + embeddings clients — the single seam for all model calls.
+"""Provider-agnostic LLM + embeddings clients - the single seam for all model calls.
 
 One injectable port so the agent/RAG are testable with no network. Works against any
 OpenAI-compatible endpoint: hosted OpenAI, Azure, or a self-hosted vLLM gateway (the team's
@@ -132,7 +132,7 @@ class ChatModelClient:
             return ChatResult(ok=True, content=content)
         except httpx.TimeoutException:
             return ChatResult(ok=False, kind="timeout", reason="model request timed out")
-        except Exception as exc:  # noqa: BLE001 — model call must never raise into the pipeline
+        except Exception as exc:  # noqa: BLE001 - model call must never raise into the pipeline
             return ChatResult(ok=False, kind="network", reason=f"model request failed: {type(exc).__name__}")
         finally:
             if owns:
@@ -178,7 +178,7 @@ class EmbeddingsClient:
             if not isinstance(vec, list) or len(vec) != self.dim:
                 return self._zero()
             return [float(x) for x in vec]
-        except Exception:  # noqa: BLE001 — graceful degradation
+        except Exception:  # noqa: BLE001 - graceful degradation
             return self._zero()
         finally:
             if owns:

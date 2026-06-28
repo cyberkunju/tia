@@ -1,4 +1,4 @@
-"""Resolver tests against the seeded DB — covers the killer ambiguity cases."""
+"""Resolver tests against the seeded DB - covers the killer ambiguity cases."""
 
 from __future__ import annotations
 
@@ -84,7 +84,7 @@ def test_resolve_unique_name_within_client():
 
 
 def test_resolve_fatima_khan_ambiguous():
-    """Same name, same client, two emp ids — must flag ambiguous."""
+    """Same name, same client, two emp ids - must flag ambiguous."""
     ex = TimesheetExtraction(
         client_hint="Majid Al Futtaim Retail LLC",
         period="June 2026",
@@ -120,7 +120,7 @@ def test_resolve_aisha_three_way_cross_client_ambiguous():
 
 
 def test_resolve_ravi_menon_cross_client_ambiguous():
-    """Ravi Menon spans CL004 / CL007 / CL008 — cross-client ambiguity that
+    """Ravi Menon spans CL004 / CL007 / CL008 - cross-client ambiguity that
     can't be resolved by name+client alone, must surface for HITL."""
     ex = TimesheetExtraction(
         period="June 2026",

@@ -1,4 +1,4 @@
-"""E3 — Extract attachments from a `.eml` (RFC 5322) message.
+"""E3 - Extract attachments from a `.eml` (RFC 5322) message.
 
 Real email clients ship attachments as MIME multipart parts. TIA's intake path
 needs to:
@@ -53,7 +53,7 @@ def extract_attachments(eml_bytes: bytes) -> Iterator[tuple[str, str, bytes]]:
 
 
 def _demo() -> None:
-    """Offline self-check — build a synthetic email with two attachments."""
+    """Offline self-check - build a synthetic email with two attachments."""
     from email.mime.application import MIMEApplication
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
@@ -77,7 +77,7 @@ def _demo() -> None:
     assert len(files) == 2, files
     names = [f[0] for f in files]
     assert "timesheet_june.xlsx" in names and "signed.pdf" in names, names
-    print("email attachment extractor: PASS — found", names)
+    print("email attachment extractor: PASS - found", names)
 
 
 if __name__ == "__main__":

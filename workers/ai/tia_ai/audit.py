@@ -1,7 +1,7 @@
 """Tamper-evident audit chain helpers.
 
 Every `Event` carries `prev_hash` and `hash`. `verify_audit_chain()` re-walks
-the chain and reports any break — the canonical use is a nightly compliance
+the chain and reports any break - the canonical use is a nightly compliance
 check, an admin endpoint, or as part of the audit ZIP bundle.
 
 Algorithm (matches `orchestrator._event_hash`):
@@ -11,7 +11,7 @@ Algorithm (matches `orchestrator._event_hash`):
     }))
 
 If `events.hash` doesn't match the recomputed value, that's tampering
-(or a bug in our own writer — same defence either way).
+(or a bug in our own writer - same defence either way).
 """
 
 from __future__ import annotations

@@ -1,11 +1,11 @@
-"""Mock ERP — turns resolved timesheet rows + payroll master into invoice line items.
+"""Mock ERP - turns resolved timesheet rows + payroll master into invoice line items.
 
 TASC bills the client for staff: per employee, prorate the monthly cost by attendance,
 add OT cost and reimbursements, apply the client's management markup. Pure + deterministic.
 
 OT formula per UAE Federal Decree-Law 33/2021 (and TASC's seed Payroll sheet):
   ot_amount = basic / 26 / 8 × ot_hours × multiplier
-  multiplier defaults to 1.25 (standard OT). Night/Rest/Holiday OT is 1.5x — modelled
+  multiplier defaults to 1.25 (standard OT). Night/Rest/Holiday OT is 1.5x - modelled
   in rate cards; the mock honours the standard 1.25 unless contract overrides.
 """
 
@@ -20,7 +20,7 @@ from ..schema import MatchResult, TimesheetExtraction
 from ..validate.rules import check_attendance, check_threshold, validate_payroll
 
 CENT = Decimal("0.01")
-DEFAULT_MARKUP = 0.20  # 20% — TASC standard for UAE manpower supply
+DEFAULT_MARKUP = 0.20  # 20% - TASC standard for UAE manpower supply
 OT_DIVISOR_DAYS = Decimal("26")  # UAE labour-law convention
 OT_HOURS_PER_DAY = Decimal("8")
 OT_STANDARD_MULT = Decimal("1.25")  # UAE Federal Decree-Law 33/2021

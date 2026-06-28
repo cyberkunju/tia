@@ -2,49 +2,90 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Slow, subtle gradient drift used by the app canvas + brand band. */
+@keyframes auroraShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* AIDA "thinking" - a brand-tinted shimmer sweeping across the word. No dots. */
+@keyframes aidaShimmer {
+  0%   { background-position: 200% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.aida-thinking {
+  background-image: linear-gradient(90deg,
+    rgb(148 163 184) 0%, rgb(148 163 184) 30%,
+    #d9531e 50%,
+    rgb(148 163 184) 70%, rgb(148 163 184) 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: aidaShimmer 1.5s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aida-thinking { animation: none; color: theme("colors.ink.400"); }
+}
+@media (prefers-reduced-motion: reduce) {
+  body, .brand-band { animation: none !important; }
+}
+
 @layer base {
-  :root {
-    color-scheme: light;
-    --app-sidebar: 244px;
-  }
-  * {
-    border-color: theme("colors.ink.200");
-  }
+  :root { color-scheme: light; }
+  * { border-color: theme("colors.ink.200"); }
   html, body, #root { height: 100%; }
   body {
-    background: theme("colors.ink.50");
+    /* Subtle, slowly-drifting orange-tinted canvas. */
+    background: linear-gradient(120deg, #fdf3ee 0%, #f8fafc 32%, #f8fafc 64%, #fcefe7 100%);
+    background-size: 220% 220%;
+    background-attachment: fixed;
+    animation: auroraShift 28s ease-in-out infinite;
     color: theme("colors.ink.900");
     font-family: theme("fontFamily.sans");
-    font-feature-settings: "cv05", "ss01";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
   }
-  /* Numbers always align in tables/metrics. */
   .tnum { font-variant-numeric: tabular-nums; }
-  h1, h2, h3, h4 { letter-spacing: -0.011em; }
+  h1, h2, h3, h4 { letter-spacing: -0.012em; }
   ::selection { background: theme("colors.brand.100"); color: theme("colors.brand.900"); }
-
-  /* Quiet, consistent scrollbars. */
-  * { scrollbar-width: thin; scrollbar-color: theme("colors.ink.300") transparent; }
-  *::-webkit-scrollbar { width: 10px; height: 10px; }
-  *::-webkit-scrollbar-thumb { background: theme("colors.ink.300"); border-radius: 8px; border: 2px solid theme("colors.ink.50"); }
-  *::-webkit-scrollbar-thumb:hover { background: theme("colors.ink.400"); }
+  /* Minimal, thin, subtle brand scrollbar. */
+  * { scrollbar-width: thin; scrollbar-color: rgb(217 83 30 / 0.28) transparent; }
+  *::-webkit-scrollbar { width: 8px; height: 8px; }
+  *::-webkit-scrollbar-track { background: transparent; }
+  *::-webkit-scrollbar-thumb {
+    background: rgb(217 83 30 / 0.25);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: rgb(217 83 30 / 0.45); }
+  *::-webkit-scrollbar-corner { background: transparent; }
 }
 
 @layer components {
-  /* ── Surfaces ─────────────────────────────────────────────── */
+  /* Surfaces */
   .card { @apply bg-white rounded-lg border border-ink-200 shadow-sm; }
   .card-flush { @apply bg-white rounded-lg border border-ink-200 shadow-sm overflow-hidden; }
+  .eyebrow { @apply text-2xs font-semibold uppercase tracking-[0.09em] text-ink-400; }
 
-  /* ── Eyebrow / labels ─────────────────────────────────────── */
-  .eyebrow { @apply text-2xs font-semibold uppercase tracking-[0.08em] text-ink-400; }
+  /* Brand command band - subtle drifting orange gradient. */
+  .brand-band {
+    background: linear-gradient(100deg,
+      theme("colors.brand.700") 0%,
+      theme("colors.brand.500") 38%,
+      theme("colors.brand.600") 62%,
+      theme("colors.brand.700") 100%);
+    background-size: 220% 100%;
+    animation: auroraShift 22s ease-in-out infinite;
+  }
 
-  /* ── Buttons ──────────────────────────────────────────────── */
+  /* Buttons */
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium
-           px-3 py-2 transition-colors duration-100 select-none
-           disabled:opacity-45 disabled:pointer-events-none
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium px-3 py-2
+           transition-colors duration-100 select-none disabled:opacity-45 disabled:pointer-events-none
            focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500/30;
   }
   .btn-sm { @apply px-2.5 py-1.5 text-xs gap-1; }
@@ -53,65 +94,71 @@
   .btn-ghost { @apply btn bg-transparent text-ink-600 hover:bg-ink-100 hover:text-ink-900; }
   .btn-danger { @apply btn border border-red-300 bg-white text-red-700 hover:bg-red-50; }
 
-  /* ── Form controls ────────────────────────────────────────── */
+  /* Form controls */
   .field-label { @apply block text-xs font-medium text-ink-700 mb-1.5; }
   .input, .select, .textarea {
-    @apply w-full rounded-md border border-ink-300 bg-white text-sm text-ink-900
-           px-3 py-2 placeholder:text-ink-400 transition-shadow
+    @apply w-full rounded-md border border-ink-300 bg-white text-sm text-ink-900 px-3 py-2
+           placeholder:text-ink-400 transition-shadow
            focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20;
   }
-  .textarea { @apply leading-relaxed; }
 
-  /* ── Badges (status dot via ::before, inherits text color) ── */
-  .badge {
-    @apply inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium
-           border whitespace-nowrap;
-  }
-  .badge::before {
-    content: "";
-    width: 0.4rem; height: 0.4rem; border-radius: 9999px;
-    background: currentColor; opacity: 0.85; flex: none;
-  }
-  .badge-plain::before { display: none; }
-  .badge-green { @apply badge bg-emerald-50 text-emerald-700 border-emerald-200; }
-  .badge-amber { @apply badge bg-amber-50 text-amber-700 border-amber-200; }
-  .badge-red   { @apply badge bg-red-50 text-red-700 border-red-200; }
-  .badge-blue  { @apply badge bg-sky-50 text-sky-700 border-sky-200; }
-  .badge-brand { @apply badge bg-brand-50 text-brand-700 border-brand-200; }
-  .badge-slate { @apply badge bg-ink-100 text-ink-600 border-ink-200; }
+  /* Status tags - flat, tonal, no dots, no borders. */
+  .badge { @apply inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium leading-5; }
+  .badge-green { @apply badge bg-emerald-50 text-emerald-700; }
+  .badge-amber { @apply badge bg-amber-50 text-amber-700; }
+  .badge-red   { @apply badge bg-red-50 text-red-700; }
+  .badge-blue  { @apply badge bg-sky-50 text-sky-700; }
+  .badge-brand { @apply badge bg-brand-50 text-brand-700; }
+  .badge-slate { @apply badge bg-ink-100 text-ink-600; }
 
-  /* ── Data tables ──────────────────────────────────────────── */
+  /* Data tables */
   .table-wrap { @apply w-full overflow-x-auto; }
   .data-table { @apply w-full text-sm border-collapse; }
-  .data-table thead th {
-    @apply text-left font-semibold text-2xs uppercase tracking-[0.06em] text-ink-500
-           px-4 py-2.5 bg-ink-50/80 border-b border-ink-200 whitespace-nowrap;
-  }
+  .data-table thead th { @apply text-left font-semibold text-2xs uppercase tracking-[0.06em] text-ink-500 px-4 py-2.5 bg-ink-50/80 border-b border-ink-200 whitespace-nowrap; }
   .data-table tbody td { @apply px-4 py-3 border-b border-ink-100 align-middle; }
   .data-table tbody tr:last-child td { @apply border-b-0; }
-  .data-table tbody tr { @apply transition-colors; }
   .row-link:hover { @apply bg-ink-50 cursor-pointer; }
 
-  /* ── Skeleton loaders ─────────────────────────────────────── */
-  .skeleton {
-    @apply relative overflow-hidden rounded bg-ink-100;
-  }
-  .skeleton::after {
-    content: "";
-    @apply absolute inset-0 -translate-x-full animate-shimmer;
-    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent);
-  }
+  /* Skeleton */
+  .skeleton { @apply relative overflow-hidden rounded bg-ink-100; }
+  .skeleton::after { content: ""; @apply absolute inset-0 -translate-x-full animate-shimmer; background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.6), transparent); }
 
-  /* ── Nav items (sidebar) ──────────────────────────────────── */
-  .nav-item {
-    @apply relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm font-medium
-           text-ink-600 transition-colors hover:bg-ink-100 hover:text-ink-900;
+  /* ── Flow Console chrome ───────────────────────────────────────────── */
+  .kbd { @apply inline-flex items-center justify-center h-5 min-w-[1.25rem] px-1.5 rounded border border-ink-300 bg-white text-2xs font-medium text-ink-500 shadow-xs; }
+
+  /* Segmented control (persona / toggles) */
+  .seg { @apply inline-flex p-0.5 rounded-lg bg-ink-100 border border-ink-200; }
+  .seg-item { @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium text-ink-500 transition-colors hover:text-ink-800; }
+  .seg-item-on { @apply bg-white text-ink-900 shadow-xs; }
+
+  /* Stage rail */
+  .stage { @apply inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm transition-colors whitespace-nowrap; }
+  .stage-off { @apply border-transparent text-ink-500 hover:text-ink-900 hover:bg-ink-100; }
+  .stage-on  { @apply border-brand-200 bg-brand-50 text-brand-700; }
+  .stage-count { @apply tnum text-2xs font-semibold rounded px-1 min-w-[17px] text-center bg-ink-200/70 text-ink-600; }
+  .stage-on .stage-count { @apply bg-brand-600 text-white; }
+
+  /* Queue rows */
+  .qrow { @apply w-full text-left px-3 py-2.5 rounded-lg border border-transparent transition-colors hover:bg-ink-50 focus:outline-none; }
+  .qrow-on { @apply bg-white border-ink-200 shadow-sm hover:bg-white; }
+
+  /* ── Landing page ──────────────────────────────────────────────────── */
+  /* Brand-tinted text gradient for hero emphasis. */
+  .text-brand-gradient {
+    background-image: linear-gradient(100deg, theme("colors.brand.700"), theme("colors.brand.500") 55%, theme("colors.brand.400"));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
   }
-  .nav-item-active {
-    @apply bg-brand-50 text-brand-700 hover:bg-brand-50 hover:text-brand-700;
+  /* Faint dotted grid for section backgrounds. */
+  .bg-dotgrid {
+    background-image: radial-gradient(circle at 1px 1px, rgb(15 23 42 / 0.05) 1px, transparent 0);
+    background-size: 22px 22px;
   }
-  .nav-item-active::before {
-    content: "";
-    @apply absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-full bg-brand-600;
+  /* Soft radial brand glow used behind the hero. */
+  .hero-glow {
+    background:
+      radial-gradient(60% 60% at 78% 12%, rgb(217 83 30 / 0.16), transparent 60%),
+      radial-gradient(50% 50% at 12% 0%, rgb(237 117 71 / 0.12), transparent 55%);
   }
 }

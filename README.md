@@ -1,29 +1,29 @@
-# TIA — Touchless Invoice Agent
+# TIA - Touchless Invoice Agent
 
 [![ci](https://github.com/cyberkunju/tia/actions/workflows/ci.yml/badge.svg)](https://github.com/cyberkunju/tia/actions/workflows/ci.yml)
 
-> Built for **TASC Outsourcing** — UAE manpower-supply, 10,500+ associates, 750+ clients.
+> Built for **TASC Outsourcing** - UAE manpower-supply, 10,500+ associates, 750+ clients.
 > Submitted to **HackArena 2.0** by team Cyberkunju.
 
-TIA takes a client's timesheet — in **any format from any channel** (clean Excel,
-handwritten photo, scanned PDF, plain email, online form) — and carries it all the
+TIA takes a client's timesheet - in **any format from any channel** (clean Excel,
+handwritten photo, scanned PDF, plain email, online form) - and carries it all the
 way to a **validated UAE Tax Invoice**, dispatched in the client's preferred order.
 Humans only step in when a contract rule or a confidence threshold fires.
 
 The trick: **TIA reconciles the invoice against the contract**, not just the
-timesheet. That's the gap most AP automation misses — and the gap TASC's mentors
+timesheet. That's the gap most AP automation misses - and the gap TASC's mentors
 called out as the one that matters.
 
 ## What's inside
 
-- **4 ingestion channels** — portal upload, email (3 modes: direct / cc-silent / watched-mailbox), online form, image/PDF OCR
-- **10 BTP-style contract-bound rules** — rate compliance, OT cap, SOW completion (mentor's "completed early" case), VAT, duplicates, sequential numbering, etc
+- **4 ingestion channels** - portal upload, email (3 modes: direct / cc-silent / watched-mailbox), online form, image/PDF OCR
+- **10 BTP-style contract-bound rules** - rate compliance, OT cap, SOW completion (mentor's "completed early" case), VAT, duplicates, sequential numbering, etc
 - **Smart Bot + SAP** mock matching the brief's reference architecture, with Ramco SRP-shaped consolidated Excel **+ a real WPS SIF** for the bank gateway
-- **Typst-rendered UAE Tax Invoice** (Rust compiler) — "Tax Invoice" header, supplier+customer TRN, sequential invoice number, VAT line breakdown, SAC code for India, audit hash footer
-- **Hungarian matching** (`scipy.linear_sum_assignment`) with the cost matrix surfaced in the "Why?" drawer — no black-box LLM resolution
-- **Rust dispatch service** (axum + sqlx, port :8001) — idempotency-keyed, writes outbox, separate process from the Python core
-- **Context-aware AI chat** — OpenAI tool-calling with 5 read-only DB tools, strict citation contract, swap to a local model with one env var
-- **3 brief success-measure KPIs** — touchless rate, time-to-invoice, extraction F1 — all live endpoints
+- **Typst-rendered UAE Tax Invoice** (Rust compiler) - "Tax Invoice" header, supplier+customer TRN, sequential invoice number, VAT line breakdown, SAC code for India, audit hash footer
+- **Hungarian matching** (`scipy.linear_sum_assignment`) with the cost matrix surfaced in the "Why?" drawer - no black-box LLM resolution
+- **Rust dispatch service** (axum + sqlx, port :8001) - idempotency-keyed, writes outbox, separate process from the Python core
+- **Context-aware AI chat** - OpenAI tool-calling with 5 read-only DB tools, strict citation contract, swap to a local model with one env var
+- **3 brief success-measure KPIs** - touchless rate, time-to-invoice, extraction F1 - all live endpoints
 - **13/13 eval PASS** with F1 + ECE on every push (CI gate)
 - **67/67 pytest** across the stack
 
@@ -71,7 +71,7 @@ open http://127.0.0.1:5173/finops
 
 ```bash
 # .env at repo root
-OPENAI_API_KEY=sk-...           # chat agent — required for /qa
+OPENAI_API_KEY=sk-...           # chat agent - required for /qa
 OPENAI_BASE_URL=https://api.openai.com/v1   # override for a local vLLM/Ollama
 OPENAI_MODEL=gpt-4o-mini
 
@@ -109,18 +109,18 @@ RUST_DISPATCH_URL=http://127.0.0.1:8001   # optional; Python falls back to in-pr
 
 ## The 10 BTP-style rules
 
-1. **R1** `employee_in_contract_scope` — emp_id on contract roster
-2. **R2** `rate_compliance_per_category` — billed rate matches rate card
-3. **R3** `period_boundary_check` — timesheet date inside contract validity
-4. **R4** `ot_within_contract_cap` — OT % ≤ `max_ot_pct`
-5. **R5** `sow_hours_not_exceeded` — fixed-scope SOW completion / hours-remaining check (the mentor's "completed early" case)
-6. **R6** `markup_correctly_applied` — line amount reconciles to (prorated + OT) × (1 + markup) + reimb
-7. **R7** `vat_calculation_correct` — VAT = excl × rate (5% UAE / 15% KSA / 18% IN)
-8. **R8** `duplicate_invoice_extended` — same (emp_id, period) not already invoiced
-9. **R9** `approver_signature_present` — source doc has an approver (warning)
-10. **R10** `holiday_weekend_multiplier_check` — OT amount reconciles to statutory multipliers (UAE Federal Decree-Law 33/2021: 1.25× standard, 1.5× night/rest/holiday)
+1. **R1** `employee_in_contract_scope` - emp_id on contract roster
+2. **R2** `rate_compliance_per_category` - billed rate matches rate card
+3. **R3** `period_boundary_check` - timesheet date inside contract validity
+4. **R4** `ot_within_contract_cap` - OT % ≤ `max_ot_pct`
+5. **R5** `sow_hours_not_exceeded` - fixed-scope SOW completion / hours-remaining check (the mentor's "completed early" case)
+6. **R6** `markup_correctly_applied` - line amount reconciles to (prorated + OT) × (1 + markup) + reimb
+7. **R7** `vat_calculation_correct` - VAT = excl × rate (5% UAE / 15% KSA / 18% IN)
+8. **R8** `duplicate_invoice_extended` - same (emp_id, period) not already invoiced
+9. **R9** `approver_signature_present` - source doc has an approver (warning)
+10. **R10** `holiday_weekend_multiplier_check` - OT amount reconciles to statutory multipliers (UAE Federal Decree-Law 33/2021: 1.25× standard, 1.5× night/rest/holiday)
 
-Per-contract parameters drive the rules — judges can configure new validation
+Per-contract parameters drive the rules - judges can configure new validation
 profiles via `PUT /clients/{c}/settings` without touching code.
 
 ## Deliverables
@@ -129,13 +129,13 @@ profiles via `PUT /clients/{c}/settings` without touching code.
 - **Repo**: this (cyberkunju/tia), 17 commits, every push green on CI
 - **Deck**: `docs/deck/TIA-deck.md` (Marp source) + `docs/deck/TIA-deck.pdf`
 - **Demo script**: `docs/DEMO_SCRIPT.md` (90s pitch + 3min walkthrough)
-- **Sample inputs**: 14 gold cases under `data/synthetic/` — Excel (5, 7, 9, 14), handwritten image (4), typed PDF (11), structured email (1, 2, 3, 6, 10, 12, 13), 3-way ambiguous (8)
+- **Sample inputs**: 14 gold cases under `data/synthetic/` - Excel (5, 7, 9, 14), handwritten image (4), typed PDF (11), structured email (1, 2, 3, 6, 10, 12, 13), 3-way ambiguous (8)
 - **Video**: recorded on demo day at the venue (see `docs/DEMO_SCRIPT.md` for the takes)
 
 ## Team
 
-- **edneam** (cyberkunju) — backend, agentic core, eval harness, deck
-- **Navaneeth** — frontend, WhatsApp bridge
+- **edneam** (cyberkunju) - backend, agentic core, eval harness, deck
+- **Navaneeth** - frontend, WhatsApp bridge
 
 ## Stack lock
 
