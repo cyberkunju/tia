@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ from sqlalchemy.orm import Session
 
 from ..config import DATA_DIR, STAGING_DIR
 from ..db import SessionLocal, init_db
+from ..mcp import mcp
 from ..models import Client, DocAsset, Event, Invoice, Query, Timesheet
 from ..orchestrator import (
     approve_timesheet,
@@ -37,7 +39,29 @@ from ..orchestrator import (
     reject_timesheet,
 )
 
-app = FastAPI(title="TIA - Touchless Invoice Agent", version="0.1.0")
+# Build the MCP sub-app at import time so `mcp.session_manager` becomes accessible.
+# Mounted below under `/mcp`.
+_mcp_streamable_app = mcp.streamable_http_app()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """App lifespan: init DB + run the MCP session manager for the streamable HTTP transport.
+
+    The MCP session manager keeps per-session state for streamable HTTP clients.
+    Without entering its `run()` context, requests to `/mcp/*` hit `RuntimeError:
+    Task group is not initialized. Make sure to use run().`
+    """
+    init_db()
+    async with mcp.session_manager.run():
+        yield
+
+
+app = FastAPI(
+    title="TIA - Touchless Invoice Agent",
+    version="0.1.0",
+    lifespan=_lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -60,9 +84,10 @@ def db_session() -> Session:  # FastAPI dependency
         s.close()
 
 
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()
+# Mount the MCP Streamable-HTTP sub-app at /mcp. MCP clients (Claude Desktop,
+# Cursor, custom hosts) speak this transport. The stdio transport lives in the
+# `tia-mcp` console script (declared in pyproject.toml).
+app.mount("/mcp", _mcp_streamable_app)
 
 
 @app.get("/rules")
@@ -1000,6 +1025,159 @@ def qa(payload: QAQuery, s: Session = Depends(db_session)) -> dict:
         )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(500, f"qa agent failed: {e}") from e
+
+
+# ---------- /qa/stream - structured-event SSE for the live agent ----------
+
+
+@app.post("/qa/stream")
+async def qa_stream(payload: QAQuery) -> StreamingResponse:
+    """Streaming variant of `/qa`. Each line is `data: <json>\\n\\n` SSE.
+
+    Event shapes (see `tia_ai.qa.streaming`):
+      {"type": "tool", "name": ..., "args": ..., "status": "running|done|error"}
+      {"type": "token", "content": ...}
+      {"type": "done", "model": ..., "citations": ..., "tool_calls_summary": ...}
+      {"type": "error", "message": ...}
+
+    We open our own short-lived `SessionLocal()` here (instead of using the
+    `db_session` dependency) so the connection stays open through the entire
+    stream - FastAPI dependencies are closed after the response object is
+    returned, before the stream is consumed.
+    """
+    from ..qa.streaming import stream_answer
+
+    async def _gen():
+        s = SessionLocal()
+        try:
+            async for event in stream_answer(
+                s,
+                payload.question,
+                entity_context=payload.entity_context,
+                client_scope=payload.client_scope,
+            ):
+                yield f"data: {json.dumps(event, default=str)}\n\n"
+            s.commit()
+        except Exception as e:  # noqa: BLE001
+            yield (
+                "data: " + json.dumps({"type": "error", "message": f"stream failed: {e}"}) + "\n\n"
+            )
+            s.rollback()
+        finally:
+            s.close()
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disable nginx buffering when fronted
+        },
+    )
+
+
+# ---------- /metrics/leakage - revenue leakage sentinel ----------
+
+
+@app.get("/metrics/leakage")
+def metrics_leakage(
+    period: str | None = None,
+    client_code: str | None = None,
+    s: Session = Depends(db_session),
+) -> dict:
+    """Walk a period's payroll and flag every associate that wasn't fully billed.
+
+    When `period` is omitted, picks the most-recent payroll period in the DB.
+    Result shape: `LeakageReport.model_dump()` (see `tia_ai.finance.leakage`).
+    """
+    from ..finance import compute_revenue_leakage
+    from ..models import Payroll
+
+    if not period:
+        rows = (
+            s.query(Payroll.period)
+            .filter(Payroll.period.is_not(None))
+            .order_by(Payroll.period.desc())
+            .first()
+        )
+        period = (rows[0] if rows else None) or "June 2026"
+
+    report = compute_revenue_leakage(s, period=period, client_code=client_code)
+    return report.model_dump()
+
+
+# ---------- /finance/leakage/{emp_id}/recover - catch-up invoice issuer ----
+
+
+class RecoverLeakagePayload(BaseModel):
+    period: str
+    reason: str = "no_timesheet"
+    by_user: str = "finops"
+
+
+@app.post("/finance/leakage/{emp_id}/recover")
+def recover_leakage(
+    emp_id: str,
+    payload: RecoverLeakagePayload,
+    s: Session = Depends(db_session),
+) -> dict:
+    """Issue a catch-up "recovery" invoice for one (emp, period). The invoice
+    sequence number gets a `-R\\d+` suffix so the recovery trail is auditable
+    separately from regular billing."""
+    from ..finance import build_recovery_invoice
+    from ..finance.leakage import LeakageReason
+
+    try:
+        reason_enum = LeakageReason(payload.reason)
+    except ValueError as e:
+        raise HTTPException(400, f"unknown reason: {payload.reason}") from e
+    try:
+        invoice = build_recovery_invoice(
+            s,
+            emp_id=emp_id,
+            period=payload.period,
+            reason=reason_enum,
+            by_user=payload.by_user,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {
+        "ok": True,
+        "invoice_id": invoice.id,
+        "invoice_sequence_no": invoice.invoice_sequence_no,
+        "amount_aed": invoice.amount,
+        "status": invoice.status,
+        "client_code": invoice.client_code,
+        "period": invoice.period,
+    }
+
+
+# ---------- /invoices/{inv_id}/sap-b1-payload - SAP B1 OData v4 payload ----
+
+
+@app.get("/invoices/{inv_id}/sap-b1-payload")
+def invoice_sap_b1_payload(inv_id: str, s: Session = Depends(db_session)) -> dict:
+    """Generate the SAP Business One A/R Invoice OData v4 payload for this
+    invoice. Read-only. Mirrors what `prepare_sap_b1_payload` agent/MCP tool
+    returns."""
+    from ..integrations.sap_b1 import prepare_invoice_payload
+
+    inv = s.get(Invoice, inv_id) or (
+        s.query(Invoice).filter(Invoice.invoice_sequence_no == inv_id).first()
+    )
+    if not inv:
+        raise HTTPException(404, "invoice not found")
+    try:
+        payload = prepare_invoice_payload(inv, s)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {
+        "invoice_id": inv.id,
+        "invoice_sequence_no": inv.invoice_sequence_no,
+        "endpoint": "POST /b1s/v2/Invoices",
+        "payload": payload,
+    }
 
 
 @app.get("/invoices/{inv_id}/audit")

@@ -21,7 +21,11 @@ dependencies = [
     "openai>=1.50",
     "typst>=0.13",
     "python-dateutil>=2.9",
+    "mcp>=1.0",
 ]
+
+[project.scripts]
+tia-mcp = "tia_ai.mcp:run_stdio"
 
 [project.optional-dependencies]
 ocr = ["opencv-python-headless>=4.10"]

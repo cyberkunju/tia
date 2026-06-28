@@ -6,6 +6,7 @@ import { fmtAED, fmtAge, isAutoDispatched } from "../lib";
 import { PageHeader, StatusBadge, ConfidenceBadge, Badge, EmptyState, TableSkeleton } from "../ui";
 import { TouchlessRationale } from "../components/TouchlessRationale";
 import { ClawbackModal } from "../components/ClawbackModal";
+import { InvoiceChatTrigger } from "../components/InvoiceChatTrigger";
 import type { DispatchTrackingRow, Invoice } from "../types";
 
 export function FinOpsDispatchTracking() {
@@ -83,6 +84,11 @@ export function FinOpsDispatchTracking() {
                       <td className="text-ink-500 text-xs whitespace-nowrap">{r.dispatch_attempted_at ? fmtAge(r.dispatch_attempted_at) + " ago" : "-"}</td>
                       <td>
                         <div className="flex items-center justify-end gap-1.5">
+                          <InvoiceChatTrigger
+                            kind="invoice"
+                            id={r.id}
+                            ref={r.invoice_sequence_no ?? r.id.slice(0, 8)}
+                          />
                           {auto && (
                             <button onClick={() => setWhyFor(asInvoice(r))} className="btn-ghost btn-sm" title="Why touchless?">
                               <Sparkles size={12} /> Why?

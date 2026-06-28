@@ -5,6 +5,7 @@ import { api, API_BASE } from "../api";
 import { fmtAED, isAutoDispatched, vatBreakdown } from "../lib";
 import { PageHeader, Badge, EmptyState, TableSkeleton, Spinner } from "../ui";
 import { usePersona } from "../store";
+import { InvoiceChatTrigger } from "../components/InvoiceChatTrigger";
 import type { Invoice } from "../types";
 
 function approvalTone(s?: string | null) {
@@ -96,6 +97,11 @@ export function ClientInvoices() {
                       <td><Badge tone={approvalTone(inv.client_approval_status)} dot={false}>{inv.client_approval_status ?? "pending"}</Badge></td>
                       <td>
                         <div className="flex items-center justify-end gap-1.5">
+                          <InvoiceChatTrigger
+                            kind="invoice"
+                            id={inv.id}
+                            ref={inv.invoice_sequence_no ?? inv.id.slice(0, 8)}
+                          />
                           {inv.pdf_available && <a className="btn-ghost btn-sm" href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer"><ExternalLink size={13} /></a>}
                           {pending && (
                             <>
@@ -162,6 +168,12 @@ function PendingCard({ inv, onApprove, onReject, onQuery }: {
           <p className="text-2xs text-ink-500 mt-1">Net: <span className="tnum">{fmtAED(subtotal)}</span></p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
+          <InvoiceChatTrigger
+            kind="invoice"
+            id={inv.id}
+            ref={inv.invoice_sequence_no ?? inv.id.slice(0, 8)}
+            variant="prominent"
+          />
           {inv.pdf_available && <a className="btn-outline btn-sm" href={`${API_BASE}/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer"><ExternalLink size={13} /> View PDF</a>}
           <button className="btn-ghost btn-sm" onClick={onQuery}><MessageSquarePlus size={13} /> Raise query</button>
           <button className="btn-outline btn-sm" onClick={onReject}><X size={13} /> Reject</button>

@@ -545,3 +545,126 @@ export interface DispatchQueueEntry {
   status: string;
   dispatch_order_rank?: number;
 }
+
+/* ── Peak Agentic: revenue leakage + SAP B1 + streaming chat ─────────────── */
+
+export type LeakageReason =
+  | "no_timesheet"
+  | "partial_timesheet"
+  | "missing_overtime"
+  | "rate_undercharge"
+  | "late_period";
+
+export interface LeakageEntry {
+  emp_id: string;
+  name: string;
+  client_code: string;
+  client_name: string | null;
+  reason: LeakageReason;
+  expected_billable_aed: number;
+  actual_billed_aed: number;
+  days_paid: number;
+  days_billed: number;
+  ot_hours_paid: number;
+  ot_hours_billed: number;
+  last_billed_period: string | null;
+  notes: string | null;
+}
+
+export interface ClientLeakage {
+  client_code: string;
+  client_name: string | null;
+  total_aed: number;
+  entry_count: number;
+  by_reason: Record<string, number>;
+}
+
+export interface LeakageReport {
+  period: string;
+  generated_at: string;
+  total_aed: number;
+  associate_count: number;
+  by_client: ClientLeakage[];
+  entries: LeakageEntry[];
+  by_reason: Record<string, number>;
+  baseline_mean_aed: number;
+  baseline_stdev_aed: number;
+  is_anomalous_period: boolean;
+  baseline_delta_pct: number | null;
+}
+
+export interface RecoveryInvoiceResult {
+  ok: boolean;
+  invoice_id: string;
+  invoice_sequence_no: string;
+  amount_aed: number;
+  status: string;
+  client_code: string;
+  period: string;
+}
+
+export interface SapB1DocumentLine {
+  ItemCode: string;
+  ItemDescription: string;
+  Quantity: number;
+  UnitPrice: number;
+  VatGroup: string;
+  TaxCode: string;
+  LineTotal: number;
+}
+
+export interface SapB1Invoice {
+  CardCode: string;
+  CardName: string;
+  DocDate: string;
+  DocDueDate: string;
+  DocCurrency: string;
+  NumAtCard: string;
+  Comments: string;
+  U_TIA_AuditHash: string;
+  U_TIA_InvoiceId: string;
+  U_TIA_Period: string;
+  DocTotal: number;
+  VatSum: number;
+  DocumentLines: SapB1DocumentLine[];
+}
+
+export interface SapB1PayloadResponse {
+  invoice_id: string;
+  invoice_sequence_no: string | null;
+  endpoint: string;
+  payload: SapB1Invoice;
+}
+
+/** Structured stream event from POST /qa/stream (one per SSE `data:` line). */
+export type QaStreamEvent =
+  | { type: "tool"; name: string; args: Record<string, unknown>; status: "running" }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      status: "done";
+      result_summary?: string;
+    }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      status: "error";
+      error: string;
+    }
+  | { type: "token"; content: string }
+  | {
+      type: "done";
+      model: string;
+      citations: { kind: string; id: string }[];
+      tool_calls_summary: { name: string; args: Record<string, unknown>; result_keys?: string[] }[];
+    }
+  | { type: "error"; message: string };
+
+/** Focused entity = the row a sparkle was clicked on. Reflected in the URL as ?aida=. */
+export interface FocusedEntity {
+  kind: "invoice" | "document" | "timesheet";
+  id: string;
+  ref?: string;
+}
