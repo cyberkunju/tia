@@ -13,8 +13,8 @@ import { Select } from "./components/Select";
 
 const PERSONA_HOME: Record<Persona, string> = { finops: "/console", client: "/portal", finance: "/finance" };
 const PERSONAS: { id: Persona; label: string }[] = [
-  { id: "finops", label: "FinOps" },
   { id: "client", label: "Client" },
+  { id: "finops", label: "FinOps" },
   { id: "finance", label: "Finance" },
 ];
 

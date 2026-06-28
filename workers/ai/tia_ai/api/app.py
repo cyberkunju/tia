@@ -2119,16 +2119,22 @@ def system_status(s: Session = Depends(db_session)) -> dict:
         out["db"] = "ok"
     except Exception:  # noqa: BLE001
         out["db"] = "down"
-    # openai
-    out["openai"] = "configured" if os.getenv("OPENAI_API_KEY") else "missing_key"
+    # chat agent (extraction + TIA chat): Azure (preferred) or OpenAI.
+    azure_ok = bool(os.getenv("AZURE_AI_ENDPOINT") and os.getenv("AZURE_AI_KEY"))
+    out["openai"] = "configured" if (azure_ok or os.getenv("OPENAI_API_KEY")) else "missing_key"
     # modal-ocr
     out["modal_ocr"] = "configured" if os.getenv("GLM_OCR_API_KEY") else "missing_key"
-    # zoho mailbox
-    out["zoho_mail"] = (
-        "configured"
-        if (os.getenv("ZOHO_IMAP_USER") and os.getenv("ZOHO_IMAP_PASSWORD"))
-        else "missing_creds"
-    )
+    # zoho mailbox — real (cached) IMAP login probe, not just env presence.
+    try:
+        from ..mailbox.poller import imap_health
+
+        out["zoho_mail"] = imap_health()
+    except Exception:  # noqa: BLE001 — never let the health probe break /status
+        out["zoho_mail"] = (
+            "configured"
+            if (os.getenv("ZOHO_IMAP_USER") and os.getenv("ZOHO_IMAP_PASSWORD"))
+            else "missing_creds"
+        )
     out["zoho_mail_address"] = os.getenv("ZOHO_IMAP_USER") or None
     # rust-dispatch (best-effort, swallows errors so /status is never down)
     rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")

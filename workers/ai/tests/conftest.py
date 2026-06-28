@@ -23,7 +23,14 @@ if not os.environ.get("TIA_KEEP_DB"):
 # cause real network calls (Azure chat, GLM-OCR, OpenAI). Force them empty BEFORE
 # tia_ai.config loads the .env, so the chat degrades to regex routing / "not
 # configured" and the vision eval case is skipped — fast and deterministic.
-for _k in ("GLM_OCR_API_KEY", "OPENAI_API_KEY", "AZURE_AI_ENDPOINT", "AZURE_AI_KEY"):
+for _k in (
+    "GLM_OCR_API_KEY",
+    "OPENAI_API_KEY",
+    "AZURE_AI_ENDPOINT",
+    "AZURE_AI_KEY",
+    "ZOHO_IMAP_USER",
+    "ZOHO_IMAP_PASSWORD",
+):
     os.environ[_k] = ""
 # Background WhatsApp delivery must not reach a live bridge/Meta during tests.
 os.environ["WHATSAPP_BRIDGE_URL"] = "http://127.0.0.1:9"

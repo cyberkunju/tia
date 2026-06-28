@@ -25,8 +25,8 @@ interface PersonaState {
 export const usePersona = create<PersonaState>()(
   persist(
     (set, get) => ({
-      persona: "finops",
-      currentClientCode: null,
+      persona: "client",
+      currentClientCode: "CL001",
       resetTick: 0,
       setPersona: (p) => {
         if (p === "client" && !get().currentClientCode) {

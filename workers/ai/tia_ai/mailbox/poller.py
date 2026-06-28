@@ -281,6 +281,41 @@ poll_once = _DEFAULT.poll_once
 run_forever = _DEFAULT.run_forever
 
 
+# ── Health probe for /status ────────────────────────────────────────────────
+# The dashboard dot must reflect *real* mailbox reachability, not just whether
+# env vars are set. We do a genuine IMAP login but cache the verdict so /status
+# (polled every 15s by every open tab) never hammers Zoho or blocks on the wire.
+_HEALTH_CACHE: dict = {"value": None, "at": 0.0}
+
+
+def imap_health(ttl_s: float = 60.0) -> str:
+    """Return cached mailbox health: 'ok' | 'auth_failed' | 'unreachable' | 'missing_creds'.
+
+    'ok' means we actually logged in to Zoho IMAP within the last `ttl_s` seconds.
+    """
+    if not (ZOHO_IMAP_USER and ZOHO_IMAP_PASSWORD):
+        return "missing_creds"
+    now = time.time()
+    cached = _HEALTH_CACHE.get("value")
+    if cached is not None and (now - _HEALTH_CACHE.get("at", 0.0)) < ttl_s:
+        return cached
+    verdict = "ok"
+    try:
+        c = imaplib.IMAP4_SSL(ZOHO_IMAP_HOST, ZOHO_IMAP_PORT, timeout=5)
+        try:
+            c.login(ZOHO_IMAP_USER, ZOHO_IMAP_PASSWORD)
+            try:
+                c.logout()
+            except Exception:  # noqa: BLE001
+                pass
+        except imaplib.IMAP4.error:
+            verdict = "auth_failed"
+    except (OSError, Exception):  # noqa: BLE001 — connect/timeout/TLS → treat as unreachable
+        verdict = "unreachable"
+    _HEALTH_CACHE.update(value=verdict, at=now)
+    return verdict
+
+
 def main() -> None:
     import argparse
 
