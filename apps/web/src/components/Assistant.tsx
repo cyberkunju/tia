@@ -15,7 +15,6 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQuery } from "@tanstack/react-query";
 import { useLocation, useSearchParams } from "react-router-dom";
 import {
   ArrowUp,
@@ -28,7 +27,7 @@ import {
   X,
 } from "lucide-react";
 import { api } from "../api";
-import { fmtAED, fmtPct, stripMarkdown } from "../lib";
+import { stripMarkdown } from "../lib";
 import { Logo } from "./Logo";
 import { usePersona } from "../store";
 import { generateIcebreakers } from "../icebreakers";
@@ -106,42 +105,6 @@ function decodeAida(raw: string | null): FocusedEntity | null {
   }
   // bare id → invoice
   return { kind: "invoice", id: raw };
-}
-
-// ---------- Local fallback (no key) ----------------------------------------
-
-const QUICK_FALLBACK = [
-  "How many need review?",
-  "What's the touchless rate?",
-  "Largest invoices",
-  "What's pending dispatch?",
-];
-
-function localAnswer(q: string, docs: any[], invoices: any[]): string {
-  const n = q.toLowerCase();
-  const review = docs.filter((d) => d.status === "awaiting_review");
-  if (n.includes("review"))
-    return review.length
-      ? `${review.length} document${review.length === 1 ? "" : "s"} awaiting review: ${review.map((d) => `${d.client_code ?? "Unknown"} (${d.period ?? "-"})`).slice(0, 5).join(", ")}.`
-      : "Nothing is awaiting review - every document auto-routed.";
-  if (n.includes("touchless") || n.includes("rate")) {
-    const routed = docs.filter((d) => d.routing != null);
-    const auto = routed.filter((d) => d.routing === "auto").length;
-    return `Touchless rate is ${fmtPct(routed.length ? auto / routed.length : 0)} - ${auto} of ${routed.length} routed documents needed zero human touch.`;
-  }
-  if (n.includes("largest") || n.includes("biggest") || n.includes("value")) {
-    const top = [...invoices].sort((a, b) => b.amount - a.amount).slice(0, 3);
-    return top.length
-      ? "Largest invoices: " + top.map((i) => `${i.client_code} ${fmtAED(i.amount)}`).join(", ") + "."
-      : "No invoices generated yet.";
-  }
-  if (n.includes("dispatch")) {
-    const p = invoices.filter((i) => i.status === "generated");
-    return p.length
-      ? `${p.length} invoice${p.length === 1 ? "" : "s"} generated and pending dispatch.`
-      : "Nothing pending dispatch.";
-  }
-  return "I answer from live pipeline data - try a suggestion above.";
 }
 
 // ---------- Tiny UI atoms ---------------------------------------------------
@@ -270,13 +233,6 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
 
   const [sp, setSp] = useSearchParams();
   const loc = useLocation();
-
-  const { data: docs } = useQuery({ queryKey: ["docs"], queryFn: api.listDocs, enabled: open });
-  const { data: invoices } = useQuery({
-    queryKey: ["invoices"],
-    queryFn: () => api.listInvoices(),
-    enabled: open,
-  });
 
   // Sync focusedEntity ↔ URL ?aida=
   useEffect(() => {
@@ -459,36 +415,37 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
             return next;
           });
         } else if (ev.type === "error") {
-          // If we got nothing useful, fall back to the local heuristic answer
-          if (!textBuf) {
-            setMsgs((m) => {
-              const next = [...m];
-              next[aidaIdx] = {
-                ...next[aidaIdx],
-                text: localAnswer(t, docs ?? [], invoices ?? []),
-                streaming: false,
-              };
-              return next;
-            });
-          } else {
-            setMsgs((m) => {
-              const next = [...m];
-              next[aidaIdx] = { ...next[aidaIdx], streaming: false };
-              return next;
-            });
-          }
+          // Surface the agent's error verbatim so the user sees what failed —
+          // generic localAnswer fallback hides root causes (missing API key,
+          // model 4xx, etc).
+          const msg =
+            ev.message && ev.message.length
+              ? `TIA couldn't answer this one: ${ev.message}`
+              : "TIA couldn't answer that. Try again or rephrase.";
+          setMsgs((m) => {
+            const next = [...m];
+            next[aidaIdx] = {
+              ...next[aidaIdx],
+              text: textBuf || msg,
+              streaming: false,
+            };
+            return next;
+          });
         }
       }
     } catch (e) {
-      // Network or stream parse failure → local heuristic
+      // Hard transport failure (CORS, network, fetch abort that isn't
+      // the abort signal we set). Show the message so the user knows
+      // it's an environment issue, not the prompt's fault.
+      const errMsg = (e as Error)?.name === "AbortError"
+        ? "(cancelled)"
+        : `Network error reaching TIA: ${(e as Error).message || e}`;
       setMsgs((m) => {
         const next = [...m];
         if (next[aidaIdx]) {
           next[aidaIdx] = {
             ...next[aidaIdx],
-            text:
-              next[aidaIdx].text ||
-              localAnswer(t, docs ?? [], invoices ?? []),
+            text: next[aidaIdx].text || errMsg,
             streaming: false,
           };
         }
@@ -642,8 +599,14 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                           {g.items.map((it) => (
                             <button
                               key={it.label}
-                              onClick={() => send(it.prompt)}
-                              className="group w-full flex items-center justify-between gap-2 rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-left text-sm text-ink-700 shadow-xs hover:border-brand-300 hover:bg-brand-50/50 hover:text-ink-900 transition-colors"
+                              type="button"
+                              disabled={busy}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                send(it.prompt);
+                              }}
+                              className="group w-full flex items-center justify-between gap-2 rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-left text-sm text-ink-700 shadow-xs hover:border-brand-300 hover:bg-brand-50/50 hover:text-ink-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <span>{it.label}</span>
                               <ArrowUpRight
@@ -655,8 +618,6 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
                         </div>
                       </div>
                     ))}
-                    {QUICK_FALLBACK.length === 0 /* keep symbol referenced for tree-shake safety */ &&
-                      QUICK_FALLBACK.map((q) => q)}
                   </div>
                 </div>
               ) : (

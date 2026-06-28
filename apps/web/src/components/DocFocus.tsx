@@ -308,6 +308,19 @@ function RowCard({ row, match, pick, onPick }: { row: ExtractedRow; match?: RowM
 
 function CostMatrix({ cost, rowLabels, colLabels }: { cost: number[][]; rowLabels: string[]; colLabels: string[] }) {
   if (cost.length === 0 || cost[0].length === 0) return <div className="text-ink-400 text-sm">no candidates</div>;
+  // Single extracted row matched to a single candidate = trivial assignment.
+  // Showing a 1x1 matrix of "0.00" is just confusing noise — render a chip
+  // that says the match was exact + on what basis.
+  if (cost.length === 1 && cost[0].length === 1) {
+    const v = cost[0][0];
+    const exact = v < 0.05;
+    return (
+      <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+        <span className="text-emerald-700 text-xs font-medium">{exact ? "Exact match" : "Single-candidate match"}</span>
+        <span className="font-mono text-2xs text-emerald-600">{rowLabels[0]} → {colLabels[0]}</span>
+      </div>
+    );
+  }
   const max = Math.max(...cost.flat(), 0.01);
   return (
     <div className="overflow-x-auto">

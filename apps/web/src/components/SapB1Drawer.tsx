@@ -51,8 +51,10 @@ export function SapB1Drawer({ invoiceId }: SapB1DrawerProps) {
           {isLoading ? (
             <div className="text-2xs text-ink-500">Generating payload…</div>
           ) : error ? (
-            <div className="text-2xs text-rose-700">
-              Couldn't generate: {(error as Error).message}
+            <div className="text-2xs text-ink-600 bg-ink-50 border border-ink-200 rounded p-2">
+              {/^.*\b404\b/.test((error as Error).message)
+                ? "This invoice is no longer in the database — it may have been wiped by a demo-reset. Refresh the page to pick up the new invoice IDs."
+                : `Couldn't generate the SAP payload: ${(error as Error).message.slice(0, 140)}`}
             </div>
           ) : data ? (
             <>
