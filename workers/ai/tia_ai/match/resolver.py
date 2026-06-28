@@ -53,6 +53,36 @@ def resolve_client(hint: str | None, session: Session) -> str | None:
     return best if best_score >= 0.6 else None
 
 
+# Glyph pairs OCR routinely confuses in an alphanumeric code's digits. Keyed on the
+# UPPER-cased form (we upper() before translating).
+_OCR_DIGIT_FIX = str.maketrans({"O": "0", "I": "1", "|": "1", "L": "1", "S": "5", "B": "8", "Z": "2", "G": "6", "Q": "0", "D": "0"})
+
+
+def canonical_client_code(code: str | None, session: Session) -> str | None:
+    """Snap an OCR'd client code onto a real one.
+
+    Client codes are a tiny known set (CL001…) and OCR commonly misreads 0↔O, 1↔I/L,
+    5↔S etc. — e.g. Mistral Document AI reads the printed "CL001" as "CLO01". That made
+    `find_active_contract` miss, rule R0 fail, and an otherwise-clean sheet get forced
+    to review. We accept a correction ONLY when the glyph-normalised code lands EXACTLY
+    on a real client code, so we can never silently bill a different client; an
+    unrecognised code is returned unchanged and still routes to human review. Employee
+    resolution within the chosen client is a second safety net against a bad snap."""
+    if not code:
+        return code
+    code = code.strip().upper()
+    known = {c.code.upper() for c in session.query(Client).all()}
+    if code in known:
+        return code
+    # Real codes are 'CL' + digits. Normalise glyph confusions only in the TAIL so the
+    # literal 'L' in the 'CL' prefix is never turned into a '1'.
+    if code.startswith("CL") and len(code) > 2:
+        fixed = "CL" + code[2:].translate(_OCR_DIGIT_FIX)
+        if fixed in known:
+            return fixed
+    return code
+
+
 def _candidates_for(name: str, emp_id: str | None, pool: list[Employee]) -> list[Candidate]:
     cands: list[Candidate] = []
     for e in pool:
