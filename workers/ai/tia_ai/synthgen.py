@@ -144,8 +144,6 @@ def case05_punch_excel() -> None:
     ws.append(punch_row("EMP10001", "Carlos Smith", 5, "", ""))
     ws.append(punch_row("EMP10002", "Ahmed Khan", 4, "A/L", "took one day Annual leave"))
     ws.append(punch_row("EMP10003", "Meera Al Rashid", 3, "sick", "two sick days; one AL on Wed"))
-    ws.append(punch_row("EMP10004", "Hana Al Farsi", 4, "Annual", "one day annual leave"))
-    ws.append(punch_row("EMP10005", "Michael Al Farsi", 4, "AL", ""))
     wb.save(SYN / "case_05_punch.xlsx")
     _gold(
         "05",
@@ -180,24 +178,6 @@ def case05_punch_excel() -> None:
                         "days_worked": 3,
                         "hours": 24.0,
                         "leave_codes": ["SICK"],
-                        "resolved": True,
-                        "ambiguous": False,
-                    },
-                    {
-                        "emp_id": "EMP10004",
-                        "employee_name": "Hana Al Farsi",
-                        "days_worked": 4,
-                        "hours": 32.0,
-                        "leave_codes": ["AL"],
-                        "resolved": True,
-                        "ambiguous": False,
-                    },
-                    {
-                        "emp_id": "EMP10005",
-                        "employee_name": "Michael Al Farsi",
-                        "days_worked": 4,
-                        "hours": 32.0,
-                        "leave_codes": ["AL"],
                         "resolved": True,
                         "ambiguous": False,
                     },

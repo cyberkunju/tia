@@ -6,6 +6,7 @@ import { fmtAED, fmtPct } from "../lib";
 import { PageHeader, Panel, Metric, StatusBadge, EmptyState } from "../ui";
 import { AuditChainCard } from "../components/AuditChainCard";
 import { DispatchPillars } from "../components/DispatchPillars";
+import { LeakageSentinelCard } from "../components/LeakageSentinelCard";
 import { LiveActivityRail } from "../components/LiveActivityRail";
 import type { StpMetricFull } from "../types";
 
@@ -168,6 +169,11 @@ export function FinanceDashboard() {
       {/* 3-pillar dispatch breakdown - auto / hitl / finance touchless story. */}
       <div className="mb-4">
         <DispatchPillars stp={stp as StpMetricFull | undefined} />
+      </div>
+
+      {/* Revenue leakage sentinel - "AED silently lost" + per-client breakdown + per-row recover. */}
+      <div className="mb-4">
+        <LeakageSentinelCard />
       </div>
 
       {/* Live event stream - SSE from /events/stream. */}

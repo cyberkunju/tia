@@ -72,10 +72,9 @@ function DemoResetButton() {
 }
 
 export function AppShell() {
-  const { persona, setPersona } = usePersona();
+  const { persona, setPersona, aidaOpen, setAidaOpen } = usePersona();
   const nav = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [aidaOpen, setAidaOpen] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

@@ -16,6 +16,8 @@ import { EmlCard } from "./EmlCard";
 import { TextCard } from "./TextCard";
 import { SpreadsheetCard } from "./SpreadsheetCard";
 import { InvoiceFSMStrip } from "./InvoiceFSMStrip";
+import { InvoiceChatTrigger } from "./InvoiceChatTrigger";
+import { SapB1Drawer } from "./SapB1Drawer";
 
 export function DocFocus({ docId }: { docId: string }) {
   const qc = useQueryClient();
@@ -83,10 +85,19 @@ export function DocFocus({ docId }: { docId: string }) {
 
       {/* source + extracted in two columns on wide */}
       <div className="grid grid-cols-1 xl:grid-cols-2">
-        <div className="p-4 xl:border-r border-ink-100">
-          <div className="flex items-center justify-between mb-2">
-            <span className="eyebrow">Source · {data.doc.channel}{data.doc.filename ? ` · ${data.doc.filename}` : ""}</span>
-            <a href={sourceUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-700 hover:underline inline-flex items-center gap-1">raw <ExternalLink size={11} /></a>
+        <div className="p-4 xl:border-r border-ink-100 min-w-0">
+          <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+            <span className="eyebrow truncate min-w-0" title={`${data.doc.channel}${data.doc.filename ? ` · ${data.doc.filename}` : ""}`}>
+              Source · {data.doc.channel}{data.doc.filename ? ` · ${data.doc.filename}` : ""}
+            </span>
+            <a
+              href={sourceUrl!}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-brand-700 hover:underline inline-flex items-center gap-1 shrink-0"
+            >
+              raw <ExternalLink size={11} />
+            </a>
           </div>
           {sourceIsImage || sourceIsPdf ? (
             <div className="bg-ink-50 rounded-lg h-72 flex items-center justify-center overflow-hidden border border-ink-100">
@@ -107,7 +118,7 @@ export function DocFocus({ docId }: { docId: string }) {
             </div>
           )}
         </div>
-        <div className="p-4">
+        <div className="p-4 min-w-0">
           <span className="eyebrow">Extracted associates</span>
           <div className="space-y-2 mt-2">
             {ex?.rows.map((r, idx) => (
@@ -163,6 +174,13 @@ export function DocFocus({ docId }: { docId: string }) {
               <span className="eyebrow">Tax invoice {inv.invoice_sequence_no ? `· ${inv.invoice_sequence_no}` : ""}</span>
               <div className="flex items-center gap-2 flex-wrap">
                 <StatusBadge status={inv.status} />
+                <InvoiceChatTrigger
+                  kind="invoice"
+                  id={inv.id}
+                  ref={inv.invoice_sequence_no ?? inv.id.slice(0, 8)}
+                  variant="prominent"
+                  label="Ask AIDA"
+                />
                 {auto && (
                   <button onClick={() => setTouchlessFor(inv)} className="inline-flex items-center gap-1 rounded-md bg-brand-500 hover:bg-brand-400 text-teal-950 text-2xs font-semibold px-2 py-0.5 shadow-xs" title="Why was this touchless?">
                     <Sparkles size={10} /> AUTO · Why?
@@ -213,6 +231,11 @@ export function DocFocus({ docId }: { docId: string }) {
             {/* Invoice FSM breadcrumb. */}
             <div className="mt-2">
               <InvoiceFSMStrip status={inv.status} />
+            </div>
+
+            {/* SAP Business One Service Layer payload (OData v4) - judges + integrators love this. */}
+            <div className="mt-2">
+              <SapB1Drawer invoiceId={inv.id} />
             </div>
           </div>
         );
@@ -285,6 +308,19 @@ function RowCard({ row, match, pick, onPick }: { row: ExtractedRow; match?: RowM
 
 function CostMatrix({ cost, rowLabels, colLabels }: { cost: number[][]; rowLabels: string[]; colLabels: string[] }) {
   if (cost.length === 0 || cost[0].length === 0) return <div className="text-ink-400 text-sm">no candidates</div>;
+  // Single extracted row matched to a single candidate = trivial assignment.
+  // Showing a 1x1 matrix of "0.00" is just confusing noise — render a chip
+  // that says the match was exact + on what basis.
+  if (cost.length === 1 && cost[0].length === 1) {
+    const v = cost[0][0];
+    const exact = v < 0.05;
+    return (
+      <div className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2">
+        <span className="text-emerald-700 text-xs font-medium">{exact ? "Exact match" : "Single-candidate match"}</span>
+        <span className="font-mono text-2xs text-emerald-600">{rowLabels[0]} → {colLabels[0]}</span>
+      </div>
+    );
+  }
   const max = Math.max(...cost.flat(), 0.01);
   return (
     <div className="overflow-x-auto">

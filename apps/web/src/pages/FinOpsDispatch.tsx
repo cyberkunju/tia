@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { Send, Check } from "lucide-react";
 import { api } from "../api";
-import { cn, fmtMoney } from "../lib";
-import { PageHeader, Panel, StatusBadge, EmptyState, Spinner } from "../ui";
+import { cn, fmtAED, fmtMoney, fmtPct } from "../lib";
+import { PageHeader, Panel, Metric, StatusBadge, EmptyState, Spinner } from "../ui";
 import { Select } from "../components/Select";
 
 const RULES = [
@@ -21,6 +21,14 @@ export function FinOpsDispatch() {
   const qc = useQueryClient();
 
   const { data: clients } = useQuery({ queryKey: ["clients"], queryFn: api.listClients });
+  // Pipeline-wide invoices for the KPI strip — separate query from the per-client list.
+  const { data: allInvoices } = useQuery({
+    queryKey: ["invoices"],
+    queryFn: () => api.listInvoices(),
+    refetchInterval: 4_000,
+  });
+  const { data: stp } = useQuery({ queryKey: ["m-stp"], queryFn: api.metricsStp, refetchInterval: 5_000 });
+
   const active = clientCode ?? clients?.[0]?.code;
   useEffect(() => {
     if (!clientCode && active) nav(`/console/dispatch/${active}`, { replace: true });
@@ -54,6 +62,19 @@ export function FinOpsDispatch() {
 
   const pending = ordered.filter((i) => i.status === "generated");
 
+  // Pipeline-wide KPI summary (across all clients) — gives the FinOps user a
+  // pulse independent of which client they're configuring.
+  const pipeline = useMemo(() => {
+    const list = allInvoices ?? [];
+    const total = list.length;
+    const dispatched = list.filter((i) => i.status === "dispatched").length;
+    const pendingDispatch = list.filter((i) => i.status === "generated").length;
+    const dispatchedAED = list
+      .filter((i) => i.status === "dispatched")
+      .reduce((a, i) => a + (i.total_incl_vat ?? i.amount), 0);
+    return { total, dispatched, pendingDispatch, dispatchedAED };
+  }, [allInvoices]);
+
   const saveRule = useMutation({
     mutationFn: () => api.updateClientSettings(active!, { dispatch_rule: rule }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["clients"] }),
@@ -81,6 +102,31 @@ export function FinOpsDispatch() {
         }
       />
 
+      {/* Pipeline-wide KPIs — same numbers across all FinOps pages */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <Metric
+          label="Total invoices"
+          value={pipeline.total.toString()}
+          hint={`${(clients ?? []).length} clients on file`}
+        />
+        <Metric
+          label="Pending dispatch"
+          value={pipeline.pendingDispatch.toString()}
+          hint={pipeline.pendingDispatch === 0 ? "queue is clean" : "awaiting send"}
+          accent={pipeline.pendingDispatch === 0}
+        />
+        <Metric
+          label="Dispatched"
+          value={pipeline.dispatched.toString()}
+          hint={fmtAED(pipeline.dispatchedAED) + " billed"}
+        />
+        <Metric
+          label="Touchless rate"
+          value={stp ? fmtPct(stp.touchless_rate) : "-"}
+          hint={stp ? `${stp.auto}/${stp.total} routed auto` : "no data yet"}
+          accent={stp ? stp.touchless_rate >= stp.target : false}
+        />
+      </div>
       <Panel
         title="Ordering rule"
         className="mb-4"

@@ -297,4 +297,80 @@ export const api = {
       `/invoices/${id}/clawback`,
       jsonInit("POST", payload, key),
     ),
+
+  /* ── Peak Agentic: streaming chat + leakage sentinel + SAP B1 ─ */
+
+  /**
+   * POST /qa/stream — async generator yielding structured events as the agent
+   * fires tools and tokens stream back. Each event is a `QaStreamEvent`.
+   * Caller `for await` loops it; consumes the SSE under the hood.
+   */
+  qaStream: async function* qaStream(
+    question: string,
+    entity_context?: { kind: string; id: string },
+    client_scope?: string | null,
+    signal?: AbortSignal,
+    history?: { role: "user" | "assistant"; content: string }[],
+  ): AsyncGenerator<import("./types").QaStreamEvent, void, void> {
+    const res = await fetch(`${API_BASE}/qa/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, entity_context, client_scope, history }),
+      signal,
+    });
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`qa/stream ${res.status}: ${text.slice(0, 200)}`);
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      // SSE messages are separated by \n\n
+      let idx;
+      while ((idx = buf.indexOf("\n\n")) !== -1) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        for (const line of frame.split("\n")) {
+          if (!line.startsWith("data:")) continue;
+          const payload = line.slice(5).trim();
+          if (!payload) continue;
+          try {
+            yield JSON.parse(payload) as import("./types").QaStreamEvent;
+          } catch {
+            // ignore malformed event
+          }
+        }
+      }
+    }
+  },
+
+  metricsLeakage: (period?: string, clientCode?: string) => {
+    const qs = new URLSearchParams();
+    if (period) qs.set("period", period);
+    if (clientCode) qs.set("client_code", clientCode);
+    const tail = qs.toString();
+    return req<import("./types").LeakageReport>(
+      `/metrics/leakage${tail ? `?${tail}` : ""}`,
+    );
+  },
+
+  recoverLeakage: (
+    empId: string,
+    period: string,
+    reason: import("./types").LeakageReason = "no_timesheet",
+    byUser = "finops",
+  ) =>
+    req<import("./types").RecoveryInvoiceResult>(
+      `/finance/leakage/${encodeURIComponent(empId)}/recover`,
+      jsonInit("POST", { period, reason, by_user: byUser }),
+    ),
+
+  sapB1Payload: (invoiceId: string) =>
+    req<import("./types").SapB1PayloadResponse>(
+      `/invoices/${invoiceId}/sap-b1-payload`,
+    ),
 };

@@ -18,13 +18,18 @@ dependencies = [
     "jellyfish>=1.0",
     "pillow>=10.3",
     "imagehash>=4.3",
+    "qrcode>=7.4",
     "openai>=1.50",
     "typst>=0.13",
     "python-dateutil>=2.9",
     "python-docx>=1.1",
     "xlrd>=2.0.1",
     "olefile>=0.47",
+    "mcp>=1.0",
 ]
+
+[project.scripts]
+tia-mcp = "tia_ai.mcp:run_stdio"
 
 [project.optional-dependencies]
 ocr = ["opencv-python-headless>=4.10"]

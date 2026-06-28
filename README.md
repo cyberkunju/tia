@@ -14,6 +14,73 @@ The trick: **TIA reconciles the invoice against the contract**, not just the
 timesheet. That's the gap most AP automation misses - and the gap TASC's mentors
 called out as the one that matters.
 
+## AIDA - TASC's autonomous operator (the agentic chat)
+
+> **AI that doesn't just answer - it does the work, and proves it on the audit chain.**
+
+AIDA is the side-panel chat that turned TIA from "AP automation" into an autonomous
+finance operator. Five things make it different:
+
+- **Streams structured events**, not bulk text. Each user turn renders a live
+  tool-call strip (Cursor-style) - `find_revenue_leakage ✓ · recover_leakage ✓ ·
+  verify_audit_chain ✓` - then the prose answer streams token-by-token. The UI
+  shows the agent thinking, not just the result.
+- **17 grounded tools**: 12 reads (invoices, timesheets, contracts, audit chain,
+  leakage scan, SAP B1 payload generator, employee history, touchless rate, clients)
+  and 5 writes (`recover_leakage`, `dispatch_invoice`, `clawback_invoice`,
+  `approve_timesheet`, `resend_invoice_email`). Every write fires
+  `agent.<tool>_invoked` on the audit chain - so the agentic-mutation trail is
+  provable.
+- **Revenue leakage sentinel** - the new card on the Finance dashboard. Walks the
+  period's payroll, classifies each unbilled associate into one of 5 reasons
+  (`no_timesheet`, `partial_timesheet`, `missing_overtime`, `rate_undercharge`,
+  `late_period`), and exposes one-click recovery. The agent can drive this end-to-end.
+- **SAP Business One bridge** - any invoice surfaces a `POST /b1s/v2/Invoices`
+  OData v4 payload, copy-paste ready, with a `U_TIA_AuditHash` user-defined field
+  carrying our chain head so a downstream auditor can verify line-of-custody.
+- **Connect from anywhere via MCP**. TIA exposes the same 17 tools as a Model
+  Context Protocol server over two transports: **streamable HTTP at `/mcp`** and
+  **stdio via the `tia-mcp` console script**. Claude Desktop, Cursor, or any
+  MCP-aware host can drive TASC's month-close.
+
+### 90-second demo script
+
+1. Finance dashboard - hero metrics + the new **Leakage Sentinel** card: "AED
+   47,820 silently lost · 12 associates."
+2. Click the **sparkle** on the top leakage row → AIDA opens, scoped: "Focused on
+   Carlos Smith · CL004". Two icebreaker cards visible.
+3. Tap *"Recover this and walk me through it"* → live tool strip streams
+   `get_employee_history ✓ · get_contract ✓ · recover_leakage ✓ ·
+   verify_audit_chain ✓` while the prose ends with "chain advanced to 0xa7b3…
+   leakage dropped to AED 42,640."
+4. Switch to ClientInvoices, click the invoice sparkle → panel re-scopes.
+   Ask *"Show me the SAP B1 payload"* → JSON streams in with a copy button.
+5. Switch persona to FinOps → icebreakers change. Ask *"What needs my attention?"*
+   → live answer from real DB.
+
+### Hook TIA into Claude Desktop
+
+Drop this into `claude_desktop_config.json` (path depends on OS; on Linux it's
+`~/.config/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "tia": {
+      "command": "uv",
+      "args": ["--directory", "/absolute/path/to/tia/workers/ai", "run", "tia-mcp"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop. TIA's 17 tools show up under the plug icon - try
+*"Run TIA's month-close: find leakage, recover each row, then verify the chain."*
+
+Full protocol surface, tool inventory, and the "adding a connector" guide live in
+[docs/CONNECT.md](docs/CONNECT.md). A pre-baked Claude skill that drives the
+month-close end-to-end lives in `.claude/skills/tia-month-close.md`.
+
 ## What's inside
 
 - **4 ingestion channels** - portal upload, email (3 modes: direct / cc-silent / watched-mailbox), online form, image/PDF OCR
@@ -22,10 +89,10 @@ called out as the one that matters.
 - **Typst-rendered UAE Tax Invoice** (Rust compiler) - "Tax Invoice" header, supplier+customer TRN, sequential invoice number, VAT line breakdown, SAC code for India, audit hash footer
 - **Hungarian matching** (`scipy.linear_sum_assignment`) with the cost matrix surfaced in the "Why?" drawer - no black-box LLM resolution
 - **Rust dispatch service** (axum + sqlx, port :8001) - idempotency-keyed, writes outbox, separate process from the Python core
-- **Context-aware AI chat** - OpenAI tool-calling with 5 read-only DB tools, strict citation contract, swap to a local model with one env var
+- **Agentic chat with 17 grounded tools** - 12 reads + 5 writes, OpenAI tool-calling, structured-event SSE streaming, strict citation contract, MCP-exposed for Claude Desktop / Cursor / any host
 - **3 brief success-measure KPIs** - touchless rate, time-to-invoice, extraction F1 - all live endpoints
 - **13/13 eval PASS** with F1 + ECE on every push (CI gate)
-- **67/67 pytest** across the stack
+- **92/92 pytest** across the stack
 
 ## Architecture
 
