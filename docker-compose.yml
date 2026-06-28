@@ -71,6 +71,29 @@ services:
         condition: service_healthy
     networks: [tia]
 
+  # Zoho IMAP poller — fetches inbound timesheet emails and feeds them through the
+  # core's /intake/email (same pipeline as web/WhatsApp). Reuses the api image with
+  # an overridden entrypoint. Single instance (one poller → no double-processing).
+  # Idles safely if Zoho creds are unset, so it never crash-loops.
+  poller:
+    build:
+      context: .
+      dockerfile: workers/ai/Dockerfile
+    image: tia-api:latest
+    restart: unless-stopped
+    entrypoint: ["python", "-m", "tia_ai.mailbox.poller", "--loop", "--api", "http://api:8000"]
+    environment:
+      ZOHO_IMAP_USER: ${ZOHO_IMAP_USER:-}
+      ZOHO_IMAP_PASSWORD: ${ZOHO_IMAP_PASSWORD:-}
+      ZOHO_IMAP_HOST: ${ZOHO_IMAP_HOST:-imap.zoho.in}
+      ZOHO_IMAP_PORT: ${ZOHO_IMAP_PORT:-993}
+      ZOHO_IMAP_FOLDER: ${ZOHO_IMAP_FOLDER:-INBOX}
+      ZOHO_POLL_INTERVAL_SEC: ${ZOHO_POLL_INTERVAL_SEC:-10}
+    depends_on:
+      api:
+        condition: service_healthy
+    networks: [tia]
+
   web:
     build:
       context: apps/web

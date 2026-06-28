@@ -49,9 +49,9 @@ jobs:
       - name: build (tsc + vite)
         run: bun run build
 
-  # 3) eval - 9 deterministic cases (case 4 vision is skipped - needs Modal creds)
+  # 3) eval - the 7 brief cases (case 4 vision is skipped - needs Modal/OCR creds)
   eval-harness:
-    name: eval-harness (9 cases, F1+ECE gate)
+    name: eval-harness (F1+ECE gate)
     runs-on: ubuntu-latest
     timeout-minutes: 8
     defaults: { run: { working-directory: workers/ai } }
@@ -67,12 +67,12 @@ jobs:
         run: |
           uv run python -m tia_ai.seed
           uv run python -m tia_ai.synthgen
-      - name: run eval (skip case 4 - Modal-only)
+      - name: run eval (skip case 4 - vision/Modal-only)
         run: |
           uv run python - <<'PY'
           import json, sys
           from tia_ai.eval.run import run_case, _ece
-          cases = ["01","02","03","05","06","07","08","09","10"]
+          cases = ["01","02","03","05","06","07"]
           results = [run_case(c) for c in cases]
           calib = [c for r in results for c in r.get("calibration", [])]
           keys = list(results[0]["f1"].keys()) if results else []

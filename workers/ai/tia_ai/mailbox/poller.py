@@ -247,11 +247,15 @@ class ZohoPoller:
         return n
 
     def run_forever(self, interval_s: int = ZOHO_POLL_INTERVAL_SEC) -> None:
+        # Idle (don't exit) when unconfigured so the container never crash-loops on a
+        # restart policy; creds can be added and the service restarted to enable it.
         if not self.configured():
-            log.error(
-                "zoho poller cannot start: ZOHO_IMAP_USER / ZOHO_IMAP_PASSWORD not set in .env"
+            log.warning(
+                "zoho poller idle: ZOHO_IMAP_USER / ZOHO_IMAP_PASSWORD not set — "
+                "sleeping (set creds in .env and restart to enable email intake)"
             )
-            return
+            while not self.configured():
+                time.sleep(max(interval_s, 30))
         log.info(
             "zoho poller starting: %s @ %s:%d, every %ds",
             self.user,
@@ -286,12 +290,13 @@ def main() -> None:
     p.add_argument("--api", default="http://127.0.0.1:8000")
     args = p.parse_args()
     z = ZohoPoller(api_base=args.api)
-    if not z.configured():
-        log.error("ZOHO_IMAP_USER and ZOHO_IMAP_PASSWORD must be set (in .env or env).")
-        raise SystemExit(2)
     if args.loop:
+        # --loop is the deploy mode: run_forever idles safely when unconfigured.
         z.run_forever(interval_s=args.interval)
     else:
+        if not z.configured():
+            log.error("ZOHO_IMAP_USER and ZOHO_IMAP_PASSWORD must be set (in .env or env).")
+            raise SystemExit(2)
         n = z.poll_once()
         log.info("done - %d message(s) processed", n)
 

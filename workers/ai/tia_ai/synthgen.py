@@ -144,6 +144,8 @@ def case05_punch_excel() -> None:
     ws.append(punch_row("EMP10001", "Carlos Smith", 5, "", ""))
     ws.append(punch_row("EMP10002", "Ahmed Khan", 4, "A/L", "took one day Annual leave"))
     ws.append(punch_row("EMP10003", "Meera Al Rashid", 3, "sick", "two sick days; one AL on Wed"))
+    ws.append(punch_row("EMP10004", "Hana Al Farsi", 4, "Annual", "one day annual leave"))
+    ws.append(punch_row("EMP10005", "Michael Al Farsi", 4, "AL", ""))
     wb.save(SYN / "case_05_punch.xlsx")
     _gold(
         "05",

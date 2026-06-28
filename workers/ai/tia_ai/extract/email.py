@@ -34,7 +34,14 @@ SIGNED_RE = re.compile(
 
 DAYS_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:days?|d)\b", re.IGNORECASE)
 OT_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:ot|o/t|overtime)\b", re.IGNORECASE)
-LEAVE_RE = re.compile(r"(?:leave|on)\s*[:\-]?\s*([A-Za-z/][A-Za-z/ ]*)", re.IGNORECASE)
+# Label-then-number shapes used by structured emails ("Days worked: 22", "OT hours: 5").
+DAYS_LABEL_RE = re.compile(
+    r"\bdays?\s*(?:worked|present|attended)?\s*[:\-]?\s*(\d{1,2}(?:\.\d+)?)", re.IGNORECASE
+)
+OT_LABEL_RE = re.compile(
+    r"\b(?:ot|o/t|overtime)\s*(?:hours?)?\s*[:\-]?\s*(\d{1,2}(?:\.\d+)?)", re.IGNORECASE
+)
+LEAVE_RE = re.compile(r"\b(?:leave|on)\b\s*[:\-]?\s*([A-Za-z/][A-Za-z/ ]*)", re.IGNORECASE)
 # bare leave tokens at line end (markdown shape: "Ahmed Khan 20 days AL").
 # Case-sensitive on purpose so "Al Rashid" (a name fragment) doesn't match "AL".
 BARE_LEAVE_RE = re.compile(
@@ -45,7 +52,41 @@ REIMB_RE = re.compile(
     r"(?:\s*for\s*([A-Za-z][A-Za-z ]+))?",
     re.IGNORECASE,
 )
+# A reimbursement *line item* under a "Reimbursements:" header — no keyword, just an
+# amount and an optional reason ("- AED 120 for parking at client site").
+REIMB_LINE_RE = re.compile(
+    r"(?:AED\s*)?([0-9][0-9,]*\.?\d*)\s*(?:for\s+(.+))?", re.IGNORECASE
+)
 NAME_RE = re.compile(r"([A-Z][A-Za-z'’.\-]+(?:\s+[A-Z][A-Za-z'’.\-]+){0,3})")
+
+# Leading words that mark an attribute *label* line (value belongs to the employee
+# named above, not a new person). Keeps "Days worked: 22" / "Leave taken: AL" /
+# "Reimbursements:" from being mistaken for an employee row.
+_LABEL_LEADS = {
+    "day": "days",
+    "days": "days",
+    "ot": "ot",
+    "overtime": "ot",
+    "leave": "leave",
+    "absent": "leave",
+    "absence": "leave",
+    "reimbursement": "reimb",
+    "reimbursements": "reimb",
+    "reimburse": "reimb",
+    "expense": "reimb",
+    "expenses": "reimb",
+    "claim": "reimb",
+    "claims": "reimb",
+}
+_LEAD_WORD_RE = re.compile(r"^\s*([A-Za-z/]+)")
+
+
+def _label_kind(line: str) -> str | None:
+    """If the line *leads* with an attribute label, return its kind; else None."""
+    m = _LEAD_WORD_RE.match(line)
+    if not m:
+        return None
+    return _LABEL_LEADS.get(m.group(1).lower())
 
 _NOISE_PREFIXES = (
     "dear",
@@ -116,10 +157,51 @@ def extract_email(text: str) -> TimesheetExtraction:
         out.signed_by = sm.group(1).strip()
 
     seen: set[str] = set()
+    current: TimesheetRow | None = None
+    reimb_section = False
+
+    def _add_reimb(row: TimesheetRow, amt: str, reason: str | None) -> None:
+        val = _clean_num(amt)
+        if val:
+            row.reimbursements.append(
+                Reimbursement(reason=(reason or "reimbursement").strip(), amount_aed=val)
+            )
+
     for raw in text.splitlines():
         line = raw.strip()
+        # Quoted-reply history ("> ...") is prior context, never the current submission.
+        if line.startswith(">"):
+            reimb_section = False
+            continue
         low = line.lower()
         if len(line) < 3 or any(low.startswith(p) for p in _NOISE_PREFIXES):
+            reimb_section = False
+            continue
+
+        # 1) Attribute *label* line → its value belongs to the employee named above.
+        label = _label_kind(line)
+        if label is not None:
+            if label == "reimb":
+                reimb_section = True
+                if current is not None:
+                    for amt, reason in REIMB_RE.findall(line):
+                        _add_reimb(current, amt, reason)
+                continue
+            if current is None:
+                continue
+            if label == "days":
+                m = DAYS_LABEL_RE.search(line) or DAYS_RE.search(line)
+                if m:
+                    current.days_worked = _clean_num(m.group(1))
+            elif label == "ot":
+                m = OT_LABEL_RE.search(line) or OT_RE.search(line)
+                if m:
+                    current.ot_hours = _clean_num(m.group(1))
+            elif label == "leave":
+                bare = BARE_LEAVE_RE.findall(line)
+                if bare:
+                    existing = [c.value for c in current.leave_codes]
+                    current.leave_codes = canon_leaves(existing + bare)
             continue
 
         emp = EMP_RE.search(line)
@@ -127,23 +209,31 @@ def extract_email(text: str) -> TimesheetExtraction:
         ot = OT_RE.search(line)
         lv = LEAVE_RE.search(line)
         reimb_hits = REIMB_RE.findall(line)
+        has_signal = bool(days or ot or lv or reimb_hits)
 
-        if not (emp or days or reimb_hits):
-            continue  # no timesheet signal on this line
-
-        emp_id = emp.group(0).upper() if emp else None
         if emp:
             after = line[emp.end() :]
             name = _leading_name(after) or _leading_name(line[: emp.start()])
         else:
             name = _leading_name(line)
-        if not emp_id and not name:
-            continue  # can't attribute this row to anyone
+        emp_id = emp.group(0).upper() if emp else None
+
+        # 2) A new employee row needs an identity *and* either an Emp ID (attributes
+        #    may follow on label lines) or at least one timesheet signal on this line.
+        #    A bare name with no signal (e.g. a signature "Ahmed") is not a row.
+        if not (emp_id or (name and has_signal)):
+            # 3) An amount line under a "Reimbursements:" header attaches to current.
+            if reimb_section and current is not None:
+                m = REIMB_LINE_RE.search(line)
+                if m:
+                    _add_reimb(current, m.group(1), m.group(2))
+            continue
 
         key = f"{name}|{emp_id}"
         if key in seen:
             continue
         seen.add(key)
+        reimb_section = False
 
         leave_codes = canon_leaves(re.split(r"[,/ ]+", lv.group(1))) if lv else []
         if not leave_codes:
@@ -159,15 +249,14 @@ def extract_email(text: str) -> TimesheetExtraction:
                     Reimbursement(reason=(reason or "reimbursement").strip(), amount_aed=val)
                 )
 
-        out.rows.append(
-            TimesheetRow(
-                employee_name=name or (emp_id or "UNKNOWN"),
-                emp_id=emp_id,
-                days_worked=_clean_num(days.group(1)) if days else None,
-                ot_hours=_clean_num(ot.group(1)) if ot else None,
-                leave_codes=leave_codes,
-                reimbursements=reimb,
-            )
+        current = TimesheetRow(
+            employee_name=name or (emp_id or "UNKNOWN"),
+            emp_id=emp_id,
+            days_worked=_clean_num(days.group(1)) if days else None,
+            ot_hours=_clean_num(ot.group(1)) if ot else None,
+            leave_codes=leave_codes,
+            reimbursements=reimb,
         )
+        out.rows.append(current)
 
     return out
