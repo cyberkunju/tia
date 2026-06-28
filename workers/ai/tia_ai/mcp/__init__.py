@@ -16,6 +16,7 @@ same tool registry. The 17 tool wrappers themselves are registered by
 from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 mcp = FastMCP(
     name="TIA - Touchless Invoice Agent",
@@ -39,6 +40,16 @@ mcp = FastMCP(
     # what a request/response tool server needs.
     stateless_http=True,
     json_response=True,
+    # FastMCP auto-enables DNS-rebinding protection (allowed_hosts limited to
+    # localhost) when host is 127.0.0.1, which rejects every proxied/public Host
+    # header with 421 Misdirected Request. This server is reached only through
+    # nginx + the Cloudflare edge (where host/origin control lives), so we turn
+    # the in-app host check off and accept the reverse-proxied Host.
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+        allowed_hosts=["*"],
+        allowed_origins=["*"],
+    ),
 )
 
 # Eager import to register every @mcp.tool wrapper on the singleton above.
