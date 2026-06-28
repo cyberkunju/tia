@@ -58,7 +58,9 @@ export const usePersona = create<PersonaState>()(
       setFocusedEntity: (entity) => set({ focusedEntity: entity }),
     }),
     {
-      name: "tia.persona",
+      // Bumped from "tia.persona" so the Client-first default takes effect even
+      // for browsers that previously persisted a different persona.
+      name: "tia.persona.v2",
       // resetTick, aidaOpen, focusedEntity are in-memory only — per-session UX state.
       partialize: (s) => ({ persona: s.persona, currentClientCode: s.currentClientCode }),
     },
