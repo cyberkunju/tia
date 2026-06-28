@@ -18,7 +18,6 @@ Rule IDs:
   R6  markup_correctly_applied
   R7  vat_calculation_correct
   R8  duplicate_invoice_extended
-  R9  approver_signature_present
   R10 holiday_weekend_multiplier_check
 """
 
@@ -375,17 +374,13 @@ def r8_duplicate_invoice_extended(
 def r9_approver_signature_present(
     invoice: dict, contract: Contract, ctx: dict, session: Session
 ) -> list[RuleResult]:
-    """R9: timesheet extraction must have a signed_by field (warning, not error)."""
-    signed_by = ctx.get("signed_by")
-    if signed_by:
-        return [_ok("R9", "approver_signature_present", actual=signed_by)]
-    return [
-        _warn(
-            "R9",
-            "approver_signature_present",
-            message="no approver signature on source document",
-        )
-    ]
+    """R9 (RETIRED): used to warn when no signed_by was extracted from the
+    source. Retired because the warning was noisy on the demo path - many
+    legitimate channels (email-from-client, structured Excel) don't carry an
+    explicit signature, and surfacing it as a warning made every clean
+    invoice look problematic. Stubbed as always-ok so historical references
+    keep deserializing; not registered in `ALL_RULES`."""
+    return [_ok("R9", "approver_signature_present", actual="retired")]
 
 
 def r10_holiday_weekend_multiplier_check(
@@ -578,7 +573,8 @@ RULES = (
     # runs. The rule is anti-fraud (one invoice per emp+period per client) and
     # belongs back on as a Phase-α feature once the demo is filmed.
     # ("R8", r8_duplicate_invoice_extended),
-    ("R9", r9_approver_signature_present),
+    # R9 (approver_signature_present) retired - was a warning-severity rule
+    # that fired on every clean demo invoice and added no signal.
     ("R10", r10_holiday_weekend_multiplier_check),
     ("R14", r14_period_not_closed),
     ("R15", r15_anomaly_vs_history),
@@ -598,7 +594,6 @@ FRIENDLY_RULE_MESSAGES: dict[str, str] = {
     "R6": "The line totals didn't reconcile against the contract markup - we're double-checking the math.",
     "R7": "VAT didn't reconcile against the line total - we're verifying the tax calculation.",
     "R8": "An invoice already exists for this employee in the same billing period - we want to confirm this isn't a duplicate.",
-    "R9": "Your timesheet didn't include a clear approver signature - we may need confirmation before invoicing.",
     "R10": "Overtime amounts didn't reconcile to the statutory rate (1.25× standard / 1.5× night, rest day, holiday).",
     "R14": "The billing period is currently closed for your account - please reach out to your TASC FinOps contact.",
     "R15": "The billed amount is unusually high compared to this employee's normal monthly cost - please confirm the hours.",

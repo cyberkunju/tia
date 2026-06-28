@@ -57,13 +57,31 @@ async def _lifespan(_app: FastAPI):
     Task group is not initialized. Make sure to use run().`
 
     `mcp.session_manager.run()` can only be entered ONCE per process and cannot be
-    reused after it exits. In production the lifespan runs once, so this is fine.
-    Under tests, multiple `with TestClient(app)` contexts re-enter the lifespan; the
-    `_mcp_started` guard makes every entry after the first skip MCP (tests don't use
-    the /mcp transport) instead of crashing on the singleton.
+    reused after it exits. The `_mcp_started` guard makes repeated test TestClient
+    contexts skip MCP instead of crashing on the singleton.
+
+    Also kicks off the Zoho IMAP poller in a daemon thread - it pulls real email
+    sent to `tia@cyberkunju.com` into the pipeline every ZOHO_POLL_INTERVAL_SEC.
+    No-op if ZOHO_IMAP_USER / ZOHO_IMAP_PASSWORD aren't set. Intake is idempotent
+    (Idempotency-Key per message), so a duplicate poller can never double-bill.
     """
     global _mcp_started
+    import logging
+    import threading
+
+    from ..mailbox import ZohoPoller
+
+    log = logging.getLogger("tia.api.lifespan")
     init_db()
+
+    poller = ZohoPoller()
+    if poller.configured():
+        t = threading.Thread(target=poller.run_forever, name="zoho-poller", daemon=True)
+        t.start()
+        log.info("zoho poller started in background thread")
+    else:
+        log.info("zoho poller skipped (ZOHO_IMAP_USER / ZOHO_IMAP_PASSWORD not set)")
+
     if _mcp_started:
         yield
         return
