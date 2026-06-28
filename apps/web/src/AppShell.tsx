@@ -61,7 +61,7 @@ function DemoResetButton() {
     <button
       onClick={() => reset.mutate()}
       disabled={reset.isPending}
-      className="inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60 shrink-0"
+      className="hidden sm:inline-flex items-center gap-1 h-8 rounded-lg border border-amber-300/40 bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 text-[11px] font-medium px-2.5 disabled:opacity-60 shrink-0"
       title="Wipe all documents, timesheets, invoices, and events - for demo replay."
     >
       <RotateCw size={11} className={reset.isPending ? "animate-spin" : ""} />
@@ -114,8 +114,9 @@ export function AppShell() {
           {/* Acting-as Client identity - only relevant for the Client persona. */}
           {persona === "client" && <ActingAsPicker />}
 
-          {/* Quick contact - WhatsApp + email, one click away during a demo. */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          {/* Quick contact - WhatsApp + email. Hidden on mobile so the compact
+              header doesn't overflow (search + persona switch take priority). */}
+          <div className="hidden sm:flex items-center gap-1.5 shrink-0">
             <a
               href="https://wa.me/919400245958?text=Hi"
               target="_blank"
@@ -129,9 +130,9 @@ export function AppShell() {
               </svg>
             </a>
             <a
-              href="mailto:tai@cyberkunju.com"
+              href="mailto:tia@cyberkunju.com"
               aria-label="Send an email"
-              title="Email tai@cyberkunju.com"
+              title="Email tia@cyberkunju.com"
               className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-white/20 bg-white/10 text-white/80 hover:bg-white/20 hover:border-white/30 transition-colors"
             >
               <Mail size={15} />
