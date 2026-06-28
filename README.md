@@ -426,8 +426,8 @@ external configured.
 
 ## Team
 
-- **edneam / cyberkunju**: backend, agentic core, eval harness, deployment.
-- **Navaneeth**: frontend and the WhatsApp bridge.
+- **Chethas Dileep / edneam**: backend, agentic core, eval harness.
+- **Navaneeth K / cyberkunju**: frontend, WhatsApp bridge, agentic core and deployment.
 
 ## License
 
