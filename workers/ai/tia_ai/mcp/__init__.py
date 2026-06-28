@@ -26,6 +26,10 @@ mcp = FastMCP(
         "approve, resend email). Every write is recorded on a tamper-evident audit "
         "chain. Prefer the smallest tool set; quote IDs and AED amounts verbatim."
     ),
+    # The streamable_http_app exposes its route at this path INTERNALLY. We
+    # mount the sub-app under /mcp in api/app.py, so set the internal path to
+    # "/" — the public URL ends up at /mcp (not /mcp/mcp).
+    streamable_http_path="/",
 )
 
 # Eager import to register every @mcp.tool wrapper on the singleton above.

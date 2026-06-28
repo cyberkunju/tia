@@ -129,10 +129,12 @@ def _markup_for(client: Client | None) -> float:
 
 
 def _invoice_lines_for(session: Session, client_code: str, period: str) -> list[dict]:
-    """Active (non-voided, non-recovery) invoice lines indexed by emp_id.
+    """Active (non-voided) invoice lines for one (client, period), indexed by emp_id.
 
-    Recovery invoices (suffix -R\\d+) are excluded - they're the *fix* for
-    leakage, not the original billing. Voided invoices likewise don't count.
+    Recovery invoices (suffix `-R\\d+`) ARE counted as billed coverage — the
+    "click Recover → leakage drops" demo narrative depends on it. The recovery
+    trail stays auditable via the sequence suffix and the
+    `invoice.recovery_issued` audit event.
     """
     invs = (
         session.query(Invoice)
@@ -145,9 +147,6 @@ def _invoice_lines_for(session: Session, client_code: str, period: str) -> list[
     )
     lines: list[dict] = []
     for inv in invs:
-        seq = inv.invoice_sequence_no or ""
-        if "-R" in seq and seq.rsplit("-R", 1)[-1].isdigit():
-            continue
         for li in inv.line_items or []:
             if isinstance(li, dict):
                 lines.append(li)
