@@ -85,10 +85,19 @@ export function DocFocus({ docId }: { docId: string }) {
 
       {/* source + extracted in two columns on wide */}
       <div className="grid grid-cols-1 xl:grid-cols-2">
-        <div className="p-4 xl:border-r border-ink-100">
-          <div className="flex items-center justify-between mb-2">
-            <span className="eyebrow">Source · {data.doc.channel}{data.doc.filename ? ` · ${data.doc.filename}` : ""}</span>
-            <a href={sourceUrl!} target="_blank" rel="noreferrer" className="text-xs text-brand-700 hover:underline inline-flex items-center gap-1">raw <ExternalLink size={11} /></a>
+        <div className="p-4 xl:border-r border-ink-100 min-w-0">
+          <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+            <span className="eyebrow truncate min-w-0" title={`${data.doc.channel}${data.doc.filename ? ` · ${data.doc.filename}` : ""}`}>
+              Source · {data.doc.channel}{data.doc.filename ? ` · ${data.doc.filename}` : ""}
+            </span>
+            <a
+              href={sourceUrl!}
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-brand-700 hover:underline inline-flex items-center gap-1 shrink-0"
+            >
+              raw <ExternalLink size={11} />
+            </a>
           </div>
           {sourceIsImage || sourceIsPdf ? (
             <div className="bg-ink-50 rounded-lg h-72 flex items-center justify-center overflow-hidden border border-ink-100">
@@ -109,7 +118,7 @@ export function DocFocus({ docId }: { docId: string }) {
             </div>
           )}
         </div>
-        <div className="p-4">
+        <div className="p-4 min-w-0">
           <span className="eyebrow">Extracted associates</span>
           <div className="space-y-2 mt-2">
             {ex?.rows.map((r, idx) => (
