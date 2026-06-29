@@ -1,20 +1,45 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# TIA - production stack: Postgres 18 + FastAPI worker + nginx-served SPA.
-# Continuous deploy verified: pushes to the default branch roll out via deploy/.
+# TIA - production stack: Postgres 18 + FastAPI worker + nginx-served SPA +
+# WhatsApp bridge. Continuous deploy verified: pushes to the default branch roll
+# out via deploy/.
 #
-#   cp .env.docker.example .env   # then edit secrets
+#   cp .env.docker.example .env   # then set POSTGRES_PASSWORD + secrets
 #   docker compose up -d --build
-#   open http://localhost:8080
+#   open http://localhost:8090
+#
+# Hardening baked in: per-service CPU/memory limits (sized empirically, tunable
+# via env), bounded JSON log rotation, no-new-privileges, tini init for clean
+# signal handling, and localhost-only host port binds (the Cloudflare tunnel
+# reaches the edge over loopback, so nothing needs to listen on 0.0.0.0).
 # ─────────────────────────────────────────────────────────────────────────────
 name: tia
 
+# Bounded logs: without this, json-file logs grow unbounded and eventually fill
+# the disk on a long-running host. 10m x 5 files = 50m ceiling per container.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+# Common per-service hardening shared by every container.
+x-svc: &svc
+  restart: unless-stopped
+  init: true                       # tini as PID 1: reap children + forward SIGTERM
+  security_opt:
+    - no-new-privileges:true       # block setuid privilege escalation inside the container
+  logging: *default-logging
+  networks: [tia]
+
 services:
   db:
+    <<: *svc
     image: postgres:18-alpine
-    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tia}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tia}
+      # Fail loud if unset — never silently fall back to a default, which is how
+      # a stale volume password drifts out of sync with the app and breaks auth.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set (see .env.docker.example)}
       POSTGRES_DB: ${POSTGRES_DB:-tia}
     volumes:
       # Postgres 18+ stores data in a version-specific subdir; mount the parent.
@@ -25,16 +50,25 @@ services:
       timeout: 5s
       retries: 10
       start_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "${DB_CPUS:-1.0}"
+          memory: ${DB_MEM:-512M}
+        reservations:
+          memory: 128M
     networks: [tia]
 
   api:
+    <<: *svc
     build:
       context: .
       dockerfile: workers/ai/Dockerfile
     image: tia-api:latest
-    restart: unless-stopped
+    # Give in-flight pipeline work (parse/match/render) time to finish on deploy.
+    stop_grace_period: 30s
     environment:
-      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tia}:${POSTGRES_PASSWORD:-tia}@db:5432/${POSTGRES_DB:-tia}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-tia}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@db:5432/${POSTGRES_DB:-tia}
       GLM_OCR_BASE_URL: ${GLM_OCR_BASE_URL:-https://ocr.cyberkunju.com/v1}
       GLM_OCR_API_KEY: ${GLM_OCR_API_KEY:-}
       GLM_OCR_MODEL: ${GLM_OCR_MODEL:-glm-ocr:q8_0}
@@ -90,31 +124,50 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    networks: [tia]
+    deploy:
+      resources:
+        # api is the only CPU/mem-hungry tier (uvicorn workers + scipy matcher +
+        # typst render). Measured peak under 10x-concurrent stress: ~870M / 1.7
+        # cores. Defaults give ~2x headroom for the 3-user target; raise API_MEM /
+        # API_CPUS together with UVICORN_WORKERS to scale up.
+        limits:
+          cpus: "${API_CPUS:-2.0}"
+          memory: ${API_MEM:-1536M}
+        reservations:
+          cpus: "0.25"
+          memory: ${API_MEM_MIN:-512M}
 
   web:
+    <<: *svc
     build:
       context: apps/web
       args:
         VITE_API_BASE: /api
         VITE_API_TOKEN: ${TIA_API_TOKEN:-}
     image: tia-web:latest
-    restart: unless-stopped
     ports:
-      - "${WEB_PORT:-8080}:80"
+      # Bind to loopback only: cloudflared reaches the edge over localhost, so the
+      # port never needs to be exposed on the LAN/0.0.0.0.
+      - "127.0.0.1:${WEB_PORT:-8090}:80"
     depends_on:
       api:
         condition: service_healthy
-    networks: [tia]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
+        reservations:
+          memory: 16M
 
   # WhatsApp Cloud API bridge - forwards inbound timesheets to the core and returns the invoice.
   # Runs as part of the default stack so the full WhatsApp loop is live in the deploy.
   # The bridge starts even without Meta creds (it just can't send), so it never crash-loops.
   whatsapp:
+    <<: *svc
     build:
       context: workers/whatsapp
     image: tia-whatsapp:latest
-    restart: unless-stopped
     environment:
       UPSTREAM_API_URL: http://api:8000
       # The core downloads attachment_url over the compose network from the bridge.
@@ -129,11 +182,17 @@ services:
     volumes:
       - wa-staging:/app/staging
     ports:
-      - "${WHATSAPP_PORT:-8088}:8088"
+      - "127.0.0.1:${WHATSAPP_PORT:-8088}:8088"
     depends_on:
       api:
         condition: service_healthy
-    networks: [tia]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          memory: 32M
 
 volumes:
   db-data:
