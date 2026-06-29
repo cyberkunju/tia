@@ -91,7 +91,7 @@ services:
       ZOHO_SMTP_HOST: ${ZOHO_SMTP_HOST:-smtp.zoho.in}
       ZOHO_SMTP_PORT: ${ZOHO_SMTP_PORT:-465}
       ZOHO_SMTP_USE_SSL: ${ZOHO_SMTP_USE_SSL:-1}
-      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-5}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       # API security — open by default (public demo). Set TIA_API_TOKEN to require
       # `Authorization: Bearer <token>` on the dashboard/mutation surface; the intake
@@ -127,15 +127,18 @@ services:
     deploy:
       resources:
         # api is the only CPU/mem-hungry tier (uvicorn workers + scipy matcher +
-        # typst render). Measured peak under 10x-concurrent stress: ~870M / 1.7
-        # cores. Defaults give ~2x headroom for the 3-user target; raise API_MEM /
-        # API_CPUS together with UVICORN_WORKERS to scale up.
+        # typst render). Tuned for 5 concurrent users: 5 uvicorn workers so 5
+        # simultaneous timesheet submissions each get a dedicated worker (no
+        # queuing), capped at 3 cores so the DB always keeps one, and 3G so five
+        # workers never OOM (measured ~0.4G/worker under load). Scale by raising
+        # UVICORN_WORKERS + API_CPUS + API_MEM together (this 4-core box tops out
+        # near 5-6 workers; beyond that, use a bigger machine).
         limits:
-          cpus: "${API_CPUS:-2.0}"
-          memory: ${API_MEM:-1536M}
+          cpus: "${API_CPUS:-3.0}"
+          memory: ${API_MEM:-3G}
         reservations:
           cpus: "0.25"
-          memory: ${API_MEM_MIN:-512M}
+          memory: ${API_MEM_MIN:-1G}
 
   web:
     <<: *svc

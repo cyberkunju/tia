@@ -419,10 +419,13 @@ shutdown. Host ports bind to `127.0.0.1` (the Cloudflare tunnel reaches them ove
 loopback). `POSTGRES_PASSWORD` is required — compose fails fast if it is unset, so a
 stale volume password can never silently drift out of sync with the app.
 
-**Scaling.** Defaults are sized for ~3 concurrent users (measured peak under 10×
-stress: api ~870 MB / 1.7 cores). To scale up, raise `UVICORN_WORKERS` together with
-`API_MEM` / `API_CPUS` in `.env` and `docker compose up -d`. The api is the only tier
-that needs to grow; db/web/whatsapp are flat.
+**Scaling.** Defaults are tuned for **5 concurrent users** — 5 uvicorn workers so
+five simultaneous timesheet submissions each get a dedicated worker with no
+queuing, capped at 3 cores (the DB always keeps one) and 3 G (five workers never
+OOM; ~0.4 G/worker under load). To scale further, raise `UVICORN_WORKERS` +
+`API_CPUS` + `API_MEM` together in `.env` and `docker compose up -d`. The api is
+the only tier that grows; db/web/whatsapp are flat. This 4-core box tops out near
+5–6 workers — beyond that, use a bigger machine.
 
 **Backups.** `make db-backup` writes a gzipped `pg_dump` to `~/Deploy/tia-backups`
 (keeps the newest 14); `make db-restore FILE=…` restores one. Install the daily timer
