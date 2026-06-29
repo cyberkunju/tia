@@ -407,6 +407,28 @@ push to the default branch. The live deployment runs on Postgres with continuous
 deploy. The demo defaults to SQLite and local staging, so you can run it with nothing
 external configured.
 
+```bash
+cp .env.docker.example .env     # set POSTGRES_PASSWORD (required) + secrets
+docker compose up -d --build
+open http://localhost:8090
+```
+
+**Operability baked in.** Every container runs with a bounded CPU/memory budget,
+log rotation (10m × 5 files), `no-new-privileges`, and a tini init for clean
+shutdown. Host ports bind to `127.0.0.1` (the Cloudflare tunnel reaches them over
+loopback). `POSTGRES_PASSWORD` is required — compose fails fast if it is unset, so a
+stale volume password can never silently drift out of sync with the app.
+
+**Scaling.** Defaults are sized for ~3 concurrent users (measured peak under 10×
+stress: api ~870 MB / 1.7 cores). To scale up, raise `UVICORN_WORKERS` together with
+`API_MEM` / `API_CPUS` in `.env` and `docker compose up -d`. The api is the only tier
+that needs to grow; db/web/whatsapp are flat.
+
+**Backups.** `make db-backup` writes a gzipped `pg_dump` to `~/Deploy/tia-backups`
+(keeps the newest 14); `make db-restore FILE=…` restores one. Install the daily timer
+with `deploy/tia-backup.{service,timer}` for unattended backups. For off-box
+durability, sync that directory to object storage.
+
 ---
 
 ## A two-minute demo
