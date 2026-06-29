@@ -12,7 +12,19 @@ from .config import DATABASE_URL
 from .models import Base
 
 _connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, echo=False, connect_args=_connect_args)
+# Battle-tested pooling for the Postgres deploy: pre_ping so a connection dropped by
+# a DB restart/idle-timeout is detected and replaced instead of erroring a request;
+# recycle well under typical server/idle timeouts; sized for concurrent threadpool
+# requests (10+20 per worker, comfortably under Postgres' default 100 even with
+# several workers). SQLite (dev) keeps the simple default pool.
+_pool_kwargs = (
+    {}
+    if DATABASE_URL.startswith("sqlite")
+    else {"pool_size": 10, "max_overflow": 20, "pool_timeout": 30, "pool_recycle": 1800}
+)
+engine = create_engine(
+    DATABASE_URL, echo=False, pool_pre_ping=True, connect_args=_connect_args, **_pool_kwargs
+)
 SessionLocal = sessionmaker(bind=engine, expire_on_commit=False, class_=Session)
 
 

@@ -201,7 +201,7 @@ ALLOWED_MIME_PREFIXES = (
 
 
 @app.post("/intake/upload")
-async def intake_upload(
+def intake_upload(
     file: UploadFile,
     uploaded_by: str = Form("client"),
     # Optional email-source linkage so an attachment-as-timesheet keeps the
@@ -218,7 +218,12 @@ async def intake_upload(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     s: Session = Depends(db_session),
 ) -> dict:
-    raw = await file.read()
+    # Sync endpoint: FastAPI runs it in its worker threadpool, so the multi-second
+    # OCR wait inside process_doc overlaps across concurrent uploads instead of
+    # blocking the event loop. This is what lets a 1-core box serve several
+    # simultaneous photo/OCR submissions concurrently (the waits overlap; only the
+    # small CPU slice takes turns). `.file.read()` is the sync read of the upload.
+    raw = file.file.read()
     if len(raw) > MAX_UPLOAD_BYTES:
         raise HTTPException(413, f"file too large: {len(raw)} > {MAX_UPLOAD_BYTES} bytes")
     if file.content_type and not any(
