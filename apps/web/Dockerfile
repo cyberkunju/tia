@@ -20,6 +20,10 @@ RUN bun install --frozen-lockfile
 COPY . .
 ARG VITE_API_BASE=/api
 ENV VITE_API_BASE=${VITE_API_BASE}
+# Optional bearer token baked into the SPA — only needed when the backend has
+# TIA_API_TOKEN set. Empty by default (open API / public demo).
+ARG VITE_API_TOKEN=
+ENV VITE_API_TOKEN=${VITE_API_TOKEN}
 RUN bun run build
 
 ############################

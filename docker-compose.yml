@@ -59,6 +59,19 @@ services:
       ZOHO_SMTP_USE_SSL: ${ZOHO_SMTP_USE_SSL:-1}
       UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # API security — open by default (public demo). Set TIA_API_TOKEN to require
+      # `Authorization: Bearer <token>` on the dashboard/mutation surface; the intake
+      # pipeline + webhook + health stay exempt so the WhatsApp/email loop never breaks.
+      TIA_API_TOKEN: ${TIA_API_TOKEN:-}
+      TIA_ALLOWED_ORIGINS: ${TIA_ALLOWED_ORIGINS:-https://tia.cyberkunju.com,http://localhost:5173,http://localhost:8090}
+      # SAP Business One Service Layer — real A/R Invoice POST on dispatch. Off by
+      # default (the pipeline only generates the OData payload + WPS artifacts).
+      SAP_B1_ENABLED: ${SAP_B1_ENABLED:-0}
+      SAP_B1_BASE_URL: ${SAP_B1_BASE_URL:-}
+      SAP_B1_COMPANY_DB: ${SAP_B1_COMPANY_DB:-}
+      SAP_B1_USER: ${SAP_B1_USER:-}
+      SAP_B1_PASSWORD: ${SAP_B1_PASSWORD:-}
+      SAP_B1_VERIFY_TLS: ${SAP_B1_VERIFY_TLS:-1}
       TIA_SEED_ON_START: ${TIA_SEED_ON_START:-true}
       TIA_SYNTH_ON_START: ${TIA_SYNTH_ON_START:-true}
       # Confidence-gated touchless path: clean, fully-resolved, rule-passing
@@ -84,6 +97,7 @@ services:
       context: apps/web
       args:
         VITE_API_BASE: /api
+        VITE_API_TOKEN: ${TIA_API_TOKEN:-}
     image: tia-web:latest
     restart: unless-stopped
     ports:

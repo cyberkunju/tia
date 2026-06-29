@@ -6,6 +6,7 @@ Endpoints follow CONTRACTS.md. Idempotency-Key is honored on mutations.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import uuid
 from contextlib import asynccontextmanager
@@ -27,7 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..config import DATA_DIR, STAGING_DIR
+from ..config import DATA_DIR, STAGING_DIR, TIA_ALLOWED_ORIGINS, TIA_API_TOKEN
 from ..db import SessionLocal, init_db
 from ..mcp import mcp
 from ..models import Client, DocAsset, Event, Invoice, Query, Timesheet
@@ -74,6 +75,11 @@ async def _lifespan(_app: FastAPI):
     log = logging.getLogger("tia.api.lifespan")
     init_db()
 
+    from ..config import config_warnings
+
+    for _w in config_warnings():
+        log.warning("config: %s", _w)
+
     poller = ZohoPoller()
     if poller.configured():
         t = threading.Thread(target=poller.run_forever, name="zoho-poller", daemon=True)
@@ -98,11 +104,35 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=TIA_ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
     allow_credentials=False,
 )
+
+# Paths that are NEVER token-gated even when TIA_API_TOKEN is set:
+#   - health probes (load balancer / container healthcheck)
+#   - the MCP transport (access is controlled at the edge per its own model)
+#   - the intake pipeline (the WhatsApp bridge + Zoho poller call these; they are
+#     the trusted ingestion boundary and must keep flowing) and the webhook surface
+#   - API docs
+# Everything else (dashboard reads + every mutation) requires the bearer token.
+_AUTH_EXEMPT = ("/health", "/healthz", "/mcp", "/intake", "/webhook", "/docs", "/openapi.json", "/redoc")
+
+
+@app.middleware("http")
+async def _require_api_token(request: Request, call_next):
+    """No-op unless TIA_API_TOKEN is set. When set, require `Authorization: Bearer
+    <token>` on all non-exempt paths so the dashboard + mutating financial endpoints
+    aren't world-callable. Constant-time compare; CORS preflight (OPTIONS) passes."""
+    if TIA_API_TOKEN and request.method != "OPTIONS":
+        path = request.url.path
+        exempt = any(path == p or path.startswith(p + "/") for p in _AUTH_EXEMPT)
+        if not exempt:
+            provided = request.headers.get("authorization", "")
+            if not hmac.compare_digest(provided, f"Bearer {TIA_API_TOKEN}"):
+                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
 
 
 def db_session() -> Session:  # FastAPI dependency
@@ -1564,8 +1594,44 @@ def dispatch(
                     "email.invoice_send_failed",
                     {"reason": str(e)[:200]},
                 )
+        _post_invoice_to_sap(s, i, payload.by_user)  # best-effort real SAP B1 post
         return result
-    return dispatch_invoice(s, i, payload.by_user, idempotency_key)
+    result = dispatch_invoice(s, i, payload.by_user, idempotency_key)
+    _post_invoice_to_sap(s, i, payload.by_user)
+    return result
+
+
+def _post_invoice_to_sap(s: Session, invoice: Invoice | None, by_user: str) -> None:
+    """When SAP_B1_ENABLED, POST the A/R Invoice to the live B1 Service Layer and
+    record the created DocEntry as an audit event. Best-effort: a SAP outage logs a
+    failure event but never rolls back the local dispatch (the invoice already
+    shipped on our side and can be re-posted). No-op when the bridge is disabled."""
+    from ..config import SAP_B1_ENABLED
+
+    if not SAP_B1_ENABLED or invoice is None:
+        return
+    from ..integrations.sap_b1 import prepare_invoice_payload
+    from ..integrations.sap_b1.client import SapB1Error, post_invoice
+
+    try:
+        res = post_invoice(prepare_invoice_payload(invoice, s))
+        log_event(
+            s,
+            by_user,
+            "invoice",
+            invoice.id,
+            "sap_b1.invoice_posted",
+            {"doc_entry": res.get("DocEntry"), "doc_num": res.get("DocNum")},
+        )
+    except (SapB1Error, ValueError) as e:  # noqa: BLE001 — never fail the local dispatch
+        log_event(
+            s,
+            by_user,
+            "invoice",
+            invoice.id,
+            "sap_b1.invoice_post_failed",
+            {"reason": str(e)[:300]},
+        )
 
 
 class ResendEmailPayload(BaseModel):
@@ -2410,6 +2476,20 @@ def system_status(s: Session = Depends(db_session)) -> dict:
             else "missing_creds"
         )
     out["zoho_mail_address"] = os.getenv("ZOHO_IMAP_USER") or None
+    # SAP B1 real outbound bridge
+    from ..config import SAP_B1_ENABLED
+    from ..integrations.sap_b1.client import is_configured as _sap_configured
+
+    out["sap_b1"] = (
+        ("enabled" if _sap_configured() else "enabled_but_unconfigured")
+        if SAP_B1_ENABLED
+        else "mock"
+    )
+    # API auth posture + config caveats (so the dashboard can warn the operator)
+    out["api_auth"] = "token_required" if TIA_API_TOKEN else "open"
+    from ..config import config_warnings
+
+    out["config_warnings"] = config_warnings()
     # rust-dispatch (best-effort, swallows errors so /status is never down)
     rust_url = os.getenv("RUST_DISPATCH_URL", "").rstrip("/")
     if rust_url:

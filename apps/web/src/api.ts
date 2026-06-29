@@ -5,6 +5,10 @@
 } from "./types";
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:8000";
+// Optional bearer token. Empty by default (open API / public demo). When the
+// backend has TIA_API_TOKEN set, build the SPA with VITE_API_TOKEN to match and
+// every request below carries `Authorization: Bearer <token>` automatically.
+const API_TOKEN = import.meta.env.VITE_API_TOKEN || "";
 
 function uuid(): string {
   return (crypto as { randomUUID?: () => string }).randomUUID?.()
@@ -12,6 +16,9 @@ function uuid(): string {
 }
 
 async function req<T>(path: string, init: RequestInit = {}): Promise<T> {
+  if (API_TOKEN) {
+    init = { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${API_TOKEN}` } };
+  }
   const res = await fetch(`${API_BASE}${path}`, init);
   if (!res.ok) {
     let detail = "";

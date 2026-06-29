@@ -99,4 +99,57 @@ ZOHO_SMTP_HOST = os.getenv("ZOHO_SMTP_HOST", "smtp.zoho.com")
 ZOHO_SMTP_PORT = int(os.getenv("ZOHO_SMTP_PORT", "465"))
 ZOHO_SMTP_USE_SSL = os.getenv("ZOHO_SMTP_USE_SSL", "1").lower() in ("1", "true", "yes")
 
+# ── API security ──────────────────────────────────────────────────────────
+# When TIA_API_TOKEN is set, the public API requires `Authorization: Bearer <token>`
+# on everything EXCEPT health, the MCP transport, the intake pipeline (the bridge /
+# poller call those and carry their own trust boundary), and the webhook surface.
+# Unset (the default) leaves the API open so the public click-through demo keeps
+# working — set it to lock the dashboard + mutation surface for a private deploy.
+TIA_API_TOKEN = os.getenv("TIA_API_TOKEN", "").strip()
+
+# Browser origins allowed to call the API cross-origin. The SPA is served
+# same-origin via nginx so it never needs CORS; this only governs OTHER sites'
+# in-browser JS. Was "*" (any site could script the API) — now an allow-list.
+TIA_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv(
+        "TIA_ALLOWED_ORIGINS",
+        "https://tia.cyberkunju.com,http://localhost:5173,http://localhost:8080,http://localhost:8090",
+    ).split(",")
+    if o.strip()
+]
+
+# ── SAP Business One Service Layer (real outbound A/R Invoice) ──────────────
+# Off by default: the pipeline generates the OData payload + WPS/consolidated
+# artifacts as a mock. Set SAP_B1_ENABLED=1 plus the connection vars to actually
+# POST the A/R Invoice to a live B1 Service Layer when an invoice is dispatched.
+SAP_B1_ENABLED = os.getenv("SAP_B1_ENABLED", "0").lower() in ("1", "true", "yes")
+SAP_B1_BASE_URL = os.getenv("SAP_B1_BASE_URL", "").rstrip("/")
+SAP_B1_COMPANY_DB = os.getenv("SAP_B1_COMPANY_DB", "")
+SAP_B1_USER = os.getenv("SAP_B1_USER", "")
+SAP_B1_PASSWORD = os.getenv("SAP_B1_PASSWORD", "")
+SAP_B1_VERIFY_TLS = os.getenv("SAP_B1_VERIFY_TLS", "1").lower() in ("1", "true", "yes")
+
 STAGING_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def config_warnings() -> list[str]:
+    """Non-fatal configuration sanity checks, surfaced at startup and on /status.
+
+    Each string is an operational caveat the operator should know about — missing
+    LLM/OCR backends, dev-default secrets, an open API, or an incomplete SAP config.
+    """
+    w: list[str] = []
+    if not (AZURE_AI_ENDPOINT and AZURE_AI_KEY) and not OPENAI_API_KEY:
+        w.append("no chat LLM configured (AZURE_AI_* or OPENAI_API_KEY) — chat + LLM extraction disabled")
+    if not GLM_OCR_API_KEY and not (MISTRAL_OCR_ENDPOINT and MISTRAL_OCR_API_KEY):
+        w.append("no OCR backend (GLM_OCR_* or MISTRAL_OCR_*) — image/scan timesheets will escalate")
+    if INTERNAL_SECRET == "tia-internal-dev":
+        w.append("INTERNAL_SECRET is the dev default — set a strong value (WhatsApp bridge trust boundary)")
+    if DATABASE_URL.startswith("sqlite"):
+        w.append("using SQLite (dev default) — set DATABASE_URL to Postgres for production")
+    if not TIA_API_TOKEN:
+        w.append("TIA_API_TOKEN unset — API is OPEN (ok for a public demo; set it to lock a private deploy)")
+    if SAP_B1_ENABLED and not (SAP_B1_BASE_URL and SAP_B1_COMPANY_DB and SAP_B1_USER and SAP_B1_PASSWORD):
+        w.append("SAP_B1_ENABLED but connection vars incomplete — invoices will NOT post to SAP")
+    return w
