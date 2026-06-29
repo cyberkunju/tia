@@ -1,4 +1,4 @@
-.PHONY: help install seed synth eval test api web whatsapp dispatch dispatch-build mail mail-once dev demo demo-seed-3 clean
+.PHONY: help install seed synth eval test api web whatsapp dispatch dispatch-build mail mail-once dev demo demo-seed-3 clean db-backup db-restore
 
 help:
 	@echo "TIA — Touchless Invoice Agent"
@@ -16,6 +16,8 @@ help:
 	@echo "  make mail-once  poll Zoho once for debugging"
 	@echo "  make dev        api + web in parallel"
 	@echo "  make demo       full: install, seed, synth, eval, then run dev"
+	@echo "  make db-backup  pg_dump the running compose Postgres (gzip, pruned)"
+	@echo "  make db-restore FILE=dump.sql.gz   restore a dump into the running db"
 
 install:
 	cd workers/ai && uv sync
@@ -77,3 +79,12 @@ demo: install seed synth eval
 clean:
 	rm -rf workers/ai/.venv apps/web/node_modules apps/web/dist staging tia.db \
 	       workers/whatsapp/node_modules workers/whatsapp/staging
+
+# ── Ops: database backup / restore (operate on the running compose db) ──────
+db-backup:
+	bash deploy/backup.sh
+
+db-restore:
+	@test -n "$(FILE)" || { echo "usage: make db-restore FILE=path/to/dump.sql.gz"; exit 1; }
+	@echo "Restoring $(FILE) into the running db (tia-db-1)…"
+	gunzip -c "$(FILE)" | docker exec -i tia-db-1 psql -U $${POSTGRES_USER:-tia} -d $${POSTGRES_DB:-tia}

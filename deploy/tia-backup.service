@@ -1,0 +1,11 @@
+[Unit]
+Description=TIA database backup (pg_dump -> gzip, pruned)
+After=docker.service
+Wants=docker.service
+
+[Service]
+Type=oneshot
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# Invoke via bash so a missing +x bit can't break the timer with status=203/EXEC.
+ExecStart=/bin/bash %h/Deploy/tia/deploy/backup.sh
+TimeoutStartSec=600
