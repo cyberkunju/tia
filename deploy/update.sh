@@ -29,23 +29,40 @@ REMOTE="$(git rev-parse "origin/$BRANCH")"
 
 [ "$LOCAL" = "$REMOTE" ] && exit 0   # nothing new
 
-log "change on $BRANCH: ${LOCAL:0:7} -> ${REMOTE:0:7}; deploying"
-git reset --hard "origin/$BRANCH"                 >>"$LOG" 2>&1
-docker compose up -d --build --remove-orphans     >>"$LOG" 2>&1
-docker image prune -f                             >>"$LOG" 2>&1
+# Quarantine: if the incoming commit already failed health + was rolled back,
+# don't redeploy it every minute — wait for a NEW commit (a fix) to supersede it.
+QUARANTINE="${TIA_DEPLOY_QUARANTINE:-$HOME/Deploy/tia-bad-commit}"
+if [ -f "$QUARANTINE" ] && [ "$(cat "$QUARANTINE" 2>/dev/null)" = "$REMOTE" ]; then
+  exit 0
+fi
 
-# Post-deploy health gate: confirm the stack actually serves before calling it a
-# success, so a broken build is surfaced in the log instead of silently "deployed".
-# Hits the api /health through the nginx edge (the same path real traffic uses).
 WEB_PORT="$(sed -n 's/^WEB_PORT=//p' .env 2>/dev/null | tr -d '"'\''' | head -n1)"
 WEB_PORT="${WEB_PORT:-8090}"
-healthy=0
-for _ in $(seq 1 30); do
-  if curl -fsS "http://localhost:${WEB_PORT}/api/health" >/dev/null 2>&1; then healthy=1; break; fi
-  sleep 2
-done
-if [ "$healthy" = 1 ]; then
+check_health() {
+  for _ in $(seq 1 30); do
+    curl -fsS "http://localhost:${WEB_PORT}/api/health" >/dev/null 2>&1 && return 0
+    sleep 2
+  done
+  return 1
+}
+deploy() { docker compose up -d --build --remove-orphans >>"$LOG" 2>&1; docker image prune -f >>"$LOG" 2>&1; }
+
+PREV="$LOCAL"   # the commit we're leaving — it was serving, so it's the rollback target
+log "change on $BRANCH: ${LOCAL:0:7} -> ${REMOTE:0:7}; deploying"
+git reset --hard "origin/$BRANCH" >>"$LOG" 2>&1
+deploy
+
+if check_health; then
   log "deploy ok @ $(git rev-parse --short HEAD) - health check passed"
+  rm -f "$QUARANTINE"   # clear any prior quarantine now that we're healthy
 else
-  log "DEPLOY WARNING @ $(git rev-parse --short HEAD) - /api/health not OK after 60s; check 'docker compose logs'"
+  log "DEPLOY FAILED @ ${REMOTE:0:7} - /api/health not OK after 60s; rolling back to ${PREV:0:7}"
+  echo "$REMOTE" > "$QUARANTINE"          # don't retry this bad commit until a fix lands
+  git reset --hard "$PREV" >>"$LOG" 2>&1
+  deploy
+  if check_health; then
+    log "ROLLBACK ok - restored ${PREV:0:7}; bad commit ${REMOTE:0:7} quarantined (push a fix to retry)"
+  else
+    log "ROLLBACK FAILED - ${PREV:0:7} also unhealthy; MANUAL intervention needed (docker compose logs)"
+  fi
 fi
