@@ -8,7 +8,7 @@ help:
 	@echo "  make synth      generate the sample input cases + gold"
 	@echo "  make eval       run the eval harness (F1, ECE, pass/fail)"
 	@echo "  make test       run all test suites (python pytest + bun)"
-	@echo "  make test-cov   run pytest with coverage gate (fail under 70%)"
+	@echo "  make test-cov   run pytest with coverage gate (fail under 100%)"
 	@echo "  make api        run the core FastAPI on :8000"
 	@echo "  make web        run the Vite dev server on :5173"
 	@echo "  make whatsapp   run the WhatsApp bridge on :8088 (forwards to the core)"
@@ -40,7 +40,7 @@ test:
 	cd apps/web && bun run test
 
 test-cov:
-	cd workers/ai && uv run python -m pytest -q --cov=tia_ai --cov-report=term-missing --cov-fail-under=70
+	cd workers/ai && uv run python -m pytest -q --cov=tia_ai --cov-report=term-missing --cov-fail-under=100
 
 api:
 	cd workers/ai && uv run uvicorn tia_ai.api.app:app --host 0.0.0.0 --port 8000 --reload

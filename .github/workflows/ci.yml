@@ -29,7 +29,7 @@ jobs:
       - name: sync dev deps
         run: uv sync --extra dev
       - name: run pytest + coverage gate
-        run: uv run pytest tests/ -q --tb=short --cov=tia_ai --cov-report=term-missing --cov-fail-under=70
+        run: uv run pytest tests/ -q --tb=short --cov=tia_ai --cov-report=term-missing --cov-fail-under=100
 
   # 2) frontend - lint + vitest unit tests + TypeScript/Vite build (tsc -b catches every TS error)
   frontend-build:
@@ -45,8 +45,8 @@ jobs:
         run: bun install --frozen-lockfile
       - name: lint
         run: bun run lint
-      - name: unit tests (vitest)
-        run: bun run test
+      - name: unit tests + coverage gate (vitest)
+        run: bun run test:coverage
       - name: build (tsc + vite)
         run: bun run build
 
