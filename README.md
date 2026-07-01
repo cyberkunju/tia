@@ -432,10 +432,14 @@ is worker-count-driven (~260 MB base + ~170 MB/worker). Guidance:
 
 Pin `UVICORN_WORKERS=<n>` to override. The db/web/whatsapp tiers are flat.
 
-**Backups.** `make db-backup` writes a gzipped `pg_dump` to `~/Deploy/tia-backups`
-(keeps the newest 14); `make db-restore FILE=…` restores one. Install the daily timer
-with `deploy/tia-backup.{service,timer}` for unattended backups. For off-box
-durability, sync that directory to object storage.
+**Backups.** `make db-backup` writes a gzipped `pg_dump` **and** an archive of the
+invoice PDFs to `~/Deploy/tia-backups` (keeps the newest 14 of each); `make
+db-restore FILE=…` restores a dump. Install the daily timer with
+`deploy/tia-backup.{service,timer}` for unattended backups. For **encrypted,
+off-box durability** set `TIA_BACKUP_ENCRYPT_KEY` (AES-256) and `TIA_BACKUP_REMOTE`
+(an `rclone` remote or `s3://…` for the aws CLI) — the backup then ships encrypted
+copies of the DB + PDFs off the box. The DB dump is the critical step; PDF archive,
+encryption, and upload are best-effort and never lose the local dump.
 
 ---
 
