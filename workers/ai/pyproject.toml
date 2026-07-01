@@ -35,7 +35,7 @@ tia-mcp = "tia_ai.mcp:run_stdio"
 ocr = ["opencv-python-headless>=4.10"]
 # Postgres 18 driver for production/container deployments (SQLite stays the default).
 postgres = ["psycopg[binary]>=3.2"]
-dev = ["pytest>=8.2", "ruff>=0.5"]
+dev = ["pytest>=8.2", "ruff>=0.5", "pytest-cov>=5.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -47,3 +47,15 @@ packages = ["tia_ai"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.coverage.report]
+# Lines that are intentionally not exercised by the hermetic suite.
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
