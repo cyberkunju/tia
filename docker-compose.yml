@@ -93,6 +93,14 @@ services:
       ZOHO_SMTP_USE_SSL: ${ZOHO_SMTP_USE_SSL:-1}
       UVICORN_WORKERS: ${UVICORN_WORKERS:-auto}
       LOG_LEVEL: ${LOG_LEVEL:-info}
+      # Observability: set LOG_FORMAT=json for structured logs a shipper can parse;
+      # set SENTRY_DSN (+ build with the `sentry` extra) to enable error tracking.
+      # Prometheus metrics are always exposed at GET /metrics (token-gated when
+      # TIA_API_TOKEN is set).
+      LOG_FORMAT: ${LOG_FORMAT:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.0}
+      TIA_ENV: ${TIA_ENV:-production}
       # API security — open by default (public demo). Set TIA_API_TOKEN to require
       # `Authorization: Bearer <token>` on the dashboard/mutation surface; the intake
       # pipeline + webhook + health stay exempt so the WhatsApp/email loop never breaks.

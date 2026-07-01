@@ -25,10 +25,11 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from .. import obs
 from ..config import DATA_DIR, STAGING_DIR, TIA_ALLOWED_ORIGINS, TIA_API_TOKEN
 from ..db import SessionLocal, init_db
 from ..mcp import mcp
@@ -79,6 +80,8 @@ async def _lifespan(_app: FastAPI):
     from ..mailbox import ZohoPoller
 
     log = logging.getLogger("tia.api.lifespan")
+    obs.setup_logging()
+    obs.init_error_tracking()
     init_db()
 
     from ..config import config_warnings
@@ -139,6 +142,30 @@ async def _require_api_token(request: Request, call_next):
             if not hmac.compare_digest(provided, f"Bearer {TIA_API_TOKEN}"):
                 return JSONResponse({"detail": "unauthorized"}, status_code=401)
     return await call_next(request)
+
+
+@app.middleware("http")
+async def _record_metrics(request: Request, call_next):
+    """Record Prometheus request count + latency using the matched route TEMPLATE
+    (bounded cardinality). Added after the auth middleware so it wraps the whole
+    request. Never lets a metrics error affect the response."""
+    import time as _time
+
+    start = _time.perf_counter()
+    response = await call_next(request)
+    duration = _time.perf_counter() - start
+    route = request.scope.get("route")
+    template = getattr(route, "path", None) or "unmatched"
+    obs.observe_request(request.method, template, response.status_code, duration)
+    return response
+
+
+@app.get("/metrics")
+def prometheus_metrics() -> Response:
+    """Prometheus exposition endpoint. Scrape internally; when TIA_API_TOKEN is set
+    this is token-gated like the rest of the dashboard surface."""
+    body, content_type = obs.metrics_exposition()
+    return Response(content=body, media_type=content_type)
 
 
 def db_session() -> Session:  # FastAPI dependency
