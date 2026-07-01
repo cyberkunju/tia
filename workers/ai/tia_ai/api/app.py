@@ -9,6 +9,7 @@ import asyncio
 import hmac
 import json
 import logging
+import os
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,7 +30,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from .. import obs
+from .. import obs, ratelimit
 from ..config import DATA_DIR, STAGING_DIR, TIA_ALLOWED_ORIGINS, TIA_API_TOKEN
 from ..db import SessionLocal
 from ..mcp import mcp
@@ -50,6 +51,19 @@ from ..orchestrator import (
 # logger). Previously a handler referenced an undefined `log`, raising NameError
 # in its own except clause; this makes `log` available at module scope.
 log = logging.getLogger("tia.api")
+
+# Backstop rate limiter for the public upload path (Cloudflare is the real edge
+# DDoS layer). Generous default; tune via TIA_UPLOAD_RATE_MAX (per minute per IP).
+_UPLOAD_LIMITER = ratelimit.SlidingWindowLimiter(
+    max_requests=int(os.getenv("TIA_UPLOAD_RATE_MAX", "60")), window_s=60.0
+)
+
+
+def _rate_limit_upload(request: Request) -> None:
+    """429 when a single client floods /intake/upload. Internal channels
+    (/intake/whatsapp, /intake/email) are trusted and not limited here."""
+    if not _UPLOAD_LIMITER.allow(ratelimit.client_key(request)):
+        raise HTTPException(429, "upload rate limit exceeded; slow down")
 _mcp_streamable_app = mcp.streamable_http_app()
 
 
@@ -251,6 +265,7 @@ def intake_upload(
     # pass missed them. Capped at 4 KB upstream.
     email_body: str | None = Form(None),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    _rl: None = Depends(_rate_limit_upload),
     s: Session = Depends(db_session),
 ) -> dict:
     # Sync endpoint: FastAPI runs it in its worker threadpool, so the multi-second
