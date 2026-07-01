@@ -180,7 +180,7 @@ def extract_email(text: str) -> TimesheetExtraction:
             name = _leading_name(after) or _leading_name(line[: emp.start()])
         else:
             name = _leading_name(line)
-        if not emp_id and not name:
+        if not emp_id and not name:  # pragma: no cover - defensive: a name-less, emp-less line is already caught by the label-led `continue` above, so this is unreachable
             continue  # can't attribute this row to anyone
 
         key = f"{name}|{emp_id}"

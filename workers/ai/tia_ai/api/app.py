@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -43,6 +44,11 @@ from ..orchestrator import (
 
 # Build the MCP sub-app at import time so `mcp.session_manager` becomes accessible.
 # Mounted below under `/mcp`.
+
+# Module-level logger for request-path handlers (the lifespan uses its own local
+# logger). Previously a handler referenced an undefined `log`, raising NameError
+# in its own except clause; this makes `log` available at module scope.
+log = logging.getLogger("tia.api")
 _mcp_streamable_app = mcp.streamable_http_app()
 
 
@@ -337,7 +343,7 @@ def _email_reply_for_upload(s: Session, ts) -> dict | None:
         from ..mailbox.sender import deliver_email_outcome
 
         return deliver_email_outcome(s, ts)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001 — best-effort: a reply failure must never fail the intake
         log.warning("email reply for upload failed: %s", e)
         return {"sent": False, "reason": str(e)[:200]}
 
@@ -2383,7 +2389,7 @@ def metric_sla(s: Session = Depends(db_session)) -> dict:
     over_sla: list[dict] = []
     for inv in invoices:
         if not inv.created_at:
-            continue
+            continue  # pragma: no cover - defensive: invoices.created_at is NOT NULL in the schema (Mapped[dt.datetime], DB-enforced), so this guard is unreachable.
         # Use the most recent transition event for this invoice, else created_at
         last_event = (
             s.query(Event)

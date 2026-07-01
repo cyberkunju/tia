@@ -171,13 +171,13 @@ def send_reply_via_zoho(eml_path: Path) -> dict:
                 raw_body = part.get_payload(decode=True) or b""
                 if isinstance(raw_body, bytes):
                     body = raw_body.decode("utf-8", errors="replace")
-                else:
+                else:  # pragma: no cover - defensive: get_payload(decode=True) always returns bytes here
                     body = str(raw_body)
                 break
     else:
         single = parsed.get_payload(decode=False)
         body = single if isinstance(single, str) else str(single or "")
-    if isinstance(body, bytes):
+    if isinstance(body, bytes):  # pragma: no cover - defensive: both branches above already yield str
         body = body.decode("utf-8", errors="replace")
     return send_email_reply(
         to_addr=to_addr,

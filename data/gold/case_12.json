@@ -1,0 +1,21 @@
+{
+  "case": "12",
+  "channel": "email",
+  "input": "case_12_rate_mismatch.eml",
+  "expect": {
+    "client_code": "CL001",
+    "period": "June 2026",
+    "rows": [
+      {
+        "emp_id": "EMP10001",
+        "employee_name": "Carlos Smith",
+        "days_worked": 22,
+        "ot_hours": 2,
+        "resolved": true,
+        "ambiguous": false
+      }
+    ],
+    "expected_routing": "hitl",
+    "expected_rule_violation": "R2_rate_compliance_per_category"
+  }
+}

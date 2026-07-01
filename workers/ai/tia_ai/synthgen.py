@@ -37,7 +37,7 @@ def case07_clean_excel() -> None:
     # Payroll with no changes."
     wb = Workbook()
     ws = wb.active
-    if ws is None:
+    if ws is None:  # pragma: no cover - defensive: a fresh openpyxl Workbook always has an active sheet
         ws = wb.create_sheet("Timesheet")
     ws.title = "Timesheet"
     ws.append(
@@ -117,7 +117,7 @@ def case05_punch_excel() -> None:
     # (AL, A/L, Annual, sick)."
     wb = Workbook()
     ws = wb.active
-    if ws is None:
+    if ws is None:  # pragma: no cover - defensive: a fresh openpyxl Workbook always has an active sheet
         ws = wb.create_sheet("Punch")
     ws.title = "Punch"
     # 5 working days shown as In/Out pairs + a Leave code column + a free-text Comments column.

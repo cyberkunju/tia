@@ -35,7 +35,7 @@ tia-mcp = "tia_ai.mcp:run_stdio"
 ocr = ["opencv-python-headless>=4.10"]
 # Postgres 18 driver for production/container deployments (SQLite stays the default).
 postgres = ["psycopg[binary]>=3.2"]
-dev = ["pytest>=8.2", "ruff>=0.5", "pytest-cov>=5.0"]
+dev = ["pytest>=8.2", "ruff>=0.5", "pytest-cov>=5.0", "respx>=0.21"]
 
 [build-system]
 requires = ["hatchling"]
@@ -47,6 +47,17 @@ packages = ["tia_ai"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+
+[tool.coverage.run]
+# Non-product scripts excluded from coverage: these are manual, operator-run CLIs
+# with no importable product logic — exercising them would mean driving argparse
+# entrypoints that only open live IMAP/SMTP sockets or seed a dev mailbox.
+#   test_creds.py  — manual Zoho credential checker (`python -m ...test_creds`)
+#   demo_inject.py — dev-only helper that injects a demo email into a live INBOX
+omit = [
+    "tia_ai/mailbox/test_creds.py",
+    "tia_ai/mailbox/demo_inject.py",
+]
 
 [tool.coverage.report]
 # Lines that are intentionally not exercised by the hermetic suite.

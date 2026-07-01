@@ -125,7 +125,7 @@ def _demo() -> None:
         except InvalidTransition:
             pass
         else:
-            raise AssertionError(f"transition {current}->{target} should have been blocked")
+            raise AssertionError(f"transition {current}->{target} should have been blocked")  # pragma: no cover - defensive: reached only if the FSM wrongly permits a blocked transition
     print("invoice FSM: all transition assertions passed")
 
 
