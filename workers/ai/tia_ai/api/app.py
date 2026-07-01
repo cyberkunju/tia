@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from .. import obs
 from ..config import DATA_DIR, STAGING_DIR, TIA_ALLOWED_ORIGINS, TIA_API_TOKEN
-from ..db import SessionLocal, init_db
+from ..db import SessionLocal
 from ..mcp import mcp
 from ..models import Client, DocAsset, Event, Invoice, Query, Timesheet
 from ..orchestrator import (
@@ -82,7 +82,9 @@ async def _lifespan(_app: FastAPI):
     log = logging.getLogger("tia.api.lifespan")
     obs.setup_logging()
     obs.init_error_tracking()
-    init_db()
+    from ..migrate import init_schema
+
+    init_schema()
 
     from ..config import config_warnings
 
