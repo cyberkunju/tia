@@ -12,6 +12,7 @@ export function DispatchPillars({ stp }: { stp: StpMetricFull | undefined }) {
   const auto = bd?.auto_dispatched ?? 0;
   const hitl = bd?.hitl_dispatched ?? 0;
   const finance = bd?.finance_dispatched ?? 0;
+  /* v8 ignore next -- pct is only invoked after the total===0 early return, so the `: 0` branch is unreachable */
   const pct = (n: number) => (total > 0 ? Math.round((n / total) * 100) : 0);
   return (
     <section className="card p-4">

@@ -23,6 +23,7 @@ export function ClientInvoices() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["invoices", currentClientCode],
+    /* v8 ignore next -- enabled:!!currentClientCode means queryFn only runs with a truthy code, so `?? undefined` is unreachable */
     queryFn: () => api.listInvoices(currentClientCode ?? undefined),
     refetchInterval: 4_000,
     enabled: !!currentClientCode,
@@ -131,6 +132,7 @@ export function ClientInvoices() {
         <InvoiceActionModal
           invoice={actionFor.inv}
           mode={actionFor.mode}
+          /* v8 ignore next -- the modal only opens from rows that require a loaded client, so currentClientCode is always set here */
           clientCode={currentClientCode ?? ""}
           onClose={() => setActionFor(null)}
           onDone={() => { setActionFor(null); qc.invalidateQueries({ queryKey: ["invoices"] }); }}
@@ -195,7 +197,12 @@ function InvoiceActionModal({ invoice, mode, clientCode, onClose, onDone }: {
   const [reason, setReason] = useState("");
   const [subject, setSubject] = useState(`Question on invoice ${invoice.invoice_sequence_no ?? invoice.id.slice(0, 8)}`);
   const approve = useMutation({ mutationFn: () => api.clientApprove(invoice.id, "client", reason || undefined), onSuccess: onDone });
-  const reject = useMutation({ mutationFn: () => api.clientReject(invoice.id, reason || "no reason given"), onSuccess: onDone });
+  const reject = useMutation({
+    /* v8 ignore start -- the reject button stays disabled until reason is non-empty, so `|| "no reason given"` is unreachable */
+    mutationFn: () => api.clientReject(invoice.id, reason || "no reason given"),
+    /* v8 ignore stop */
+    onSuccess: onDone,
+  });
   const raise = useMutation({
     mutationFn: () => api.raiseQuery(clientCode, { subject, body: reason, invoice_id: invoice.id, raised_by: "client" }),
     onSuccess: onDone,

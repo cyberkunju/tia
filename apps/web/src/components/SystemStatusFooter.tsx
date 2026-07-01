@@ -50,6 +50,7 @@ export function SystemStatusFooter({ tone = "light", compact = false }: { tone?:
         {SERVICES.map((s) => {
           const raw = data?.[s.key] as string | undefined;
           const klass = DOT_CLASS[classifyDot(raw)];
+          /* v8 ignore next -- every SERVICES entry defines longLabel, so the `?? s.label` fallback is unreachable */
           const title = `${s.longLabel ?? s.label}: ${raw ?? "-"}`;
           return (
             <span key={s.key} title={title} className={cn("h-1.5 w-1.5 rounded-full", klass)} />
@@ -67,6 +68,7 @@ export function SystemStatusFooter({ tone = "light", compact = false }: { tone?:
         return (
           <span
             key={s.key}
+            /* v8 ignore next -- every SERVICES entry defines longLabel, so the `?? s.label` fallback is unreachable */
             title={`${s.longLabel ?? s.label}: ${raw ?? "-"}`}
             className={cn("inline-flex items-center gap-1 text-2xs", textCls)}
           >

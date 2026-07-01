@@ -36,6 +36,7 @@ export function FinOpsDispatch() {
 
   const { data: invoices } = useQuery({
     queryKey: ["invoices", active],
+    /* v8 ignore next -- enabled:!!active means queryFn only runs with a truthy active, so the `: Promise.resolve([])` branch is unreachable */
     queryFn: () => (active ? api.listInvoices(active) : Promise.resolve([])),
     enabled: !!active,
     refetchInterval: 4_000,

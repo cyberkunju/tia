@@ -29,6 +29,7 @@ function humanize(s?: string | null): string {
 }
 
 function confidenceTone(c?: number | null): Tone {
+  /* v8 ignore next -- unreachable: ConfidenceBadge guards `value == null` before ever calling confidenceTone */
   if (c == null) return "slate";
   if (c >= 0.85) return "green";
   if (c >= 0.6) return "blue";

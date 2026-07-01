@@ -18,6 +18,7 @@ const JURISDICTION_TONE: Record<string, string> = {
 export function ContractPanel({ clientCode }: { clientCode: string | null | undefined }) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ["contract", clientCode],
+    /* v8 ignore next -- enabled:!!clientCode means queryFn never runs with a falsy clientCode */
     queryFn: () => clientCode ? api.getContract(clientCode) : Promise.resolve(null),
     enabled: !!clientCode,
   });

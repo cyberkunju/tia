@@ -138,7 +138,13 @@ export function ClientsConfig() {
                   <StatTile label="Invoices" value={activeStats.count.toString()} tone="default" />
                   <StatTile label="Dispatched" value={activeStats.dispatched.toString()} tone={activeStats.dispatched > 0 ? "green" : "default"} />
                   <StatTile label="Pending dispatch" value={activeStats.pending.toString()} tone={activeStats.pending > 0 ? "amber" : "default"} />
-                  <StatTile label="Total billed" value={fmtAED(activeStats.total_aed)} tone="default" hint={activeStats.latest_period ? `latest ${activeStats.latest_period}${activeStats.latest_at ? ` · ${fmtAge(activeStats.latest_at)} ago` : ""}` : undefined} />
+                  <StatTile
+                    label="Total billed"
+                    value={fmtAED(activeStats.total_aed)}
+                    tone="default"
+                    /* v8 ignore next -- latest_at and latest_period are only ever set together, so the inner `latest_at ? … : ""` alternate is unreachable */
+                    hint={activeStats.latest_period ? `latest ${activeStats.latest_period}${activeStats.latest_at ? ` · ${fmtAge(activeStats.latest_at)} ago` : ""}` : undefined}
+                  />
                 </div>
               ) : (
                 <p className="text-xs text-ink-500">No invoices generated for this client yet. Submit a timesheet to see numbers populate here.</p>

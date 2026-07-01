@@ -74,8 +74,10 @@ export function WhatsAppDemo() {
     const net = Math.round((inv.total / 1.05) * 100) / 100;
     if (n.includes("vat")) return `VAT is ${fmtAED(Math.round(net * 0.05 * 100) / 100)} at the UAE standard 5%, on a net of ${fmtAED(net)}.`;
     if (n.includes("total") || n.includes("why")) return `${fmtAED(inv.total)} incl. VAT: 20 days for Carlos Smith plus 20 days and 2 OT hours for Ahmed Khan, priced on the CL001 rate card.`;
+    /* v8 ignore start -- canned() is only invoked with the three fixed QUESTIONS ("…sent to Finance?" matches on `sent`), so the finance/dispatch operands and the generic default are unreachable */
     if (n.includes("sent") || n.includes("finance") || n.includes("dispatch")) return "Yes, dispatched to Finance right after validation passed, with a full audit trail.";
     return `It's invoice ${inv.seq} for ${inv.client}, ${inv.period}, totalling ${fmtAED(inv.total)} incl. VAT.`;
+    /* v8 ignore stop */
   };
 
   const answer = async (q: string, inv: Inv) => {

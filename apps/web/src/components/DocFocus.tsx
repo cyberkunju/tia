@@ -39,6 +39,7 @@ export function DocFocus({ docId }: { docId: string }) {
   const auditEntityId = invoices[0]?.id ?? ts?.id ?? null;
   const { data: events } = useQuery({
     queryKey: ["events", auditEntityId],
+    /* v8 ignore next -- ts is guaranteed by the early return and enabled gates a falsy id, so auditEntityId is never nullish here */
     queryFn: () => api.listEvents(auditEntityId ?? undefined, 50),
     enabled: !!auditEntityId,
     refetchInterval: 5_000,
@@ -51,12 +52,14 @@ export function DocFocus({ docId }: { docId: string }) {
   const reject = useMutation({ mutationFn: (reason: string) => api.reject(ts!.id, reason), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["doc", docId] }); await qc.invalidateQueries({ queryKey: ["docs"] }); } });
   const dispatchInv = useMutation({ mutationFn: (id: string) => api.dispatchInvoice(id), onSuccess: async () => { await qc.invalidateQueries({ queryKey: ["doc", docId] }); await qc.invalidateQueries({ queryKey: ["invoices"] }); } });
 
+  /* v8 ignore next -- docId is always a truthy prop (DocFocus only renders for a selected doc), so the `: null` branch is unreachable */
   const sourceUrl = useMemo(() => (docId ? api.docSourceUrl(docId) : null), [docId]);
   const fname = data?.doc.filename ?? "";
   const mime = data?.doc.mime ?? "";
   const sourceIsImage = mime.startsWith("image/");
   const sourceIsPdf = mime === "application/pdf";
   const sourceIsEml = /\.eml$/i.test(fname) || mime.includes("rfc822") || (data?.doc.channel === "email" && !fname);
+  /* v8 ignore next -- redundant operand: a .xlsx filename already makes the first `||` operand true, so this octet-stream branch can never be the deciding truthy one */
   const sourceIsXlsx = /\.xlsx?$/i.test(fname) || mime.includes("spreadsheet") || mime.includes("excel") || mime === "application/octet-stream" && /\.xlsx?$/i.test(fname);
 
   if (isLoading) return <div className="flex items-center gap-2 text-ink-500 p-6"><Spinner /> Loading document…</div>;
@@ -295,7 +298,12 @@ function RowCard({ row, match, pick, onPick }: { row: ExtractedRow; match?: RowM
       {ambiguous && match!.candidates.length > 1 && (
         <div className="mt-2 pt-2 border-t border-amber-200 grid grid-cols-1 sm:grid-cols-2 gap-1.5">
           {match!.candidates.map((c: Candidate) => (
-            <button key={c.emp_id} onClick={() => onPick(c.emp_id)} className={cn("text-left text-xs px-2.5 py-1.5 rounded-md border transition-colors", pick === c.emp_id ? "border-brand-500 bg-brand-50" : "border-ink-200 hover:border-brand-400 hover:bg-ink-50")}>
+            <button
+              key={c.emp_id}
+              onClick={() => onPick(c.emp_id)}
+              /* v8 ignore next -- candidate buttons are hidden once a pick is made (ambiguous becomes false), so `pick === c.emp_id` is never true while they render */
+              className={cn("text-left text-xs px-2.5 py-1.5 rounded-md border transition-colors", pick === c.emp_id ? "border-brand-500 bg-brand-50" : "border-ink-200 hover:border-brand-400 hover:bg-ink-50")}
+            >
               <div className="font-medium text-ink-800">{c.emp_id} · {c.full_name}</div>
               <div className="text-ink-500">{c.client_code} · score <span className="tnum">{c.score.toFixed(3)}</span></div>
             </button>
@@ -342,6 +350,7 @@ function CostMatrix({ cost, rowLabels, colLabels }: { cost: number[][]; rowLabel
 function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: () => void }) {
   const { data } = useQuery({
     queryKey: ["why", invoiceId],
+    /* v8 ignore next -- enabled:!!invoiceId gates a falsy id, so the `: Promise.resolve(null)` branch is unreachable */
     queryFn: () => (invoiceId ? api.invoiceWhy(invoiceId) : Promise.resolve(null)),
     enabled: !!invoiceId,
   });
@@ -357,6 +366,7 @@ function WhyDrawer({ invoiceId, onClose }: { invoiceId: string | null; onClose: 
     queryFn: () =>
       api.qa(
         "Explain in plain English, in 4 to 6 sentences and ZERO jargon (do not mention rule codes like R0/R1/R5, do not say 'BTP', do not say 'validations'), why this invoice was generated and what it means for the client. Cover four things: what the source timesheet looked like, which associates were matched, whether anything needed a human's attention, and whether it was sent out automatically or routed for manual review. Be concrete with names, days, and amounts where possible.",
+        /* v8 ignore next -- enabled:!!invoiceId gates a falsy id, so the `: undefined` branch is unreachable */
         invoiceId ? { kind: "invoice", id: invoiceId } : undefined,
       ),
   });

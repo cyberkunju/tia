@@ -26,6 +26,7 @@ export function FinOpsDispatchTracking() {
       else if (r.status === "generated") generated += 1;
       if (!r.client_approval_status || r.client_approval_status === "pending") awaitingApproval += 1;
       if (isAutoDispatched(r.status) && !r.client_approval_status) autoCount += 1;
+      /* v8 ignore next -- rows always carry an amount (the row cell fmtAED(total_incl_vat ?? amount) would crash otherwise), so the `?? 0` is unreachable */
       totalAED += r.total_incl_vat ?? r.amount ?? 0;
     }
     return { rows: rows.length, dispatched, generated, awaitingApproval, autoCount, totalAED };

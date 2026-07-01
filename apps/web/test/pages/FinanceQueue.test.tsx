@@ -13,6 +13,8 @@ vi.mock("../../src/api", () => ({
   },
 }));
 
+import userEvent from "@testing-library/user-event";
+
 import { api } from "../../src/api";
 import { FinanceQueue } from "../../src/pages/FinanceQueue";
 import type { FinanceQueueRow } from "../../src/types";
@@ -39,6 +41,8 @@ const row = (over: Partial<FinanceQueueRow> = {}): FinanceQueueRow => ({
 
 beforeEach(() => {
   vi.mocked(api.financeQueue).mockReset();
+  vi.mocked(api.financeApprove).mockReset().mockResolvedValue({ status: "finance_approved", invoice_id: "11112222-3333-4444" });
+  vi.mocked(api.financeReject).mockReset().mockResolvedValue({ status: "finance_rejected", invoice_id: "11112222-3333-4444", reason: "no" });
 });
 afterEach(() => {
   vi.clearAllMocks();
@@ -91,5 +95,33 @@ describe("FinanceQueue page", () => {
     vi.mocked(api.financeQueue).mockResolvedValue([row({ total_incl_vat: null, amount: 777 })]);
     renderPage(<FinanceQueue />);
     await waitFor(() => expect(screen.getByText("AED 777.00")).toBeInTheDocument());
+  });
+
+  it("approves a row via the Approve button", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.financeQueue).mockResolvedValue([row()]);
+    renderPage(<FinanceQueue />);
+    await user.click(await screen.findByRole("button", { name: /Approve/ }));
+    await waitFor(() => expect(vi.mocked(api.financeApprove)).toHaveBeenCalledWith("11112222-3333-4444"));
+  });
+
+  it("rejects a row only when a reason is supplied via prompt", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.financeQueue).mockResolvedValue([row()]);
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("too high"));
+    renderPage(<FinanceQueue />);
+    await user.click(await screen.findByRole("button", { name: /Reject/ }));
+    await waitFor(() => expect(vi.mocked(api.financeReject)).toHaveBeenCalledWith("11112222-3333-4444", "too high"));
+    vi.unstubAllGlobals();
+  });
+
+  it("does not reject when the prompt is cancelled", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.financeQueue).mockResolvedValue([row()]);
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue(null));
+    renderPage(<FinanceQueue />);
+    await user.click(await screen.findByRole("button", { name: /Reject/ }));
+    expect(vi.mocked(api.financeReject)).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 });

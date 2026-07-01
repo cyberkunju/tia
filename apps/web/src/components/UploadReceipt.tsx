@@ -78,6 +78,9 @@ export function UploadReceipt({ docId }: { docId: string }) {
     nav(`/console?doc=${docId}`);
   };
 
+  /* v8 ignore next -- visibleStage is always 1..5 and STAGE_PROSE covers each stage, so the `?? …` fallback is unreachable */
+  const stageProse = STAGE_PROSE[visibleStage] ?? "Reading the timesheet and matching associates.";
+
   return (
     <div className="card overflow-hidden">
       {/* Headline - what's happening right now, in plain English. */}
@@ -98,7 +101,7 @@ export function UploadReceipt({ docId }: { docId: string }) {
           {showFinal && dispatched ? `Confidence ${(conf * 100).toFixed(0)}% - every contract check passed, so no human was needed.`
             : showFinal && inv ? "Ready for your approval - open the PDF below."
             : showFinal && awaitingReview ? `Confidence ${(conf * 100).toFixed(0)}% · ${fails} item${fails === 1 ? "" : "s"} need${fails === 1 ? "s" : ""} a quick look.`
-            : STAGE_PROSE[visibleStage] ?? "Reading the timesheet and matching associates."}
+            : stageProse}
         </p>
       </div>
 

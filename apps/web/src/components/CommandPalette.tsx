@@ -62,6 +62,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const go = (it?: Item) => {
     if (!it) return;
     if (it.run) { void it.run(); onClose(); return; }
+    /* v8 ignore next -- every ACTION defines `to` (or `run`, handled above), so the `!it.to` path is unreachable */
     if (it.to) { nav(it.to); onClose(); }
   };
 

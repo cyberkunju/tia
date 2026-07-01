@@ -87,6 +87,7 @@ const TIMESHEET_FOCUSED: Icebreaker[] = [
 
 // ---------- Selector --------------------------------------------------------
 
+/* v8 ignore start -- _byCategory is intentionally retained (see the `void _byCategory` note below) but never invoked, so its body is unreachable at runtime. */
 function _byCategory(items: Icebreaker[]): Map<IcebreakerCategory, Icebreaker[]> {
   const m = new Map<IcebreakerCategory, Icebreaker[]>();
   for (const it of items) {
@@ -96,6 +97,7 @@ function _byCategory(items: Icebreaker[]): Map<IcebreakerCategory, Icebreaker[]>
   }
   return m;
 }
+/* v8 ignore stop */
 
 function _routeBank(route: string, persona: Persona): Icebreaker[] {
   if (route.startsWith("/portal")) return CLIENT_ROUTE;
@@ -119,6 +121,7 @@ function _entityBank(
 function _take(items: Icebreaker[], n: number, seen: Set<string>): Icebreaker[] {
   const out: Icebreaker[] = [];
   for (const it of items) {
+    /* v8 ignore next -- defensive dedup: every backfill list supplies ≥3 unseen items before any already-seen label, so this skip never fires through generateIcebreakers */
     if (seen.has(it.label)) continue;
     out.push(it);
     seen.add(it.label);

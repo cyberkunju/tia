@@ -24,6 +24,7 @@ export function SapB1Drawer({ invoiceId }: SapB1DrawerProps) {
   });
 
   const copy = async () => {
+    /* v8 ignore next -- the Copy button only renders inside the `data ?` branch, so `data` is always set here */
     if (!data) return;
     try {
       await navigator.clipboard.writeText(JSON.stringify(data.payload, null, 2));

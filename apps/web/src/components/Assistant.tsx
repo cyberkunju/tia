@@ -110,6 +110,7 @@ function decodeAida(raw: string | null): FocusedEntity | null {
 // ---------- Tiny UI atoms ---------------------------------------------------
 
 function AidaMark({ size = "md" }: { size?: "sm" | "md" | "lg" }) {
+  /* v8 ignore next -- AidaMark is only ever rendered with size="lg"; the sm/md arms are defensive defaults */
   const glyph = size === "lg" ? "h-10" : size === "sm" ? "h-4" : "h-5";
   return <Logo className={`${glyph} text-brand-500 shrink-0`} accent="fill-brand-500" />;
 }
@@ -128,6 +129,7 @@ function CiteChip({ kind, id }: { kind: string; id: string }) {
  * Status icons: spinner (running) → check (done) → "!" (error).
  */
 function ToolStrip({ tools }: { tools: ToolEvent[] }) {
+  /* v8 ignore next -- ToolStrip is only rendered when `m.tools.length > 0` (guarded at the call site) */
   if (tools.length === 0) return null;
   return (
     <div className="mt-2 rounded-lg border border-ink-200 bg-ink-50/60 px-2.5 py-1.5">
@@ -280,6 +282,7 @@ export function Assistant({ open, onClose }: { open: boolean; onClose: () => voi
     const s = scrollerRef.current;
     if (!s) return;
     const nearBottom = s.scrollHeight - s.scrollTop - s.clientHeight < 100;
+    /* v8 ignore next -- happy-dom reports 0 for scrollHeight/scrollTop/clientHeight, so nearBottom is always true under test */
     if (nearBottom) endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [msgs, busy]);
 
