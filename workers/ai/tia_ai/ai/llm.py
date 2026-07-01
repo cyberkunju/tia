@@ -24,7 +24,26 @@ import httpx
 
 CHAT_TIMEOUT_S = 20.0
 EMBED_TIMEOUT_S = 20.0
+# Transient-failure retry policy for model calls. Backoff is monkeypatchable via
+# `_retry_sleep` so tests stay instant. A hard outage still degrades gracefully
+# after the attempts are exhausted (never raises into the pipeline).
+CHAT_MAX_ATTEMPTS = 3
+CHAT_RETRY_BASE_DELAY = 0.4
 _REASONING_RE = re.compile(r"^(gpt-5(\b|[.\-])|o[1-9](\b|[.\-]))")
+
+
+async def _retry_sleep(seconds: float) -> None:
+    import asyncio
+
+    await asyncio.sleep(seconds)
+
+
+def _is_transient(result: "ChatResult") -> bool:
+    """A model failure worth retrying: timeout, network blip, or a 5xx. Client
+    errors (4xx), empty content, and unconfigured are permanent — no retry."""
+    if result.kind in ("timeout", "network"):
+        return True
+    return result.kind == "http" and (result.status or 0) >= 500
 
 
 @dataclass(frozen=True)
@@ -90,6 +109,8 @@ class ChatModelClient:
     model: str
     api_style: str = "openai"  # 'openai' (Bearer) | 'azure' (api-key header)
     timeout_s: float = CHAT_TIMEOUT_S
+    max_attempts: int = CHAT_MAX_ATTEMPTS
+    retry_base_delay: float = CHAT_RETRY_BASE_DELAY
     client: httpx.AsyncClient | None = None
 
     @property
@@ -122,6 +143,19 @@ class ChatModelClient:
         client = self.client or httpx.AsyncClient(timeout=self.timeout_s)
         owns = self.client is None
         try:
+            result = ChatResult(ok=False, kind="network", reason="no attempt made")
+            for attempt in range(self.max_attempts):
+                result = await self._attempt(client, body)
+                if result.ok or not _is_transient(result) or attempt == self.max_attempts - 1:
+                    return result
+                await _retry_sleep(self.retry_base_delay * (2**attempt))
+            return result
+        finally:
+            if owns:
+                await client.aclose()
+
+    async def _attempt(self, client: httpx.AsyncClient, body: dict) -> ChatResult:
+        try:
             res = await client.post(self._url(), headers=self._headers(), json=body)
             if res.status_code >= 400:
                 return ChatResult(ok=False, kind="http", status=res.status_code,
@@ -134,9 +168,6 @@ class ChatModelClient:
             return ChatResult(ok=False, kind="timeout", reason="model request timed out")
         except Exception as exc:  # noqa: BLE001 - model call must never raise into the pipeline
             return ChatResult(ok=False, kind="network", reason=f"model request failed: {type(exc).__name__}")
-        finally:
-            if owns:
-                await client.aclose()
 
 
 @dataclass

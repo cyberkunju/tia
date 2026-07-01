@@ -90,7 +90,7 @@ def test_network_error_wrapped_as_sap_error(monkeypatch):
 
     _install_transport(monkeypatch, handler)
     with pytest.raises(sap.SapB1Error) as ei:
-        sap.post_invoice({"CardCode": "CL001"})
+        sap.post_invoice({"CardCode": "CL001"}, _sleep=lambda _s: None)
     assert "unreachable" in str(ei.value)
 
 
