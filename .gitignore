@@ -67,3 +67,10 @@ infra/volumes/
 /_*.txt
 /_*.py
 .playwright-mcp/
+
+# Test coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+coverage/
+**/coverage/
