@@ -1,4 +1,4 @@
-.PHONY: help install seed synth eval test test-cov api web whatsapp dispatch dispatch-build mail mail-once dev demo demo-seed-3 clean db-backup db-restore
+.PHONY: help install seed synth eval test test-cov api web whatsapp dispatch dispatch-build mail mail-once dev demo demo-seed-3 clean db-backup db-restore retention
 
 help:
 	@echo "TIA — Touchless Invoice Agent"
@@ -93,3 +93,7 @@ db-restore:
 	@test -n "$(FILE)" || { echo "usage: make db-restore FILE=path/to/dump.sql.gz"; exit 1; }
 	@echo "Restoring $(FILE) into the running db (tia-db-1)…"
 	gunzip -c "$(FILE)" | docker exec -i tia-db-1 psql -U $${POSTGRES_USER:-tia} -d $${POSTGRES_DB:-tia}
+
+retention:
+	@echo "Retention dry-run (old raw staging files eligible for purge; add --purge to delete):"
+	cd workers/ai && uv run python -m tia_ai.retention
